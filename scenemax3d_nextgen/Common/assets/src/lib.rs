@@ -1101,3 +1101,46 @@ pub fn model_animation_records(
     }
     Ok(vec![])
 }
+
+/// Resolve bracket selectors as frame bounds on the requested clip, independently
+/// of named clip records and their source-animation selection.
+pub fn model_animation_frame_bounds(root: &Path, builtin: Option<&Path>, model: &str, selector: &str) -> Result<(f32, f32), String> {
+    let mut locations = vec![project_models_index_paths(root)];
+    if let Some(builtin) = builtin { locations.push(builtin_models_index_paths(builtin)); }
+    for paths in locations {
+        for path in paths {
+            if !path.is_file() { continue; }
+            let index = read_models_index(&path).map_err(|e| e.to_string())?;
+            let Some(entry) = index.models.iter().find(|e| e.name.eq_ignore_ascii_case(model)) else { continue; };
+            return animation_ranges::frame_bounds(&serde_json::Value::Object(entry.animation_metadata.clone()), selector)
+                .map_err(|error| format!("Model '{model}': {error}"));
+        }
+    }
+    Err(format!("Model '{model}' was not found for animation frame range '{selector}'"))
+}
+
+#[cfg(test)]
+mod frame_selector_tests {
+    use super::*;
+    #[test]
+    fn frame_selectors_follow_model_index_precedence_without_source_files() {
+        let dir = std::env::temp_dir().join(format!("scenemax-frame-selectors-{}", std::process::id()));
+        let project = dir.join("project");
+        let builtin = dir.join("builtin");
+        fs::create_dir_all(project.join("Models")).unwrap();
+        fs::create_dir_all(builtin.join("Models")).unwrap();
+        fs::write(project.join("Models/models-ext.json"), r#"{"models":[{"name":"fixture","path":"Models/absent.gltf","animationFrameRanges":[{"name":"segment","start":1.5,"end":4.5}]}]}"#).unwrap();
+        fs::write(builtin.join("Models/models.json"), r#"{"models":[{"name":"fixture","path":"Models/absent.gltf","animationFrameRanges":[{"name":"builtin-only","start":2,"end":3}]},{"name":"shared","path":"Models/absent.gltf","animationFrameRanges":[{"name":"segment","start":4,"end":8}]}]}"#).unwrap();
+        assert_eq!(model_animation_frame_bounds(&project, Some(&builtin), "FIXTURE", "SEGMENT").unwrap(), (1.5, 4.5));
+        assert!(model_animation_frame_bounds(&project, Some(&builtin), "fixture", "builtin-only").is_err());
+        assert_eq!(model_animation_frame_bounds(&project, Some(&builtin), "shared", "segment").unwrap(), (4., 8.));
+        assert!(model_animation_frame_bounds(&project, Some(&builtin), "absent", "segment").is_err());
+        fs::remove_file(project.join("Models/models-ext.json")).unwrap();
+        fs::remove_file(builtin.join("Models/models.json")).unwrap();
+        fs::remove_dir(project.join("Models")).unwrap();
+        fs::remove_dir(builtin.join("Models")).unwrap();
+        fs::remove_dir(project).unwrap();
+        fs::remove_dir(builtin).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
+}

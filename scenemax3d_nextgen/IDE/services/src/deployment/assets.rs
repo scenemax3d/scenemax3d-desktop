@@ -222,7 +222,7 @@ fn script_closure(
             use scenemax_parser::Statement;
             match statement {
                 Statement::SetMaterial(material) => {
-                    if let scenemax_parser::AssignmentValue::Symbol(name) = &material.material {
+                    if let scenemax_parser::AssignmentValue::Literal(serde_json::Value::String(name)) = &material.material {
                         if !name.trim().is_empty() {
                             material_requests.insert(name.trim().to_lowercase());
                         }
@@ -295,6 +295,7 @@ fn script_closure(
                 }
                 Statement::KeyEvent(event) => statements.extend(&event.actions),
                 Statement::WhenEvent(event) => statements.extend(&event.actions),
+                Statement::Network(scenemax_parser::network::NetworkStatement::On { actions, .. }) => statements.extend(actions),
                 Statement::FunctionDef(function) => statements.extend(&function.actions),
                 Statement::AnimationControllerEvent(event) => statements.extend(&event.actions),
                 Statement::ThrowMotionEvent(event) => statements.extend(&event.actions),
@@ -302,6 +303,7 @@ fn script_closure(
                 | Statement::Repeat { actions, .. }
                 | Statement::DoWhile { actions, .. }
                 | Statement::LoopContinue { actions, .. }
+                | Statement::ScopedBlock { actions }
                 | Statement::Async { actions } => statements.extend(actions),
                 _ => {}
             }

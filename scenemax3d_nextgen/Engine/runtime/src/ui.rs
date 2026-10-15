@@ -1,4 +1,11 @@
 use super::*;
+pub(super) mod properties;
+pub(crate) mod lists;
+pub(crate) mod edits;
+mod text_shaders;
+pub(crate) mod images;
+pub(crate) mod shaders;
+pub(crate) mod image_shaders;
 
 const SAME_BATCH_DRAW_CLEAR_MIN_SECONDS: f32 = 0.35;
 
@@ -27,6 +34,7 @@ pub(super) fn scenemax_ui_action_from_statement(action: &Statement) -> Option<Sc
             duration_seconds: message.duration_seconds,
         }),
         Statement::UiEase(ease) => Some(SceneMaxUiAction::Ease {
+            received_at: None,
             target: ease.target.clone(),
             easing: ease.easing.clone(),
             direction: ease.direction,
@@ -77,7 +85,9 @@ pub(super) fn clear_scenemax_ui_on_scene_change(
     ui_runtime.draw_channels.clear();
     ui_runtime.print_channels.clear();
     ui_runtime.pending_draw_clears.clear();
+    ui_queue.input_focused = false;
     ui_queue.actions.clear();
+    ui_queue.remote_actions.clear();
     ui_runtime.scene_script_root = current_scene_root;
 
     tracing::info!(ui_count, "cleared SceneMax UI after scene switch");
@@ -106,16 +116,62 @@ pub(super) fn apply_scenemax_ui_actions(
             Option<&SceneMaxUiTextVisualState>,
         )>,
     )>,
-    mut image_query: Query<(&mut ImageNode, Option<&SceneMaxUiSpriteSheet>)>,
     mut visibility_query: Query<&mut Visibility>,
+    entities: Query<()>,
 ) {
-    let actions = ui_queue.actions.drain(..).collect::<Vec<_>>();
+    let mut actions = ui_queue
+        .remote_actions
+        .drain(..)
+        .map(|action| (action, true))
+        .collect::<Vec<_>>();
+    actions.extend(ui_queue.actions.drain(..).map(|action| (action, false)));
     if actions.is_empty() {
         return;
     }
     let mut drawn_channels_this_batch = HashSet::new();
-    for action in actions {
+    let mut styles = Vec::new();
+    for (action, remote) in actions {
+        // A preceding Load queued entity creation through Commands. Text/image
+        // queries cannot see those entities until the deferred boundary.
+        if multiplayer::widgets::action_target(&action)
+            .and_then(|path| resolve_ui_target(&ui_runtime, path))
+            .is_some_and(|target| !entities.contains(target.entity))
+        {
+            if remote {
+                ui_queue.remote_actions.push(action);
+            } else {
+                ui_queue.actions.push(action);
+            }
+            continue;
+        }
+        if !remote {
+            multiplayer::widgets::capture(&mut commands, &ui_runtime, &action);
+        }
         match action {
+            SceneMaxUiAction::ImageShader { target, state } => {
+                if let Some(widget) = resolve_ui_target(&ui_runtime, &target)
+                    && widget.widget_type == "IMAGE"
+                {
+                    let entity = widget.entity;
+                    commands.queue(move |world: &mut World| image_shaders::restore(world, entity, state));
+                }
+            }
+            SceneMaxUiAction::SurfaceShader { target, state } => {
+                if let Some(widget) = resolve_ui_target(&ui_runtime, &target)
+                    && matches!(widget.widget_type.as_str(), "PANEL" | "BUTTON" | "TEXT_VIEW" | "LIST_VIEW" | "EDIT_TEXT")
+                {
+                    let entity = widget.entity;
+                    commands.queue(move |world: &mut World| shaders::restore(world, entity, state));
+                }
+            }
+            SceneMaxUiAction::ImageState { target, state } => {
+                if let Some(widget) = resolve_ui_target(&ui_runtime, &target)
+                    && matches!(widget.widget_type.as_str(), "IMAGE" | "PANEL")
+                {
+                    let entity = widget.entity;
+                    commands.queue(move |world: &mut World| images::restore(world, entity, state));
+                }
+            }
             SceneMaxUiAction::Draw(draw) => {
                 if draw.clear && drawn_channels_this_batch.contains(&draw.channel) {
                     ui_runtime
@@ -298,21 +354,32 @@ pub(super) fn apply_scenemax_ui_actions(
                 easing,
                 direction,
                 duration_seconds,
+                received_at,
             } => {
                 if let Some(target_path) = resolve_ui_target_path(&ui_runtime, &target)
                     && let Some(target) = resolve_ui_target(&ui_runtime, &target)
                 {
                     let start = ui_ease_start_offset(direction);
+                    let duration_seconds = duration_seconds.max(0.001);
+                    let elapsed_seconds = received_at.map_or(0.0, |origin| {
+                        origin.elapsed().as_secs_f32().min(duration_seconds)
+                    });
+                    let progress = ui_ease_progress(elapsed_seconds / duration_seconds, &easing);
+                    let offset = start * (1.0 - progress);
                     commands.entity(target.entity).insert((
                         Visibility::Inherited,
-                        UiTransform::from_translation(Val2::percent(start.x, start.y)),
-                        SceneMaxUiEase {
-                            start,
-                            elapsed_seconds: 0.0,
-                            duration_seconds: duration_seconds.max(0.001),
-                            easing,
-                        },
+                        UiTransform::from_translation(Val2::percent(offset.x, offset.y)),
                     ));
+                    if elapsed_seconds < duration_seconds {
+                        commands.entity(target.entity).insert(SceneMaxUiEase {
+                            start,
+                            elapsed_seconds,
+                            duration_seconds,
+                            easing,
+                        });
+                    } else {
+                        commands.entity(target.entity).try_remove::<SceneMaxUiEase>();
+                    }
                     tracing::debug!(target = target_path, "started SceneMax UI ease");
                 }
             }
@@ -321,6 +388,84 @@ pub(super) fn apply_scenemax_ui_actions(
                 property,
                 value,
             } => {
+                let property = resolve_ui_target(&ui_runtime, &target)
+                    .and_then(|widget| properties::canonical(widget, &property))
+                    .unwrap_or(&property)
+                    .to_owned();
+                if let Some(widget) = resolve_ui_target(&ui_runtime, &target)
+                    && widget.widget_type == "EDIT_TEXT"
+                    && (edits::canonical(&property).is_some() || property == "__edit_snapshot")
+                {
+                    let entity = widget.entity;
+                    let path = (!remote && widget.multiplayer).then(|| resolve_ui_target_path(&ui_runtime, &target)).flatten();
+                    commands.queue(move |world: &mut World| {
+                        if property == "__edit_snapshot" {
+                            if let Ok(state) = serde_json::from_str(&value) { edits::restore(world, entity, state); }
+                        } else if edits::apply(world, entity, &property, &value) && let Some(path) = path {
+                            multiplayer::widgets::capture_edit(world, entity, &path);
+                        }
+                    });
+                    continue;
+                }
+                if let Some(widget) = resolve_ui_target(&ui_runtime, &target)
+                    && widget.widget_type == "LIST_VIEW"
+                    && (lists::canonical(&property).is_some() || property == "__list_snapshot")
+                {
+                    let entity = widget.entity;
+                    let path = (!remote && widget.multiplayer).then(|| resolve_ui_target_path(&ui_runtime, &target)).flatten();
+                    commands.queue(move |world: &mut World| {
+                        if property == "__list_snapshot" {
+                            if let Ok(state) = serde_json::from_str(&value) { lists::restore(world, entity, state); }
+                        } else if lists::apply(world, entity, &property, &value) && let Some(path) = path {
+                            multiplayer::widgets::capture_list(world, entity, &path);
+                        }
+                    });
+                    continue;
+                }
+                if property == "shader" {
+                    if let Some(widget) = resolve_ui_target(&ui_runtime, &target)
+                        && matches!(widget.widget_type.as_str(), "PANEL" | "BUTTON" | "IMAGE" | "TEXT_VIEW" | "LIST_VIEW" | "EDIT_TEXT")
+                    {
+                        if widget.widget_type == "IMAGE" {
+                            let entity = widget.entity;
+                            let path = (!remote && widget.multiplayer).then(|| resolve_ui_target_path(&ui_runtime, &target)).flatten();
+                            commands.queue(move |world: &mut World| {
+                                let accepted = image_shaders::apply(world, entity, &value);
+                                if accepted && let Some(path) = path {
+                                    multiplayer::widgets::capture_image_shader(world, entity, &path);
+                                }
+                            });
+                            continue;
+                        }
+                        let publish = (!remote && widget.multiplayer && widget.widget_type != "IMAGE").then(|| resolve_ui_target_path(&ui_runtime, &target)).flatten();
+                        styles.push((widget.clone(), property, value, publish));
+                    }
+                    continue;
+                }
+                if matches!(property.as_str(), "image" | "sprite" | "frame") {
+                    if let Some(widget) = resolve_ui_target(&ui_runtime, &target) {
+                        let valid = !value.contains('\0') && (property != "frame" || parse_ui_frame_value(&value).is_some());
+                        images::queue(&mut commands, widget.entity, property, value);
+                        if valid && !remote && widget.multiplayer && matches!(widget.widget_type.as_str(), "IMAGE" | "PANEL")
+                            && let Some(path) = resolve_ui_target_path(&ui_runtime, &target)
+                        {
+                            let entity = widget.entity;
+                            commands.queue(move |world: &mut World| multiplayer::widgets::capture_image(world, entity, &path));
+                        }
+                    }
+                    continue;
+                }
+                if properties::is_style(&property) {
+                    if let Some(widget) = resolve_ui_target(&ui_runtime, &target)
+                        && properties::canonical(widget, &property).is_some()
+                        && properties::valid(&property, &value)
+                    {
+                        let publish = (!remote && widget.multiplayer && property == "backgroundcolor")
+                            .then(|| resolve_ui_target_path(&ui_runtime, &target)).flatten();
+                        styles.push((widget.clone(), property, value, publish));
+                    }
+                    continue;
+                }
                 if property.eq_ignore_ascii_case("text") {
                     if let Some(target) = resolve_ui_target(&ui_runtime, &target)
                         && let Some(text_entity) = target.text_entity
@@ -376,22 +521,14 @@ pub(super) fn apply_scenemax_ui_actions(
                             Visibility::Hidden
                         });
                     }
-                } else if property.eq_ignore_ascii_case("frame")
-                    && let Some(target) = resolve_ui_target(&ui_runtime, &target)
-                    && let Ok((mut image_node, sprite_sheet)) = image_query.get_mut(target.entity)
-                    && let Some(sprite_sheet) = sprite_sheet
-                    && let Some(frame) = parse_ui_frame_value(&value)
-                {
-                    image_node.rect = Some(ui_sprite_frame_rect(
-                        frame,
-                        sprite_sheet.cols,
-                        sprite_sheet.rows,
-                        sprite_sheet.image_width,
-                        sprite_sheet.image_height,
-                    ));
                 }
             }
         }
+    }
+    // Style updates run after deferred text/animation creation, so a same-batch
+    // message cannot restore an older base color on its next animation frame.
+    for (target, property, value, publish) in styles {
+        properties::queue(&mut commands, target, property, value, publish);
     }
 }
 
@@ -885,6 +1022,9 @@ pub(super) fn load_scenemax_ui_document(
             SceneMaxUiTarget {
                 entity: root,
                 text_entity: None,
+                multiplayer: false,
+                widget_type: "LAYER".into(),
+                ui_scale,
             },
         );
 
@@ -988,7 +1128,14 @@ pub(super) fn spawn_scenemax_ui_widget(
     };
 
     let (entity, text_entity) = match widget.widget_type.as_str() {
-        "TEXT_VIEW" | "EDIT_TEXT" => {
+        "EDIT_TEXT" => {
+            let node=Node {overflow:Overflow::clip(),..node};
+            let entity = commands.spawn((Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                node, UiTransform::default(), visibility, ZIndex(widget.z_order), base_marker)).id();
+            edits::insert(commands, entity, widget, rect.width, rect.height, ui_scale);
+            (entity, None)
+        }
+        "TEXT_VIEW" => {
             let text_color = parse_ui_color(&widget.text_color);
             let entity = spawn_scenemax_ui_text_entity(
                 commands,
@@ -1057,6 +1204,7 @@ pub(super) fn spawn_scenemax_ui_widget(
                 ui_image_node_for_widget(widget, asset_server, context, ui_runtime);
             let entity = commands
                 .spawn((
+                    images::ImageState(widget.clone()),
                     Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
                     node,
                     image_node,
@@ -1085,34 +1233,10 @@ pub(super) fn spawn_scenemax_ui_widget(
             (entity, None)
         }
         "LIST_VIEW" => {
-            let text = list_view_text(widget);
-            let text_color = parse_ui_color(&widget.text_color);
-            let entity = spawn_scenemax_ui_text_entity(
-                commands,
-                asset_server,
-                context,
-                ui_runtime,
-                format!("UI.{ui_name}.{}", widget_path.join(".")),
-                node,
-                visibility,
-                ZIndex(widget.z_order),
-                text,
-                widget
-                    .list_row_font_name
-                    .as_deref()
-                    .or(widget.font_name.as_deref()),
-                widget.list_row_font_size,
-                text_color,
-                Justify::Left,
-                ui_scale,
-                rect.width,
-                rect.height,
-                Some(base_marker),
-            );
-            commands
-                .entity(entity)
-                .insert(BackgroundColor(parse_ui_color(&widget.background_color)));
-            (entity, Some(entity))
+            let entity = commands.spawn((Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
+                node, UiTransform::default(), visibility, ZIndex(widget.z_order), base_marker)).id();
+            lists::insert(commands, entity, widget, rect.width, rect.height, ui_scale);
+            (entity, None)
         }
         _ => {
             let entity = commands
@@ -1129,12 +1253,20 @@ pub(super) fn spawn_scenemax_ui_widget(
             (entity, None)
         }
     };
+    if widget.widget_type == "PANEL" {
+        let mut image_widget = widget.clone(); image_widget.image_path = widget.background_image.clone(); image_widget.sprite_name = None; image_widget.image_scale_mode = "stretch".into();
+        let (image, _) = ui_image_node_for_widget(&image_widget, asset_server, context, ui_runtime);
+        commands.entity(entity).insert((image, images::ImageState(image_widget)));
+    }
     add_child_if_alive(commands, parent_entity, entity);
     loaded.targets.insert(
         key,
         SceneMaxUiTarget {
             entity,
             text_entity,
+            multiplayer: widget.multiplayer,
+            widget_type: widget.widget_type.clone(),
+            ui_scale,
         },
     );
 
@@ -1210,6 +1342,9 @@ pub(super) fn spawn_scenemax_ui_text_entity(
             },
         ))
         .id();
+    commands.entity(entity).insert(properties::FontLayout {
+        width: widget_width, height: widget_height, alignment,
+    });
     if let Some(marker) = marker {
         commands.entity(entity).insert(marker);
     }
@@ -1293,7 +1428,7 @@ pub(super) fn render_scenemax_bitmap_text(
         Justify::Right => "right",
         _ => "left",
     };
-    for (source, rect) in scenemax_runtime_ui_core::bitmap::layout(
+    for glyph in scenemax_runtime_ui_core::bitmap::layout_paged(
         &font.metrics,
         &bitmap_text.text,
         bitmap_text.font_size,
@@ -1301,6 +1436,9 @@ pub(super) fn render_scenemax_bitmap_text(
         bitmap_text.widget_height,
         alignment,
     ) {
+        let source = glyph.source;
+        let rect = glyph.rect;
+        let Some(image) = font.images.get(&glyph.page) else { continue; };
         let glyph_entity = commands
             .spawn((
                 Node {
@@ -1312,13 +1450,14 @@ pub(super) fn render_scenemax_bitmap_text(
                     ..default()
                 },
                 ImageNode {
-                    image: font.image.clone(),
+                    image: image.clone(),
                     color: bitmap_text.color,
                     rect: Some(Rect::new(source[0], source[1], source[2], source[3])),
                     ..default()
                 },
             ))
             .id();
+        commands.entity(glyph_entity).insert(bevy::ui::FocusPolicy::Pass);
         add_child_if_alive(commands, entity, glyph_entity);
         bitmap_text.glyph_entities.push(glyph_entity);
     }
@@ -1438,7 +1577,14 @@ pub(super) fn ui_image_node_for_widget(
     let candidates = ui_image_asset_candidates(widget, context, ui_runtime);
     for candidate in candidates {
         if ui_asset_path_exists(&candidate, context) {
-            let sprite_sheet = ui_sprite_sheet_for_widget(widget, &candidate, context, ui_runtime);
+            if asset_server.get_handle::<Image>(candidate.clone()).is_some_and(|handle|
+                matches!(asset_server.get_load_state(handle.id()), Some(bevy::asset::LoadState::Failed(_)))) {
+                continue;
+            }
+            let sprite_sheet = widget.sprite_name.as_deref()
+                .and_then(|name| ui_runtime.sprite_index.get(name).or_else(|| ui_runtime.sprite_index.get(&name.to_ascii_lowercase())))
+                .filter(|sprite| normalize_asset_path(&sprite.path) == candidate)
+                .and_then(|_| ui_sprite_sheet_for_widget(widget, &candidate, context, ui_runtime));
             let mut image_node = ImageNode::new(asset_server.load(candidate));
             apply_ui_image_scale_mode(widget, &mut image_node);
             if let Some(sprite_sheet) = sprite_sheet {
@@ -1454,10 +1600,12 @@ pub(super) fn ui_image_node_for_widget(
             return (image_node, None);
         }
     }
-    (
-        ImageNode::solid_color(Color::srgba(0.9, 0.72, 0.38, 0.85)),
-        None,
-    )
+    let color = if widget.image_path.as_deref().is_some_and(|path| !path.is_empty()) {
+        Color::srgba(1., 0., 1., 1.)
+    } else if widget.widget_type == "PANEL" { Color::NONE } else { Color::srgba(0.5, 0.5, 0.5, 0.3) };
+    let mut image = ImageNode::solid_color(color);
+    apply_ui_image_scale_mode(widget, &mut image);
+    (image, None)
 }
 
 pub(super) fn apply_ui_image_scale_mode(widget: &SceneMaxUiWidgetDef, image_node: &mut ImageNode) {
@@ -1468,7 +1616,8 @@ pub(super) fn apply_ui_image_scale_mode(widget: &SceneMaxUiWidgetDef, image_node
 
 pub(super) fn parse_ui_frame_value(value: &str) -> Option<usize> {
     let value = value.trim().parse::<f32>().ok()?;
-    value.is_finite().then_some(value.round().max(0.0) as usize)
+    // SceneMax frame properties truncate fractional values before clamping.
+    value.is_finite().then_some(value.trunc().max(0.0) as usize)
 }
 
 pub(super) fn ui_sprite_sheet_for_widget(
@@ -1502,7 +1651,17 @@ pub(super) fn ui_sprite_frame_rect(
 ) -> Rect {
     let cols = cols.max(1);
     let rows = rows.max(1);
-    let frame = frame.min(cols * rows - 1);
+    let frame = frame.min(cols.saturating_mul(rows).saturating_sub(1));
+    ui_sprite_position_rect(frame, cols, rows, image_width, image_height)
+}
+
+// Position may exceed the restored material's atlas size after resource changes.
+// Preserve those UVs; the texture sampler handles the edge, as in sprite_sheet.vert.
+fn ui_sprite_position_rect(
+    frame: usize, cols: usize, rows: usize, image_width: u32, image_height: u32,
+) -> Rect {
+    let cols = cols.max(1);
+    let rows = rows.max(1);
     let col = frame % cols;
     let row = frame / cols;
     let frame_width = image_width as f32 / cols as f32;
@@ -1510,8 +1669,8 @@ pub(super) fn ui_sprite_frame_rect(
     Rect {
         min: Vec2::new(col as f32 * frame_width, row as f32 * frame_height),
         max: Vec2::new(
-            (col + 1) as f32 * frame_width,
-            (row + 1) as f32 * frame_height,
+            (col as f32 + 1.) * frame_width,
+            (row as f32 + 1.) * frame_height,
         ),
     }
 }
@@ -1529,22 +1688,15 @@ pub(super) fn ui_png_dimensions(path: &Path) -> Option<(u32, u32)> {
 
 pub(super) fn ui_image_asset_candidates(
     widget: &SceneMaxUiWidgetDef,
-    context: &SceneMaxLaunchContext,
+    _context: &SceneMaxLaunchContext,
     ui_runtime: &SceneMaxUiRuntime,
 ) -> Vec<String> {
     let mut candidates = Vec::new();
     if let Some(sprite_name) = widget.sprite_name.as_deref() {
-        if let Some(sprite) = ui_runtime.sprite_index.get(sprite_name) {
+        if let Some(sprite) = ui_runtime.sprite_index.get(sprite_name).or_else(|| {
+            ui_runtime.sprite_index.get(&sprite_name.to_ascii_lowercase())
+        }) {
             candidates.push(normalize_asset_path(&sprite.path));
-        }
-        candidates.push(format!("sprites/{sprite_name}.png"));
-        candidates.push(format!("sprites/{}.png", sprite_name.to_ascii_lowercase()));
-        if context.builtin_asset_root.is_some() {
-            candidates.push(format!("builtin://sprites/{sprite_name}.png"));
-            candidates.push(format!(
-                "builtin://sprites/{}.png",
-                sprite_name.to_ascii_lowercase()
-            ));
         }
     }
     if let Some(image_path) = widget.image_path.as_deref() {
@@ -1613,12 +1765,16 @@ pub(super) fn refresh_font_index(
     ui_runtime: &mut SceneMaxUiRuntime,
     context: &SceneMaxLaunchContext,
 ) {
-    if ui_runtime.font_index_root.as_ref() == context.asset_root.as_ref() {
+    if ui_runtime.font_index_loaded
+        && ui_runtime.font_index_root.as_ref() == context.asset_root.as_ref()
+        && ui_runtime.font_index_builtin_root.as_ref() == context.builtin_asset_root.as_ref() {
         return;
     }
     ui_runtime.font_index.clear();
     ui_runtime.bitmap_fonts.clear();
     ui_runtime.font_index_root = context.asset_root.clone();
+    ui_runtime.font_index_builtin_root = context.builtin_asset_root.clone();
+    ui_runtime.font_index_loaded = true;
 
     if let Some(builtin_root) = context.builtin_asset_root.as_ref() {
         load_font_index_file(
@@ -1637,11 +1793,41 @@ pub(super) fn refresh_font_index(
     }
 }
 
+// Original project catalogs sometimes leave object keys (not values) unquoted.
+// Normalize only tokens outside strings, preserving escapes and resource paths.
+pub(super) fn parse_font_catalog(source: &str) -> serde_json::Result<serde_json::Value> {
+    let chars: Vec<char> = source.chars().collect();
+    let mut result = String::new();
+    let (mut i, mut quoted, mut escaped) = (0, false, false);
+    while i < chars.len() {
+        let c = chars[i];
+        if quoted {
+            result.push(c);
+            if escaped { escaped = false; }
+            else if c == '\\' { escaped = true; }
+            else if c == '"' { quoted = false; }
+            i += 1;
+        } else if c == '"' {
+            quoted = true; result.push(c); i += 1;
+        } else if c.is_ascii_alphabetic() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') { i += 1; }
+            let mut next = i;
+            while next < chars.len() && chars[next].is_whitespace() { next += 1; }
+            let key = chars.get(next) == Some(&':');
+            if key { result.push('"'); }
+            result.extend(&chars[start..i]);
+            if key { result.push('"'); }
+        } else { result.push(c); i += 1; }
+    }
+    serde_json::from_str(&result)
+}
+
 pub(super) fn load_font_index_file(path: &Path, prefix: &str, ui_runtime: &mut SceneMaxUiRuntime) {
     let Ok(source) = fs::read_to_string(path) else {
         return;
     };
-    let Ok(root) = serde_json::from_str::<serde_json::Value>(&source) else {
+    let Ok(root) = parse_font_catalog(&source) else {
         return;
     };
     let Some(fonts) = root.get("fonts").and_then(|value| value.as_array()) else {
@@ -1672,9 +1858,8 @@ pub(super) fn load_scenemax_bitmap_font(
         .ok_or_else(|| anyhow::anyhow!("font asset {asset_path} was not found"))?;
     let source = fs::read_to_string(&font_file)?;
     let font = scenemax_runtime_ui_core::bitmap::parse(&source).map_err(anyhow::Error::msg)?;
-    let image_path = bitmap_font_page_asset_path(asset_path, &font.page);
     Ok(SceneMaxBitmapFont {
-        image: asset_server.load(image_path),
+        images: font.pages.iter().map(|(id,file)| (*id,asset_server.load(bitmap_font_page_asset_path(asset_path,file)))).collect(),
         metrics: font,
     })
 }

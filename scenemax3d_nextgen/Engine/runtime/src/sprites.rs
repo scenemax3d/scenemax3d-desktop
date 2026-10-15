@@ -82,6 +82,19 @@ pub(super) fn spawn_scenemax_sprite_decl(
     sprite_index: &HashMap<String, SceneMaxSpriteAsset>,
     visibility_by_target: &HashMap<String, bool>,
 ) -> Option<(Entity, Transform)> {
+    let visual = sprite_visual(asset_server, context, meshes, materials, resource, options, sprite_index)?;
+    let transform = sprite_transform_from_options(options);
+    let entity = commands.spawn((SceneMaxEntity { name: name.into(), runtime_name: format!("{name}@1") },
+        visual, transform, initial_visibility(name, options, visibility_by_target))).id();
+    write_runtime_diagnostic_line(format!("SPRITE:DECL target={name} resource={resource} mode=startup"));
+    Some((entity, transform))
+}
+
+fn sprite_visual(
+    asset_server: &AssetServer, context: &SceneMaxLaunchContext,
+    meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>,
+    resource: &str, options: &EntityOptions, sprite_index: &HashMap<String, SceneMaxSpriteAsset>,
+) -> Option<(SceneMaxSprite, Mesh3d, MeshMaterial3d<StandardMaterial>)> {
     let sprite_asset = sprite_index.get(&resource.to_ascii_lowercase())?;
     let asset_path = normalize_asset_path(&sprite_asset.path);
     let image_file = sprite_asset_file_path(&asset_path, context)?;
@@ -103,52 +116,32 @@ pub(super) fn spawn_scenemax_sprite_decl(
         cull_mode: None,
         ..default()
     });
-    let transform = sprite_transform_from_options(options);
-    let entity = commands
-        .spawn((
-            SceneMaxEntity {
-                name: name.to_owned(),
-                runtime_name: format!("{name}@1"),
-            },
-            SceneMaxSprite {
-                rows,
-                cols,
-                frame_count: rows * cols,
-                mesh: mesh.clone(),
-            },
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            transform,
-            initial_visibility(name, options, visibility_by_target),
-        ))
-        .id();
-    tracing::info!(
-        name,
-        resource,
-        path = %asset_path,
-        rows,
-        cols,
-        image_width,
-        image_height,
-        frame_width,
-        frame_height,
-        display_width = display_size.x,
-        display_height = display_size.y,
-        "spawned SceneMax sprite"
-    );
-    write_runtime_diagnostic_line(format!(
-        "spawned 3D sprite quad {name}=>{resource} at {asset_path} sheet={}x{} frame={}x{} display={:.3}x{:.3} pos=({:.3},{:.3},{:.3})",
-        image_width,
-        image_height,
-        frame_width,
-        frame_height,
-        display_size.x,
-        display_size.y,
-        transform.translation.x,
-        transform.translation.y,
-        transform.translation.z
-    ));
-    Some((entity, transform))
+    Some((SceneMaxSprite { rows, cols, frame_count: rows * cols, mesh: mesh.clone() }, Mesh3d(mesh), MeshMaterial3d(material)))
+}
+
+/// Attach the same sprite geometry/material as startup without replacing identity.
+pub(super) fn enqueue_runtime_sprite(commands: &mut Commands, entity: Entity, name: &str,
+    resource: &str, options: &EntityOptions, assets: &SceneMaxRuntimeAssets) {
+    let (name, resource, options) = (name.to_owned(), resource.to_owned(), options.clone());
+    let context = SceneMaxLaunchContext { script_root: None, asset_root: assets.asset_root.clone(),
+        builtin_asset_root: assets.builtin_asset_root.clone(), window_width: 0, window_height: 0 };
+    commands.queue(move |world: &mut World| {
+        if world.get_entity(entity).is_err() || !world.contains_resource::<Assets<Mesh>>()
+            || !world.contains_resource::<Assets<StandardMaterial>>() { return; }
+        let Some(server) = world.get_resource::<AssetServer>().cloned() else { return; };
+        let Some(root) = context.asset_root.as_deref() else { return; };
+        let index = load_sprite_index(root, context.builtin_asset_root.as_deref());
+        let visual = world.resource_scope(|world, mut meshes: Mut<Assets<Mesh>>| {
+            let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+            sprite_visual(&server, &context, &mut meshes, &mut materials, &resource, &options, &index)
+        });
+        if let Some(visual) = visual {
+            world.entity_mut(entity).insert(visual);
+            write_runtime_diagnostic_line(format!("SPRITE:DECL target={name} resource={resource} mode=runtime"));
+        } else {
+            write_runtime_diagnostic_line(format!("Sprite resource {resource} for {name} was not found"));
+        }
+    });
 }
 
 fn sprite_asset_file_path(asset_path: &str, context: &SceneMaxLaunchContext) -> Option<PathBuf> {
@@ -262,6 +255,8 @@ pub(super) fn sprite_animation_from_statement_resolved(
         duration_seconds: duration_seconds.max(0.001),
         elapsed_seconds: 0.0,
         looped: sprite_play.looped,
+        limit_seconds: sprite_play.repeat_count.map(|count| count.max(1) as f32 * duration_seconds.max(0.001))
+            .or_else(|| (!sprite_play.looped).then_some(duration_seconds.max(0.001))),
     }
 }
 
@@ -288,9 +283,12 @@ pub(super) fn update_sprite_animations(
         }
 
         animation.elapsed_seconds += time.delta_secs();
-        let mut progress = animation.elapsed_seconds / animation.duration_seconds.max(0.001);
+        let elapsed = animation.limit_seconds.map_or(animation.elapsed_seconds, |limit| animation.elapsed_seconds.min(limit));
+        let mut progress = elapsed / animation.duration_seconds.max(0.001);
+        let finished = animation.limit_seconds.is_some_and(|limit| animation.elapsed_seconds >= limit);
         if animation.looped {
-            progress = progress.fract();
+            // A completed whole cycle leaves the final authored frame visible.
+            progress = if finished && (progress - progress.round()).abs() < 0.00001 { 1.0 } else { progress.fract() };
         } else if progress >= 1.0 {
             progress = 1.0;
         }
@@ -309,7 +307,7 @@ pub(super) fn update_sprite_animations(
             );
         }
 
-        if !animation.looped && animation.elapsed_seconds >= animation.duration_seconds {
+        if finished {
             commands
                 .entity(entity)
                 .try_remove::<SceneMaxSpriteAnimation>();

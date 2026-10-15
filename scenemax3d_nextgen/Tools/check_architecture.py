@@ -9,6 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
+    'scenemax_script_values': 'Common/script_values',
     'scenemax_physics': 'Engine/physics',
     'scenemax_game_launcher': 'Projector/launcher',
     'scenemax_effects': 'Engine/effects',

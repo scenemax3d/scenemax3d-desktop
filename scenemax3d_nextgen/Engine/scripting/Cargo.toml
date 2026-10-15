@@ -5,4 +5,5 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+serde_json.workspace = true
 scenemax_parser = { path = "../../Language/parser" }

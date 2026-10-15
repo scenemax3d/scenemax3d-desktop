@@ -70,6 +70,7 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         services.last_project_file = scenemax_ide_services::workspace_state::last_project_file();
     }
     services.catalog_path = options.project_catalog.clone();
+    services.projector.set_catalog(options.project_catalog.clone());
     services.catalog_storage.request(StorageRequest::Catalog {
         root: options.project_root.clone(),
         path: options.project_catalog,
@@ -205,6 +206,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_GIT").is_some() {
         app.add_systems(Update, presentation::git::smoke.before(presentation::git::collect));
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MULTIPLAYER").is_some() {
+        app.add_systems(Update, presentation::multiplayer::smoke);
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_ABOUT").is_some() {
         app.add_systems(
             Update,
@@ -320,6 +324,8 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::about::State>()
             .init_resource::<presentation::motion::State>()
             .init_resource::<presentation::physics::State>()
+            .init_resource::<application::multiplayer::State>()
+            .init_resource::<presentation::multiplayer::View>()
             .insert_non_send(presentation::physics::Sandbox::default())
             .init_resource::<presentation::ik::State>()
             .add_plugins(scenemax_ik::IkPlugin)
@@ -396,7 +402,7 @@ impl Plugin for StudioPlugin {
                             presentation::animation_analyzer::update,
                         )
                             .chain(),
-                        (presentation::motion::update, presentation::physics::update).chain(),
+                        (presentation::motion::update, presentation::physics::update, presentation::multiplayer::input, application::multiplayer::update, presentation::multiplayer::refresh).chain(),
                         presentation::ik::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,

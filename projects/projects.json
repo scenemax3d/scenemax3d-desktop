@@ -1,214 +1,226 @@
 {
-    "projects": [
-        {
-            "itchWindowsChannel": "windows",
-            "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
-            "multiplayerDeployOs": "Windows",
-            "itchMacChannel": "macos",
-            "itchLinuxChannel": "linux",
-            "lastActiveAt": 1788149578158,
-            "path": "projects/fighting_game_project",
-            "multiplayerPassword": "",
-            "multiplayerServerIp": "127.0.0.1",
-            "projectorType": "nextgen",
-            "selectedNode": "bevy_shader1.smshader",
-            "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
-            "name": "fighting game project",
-            "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\shaders",
-            "multiplayerServerPort": 9001
-        },
-        {
-            "itchWindowsChannel": "",
-            "itchGamePage": "",
-            "multiplayerDeployOs": "Windows",
-            "itchMacChannel": "",
-            "itchLinuxChannel": "",
-            "path": "projects/default_project",
-            "multiplayerPassword": "",
-            "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "main",
-            "projectGuid": "e900ce5a-50ea-4c7d-aab1-3af562f4396c",
-            "name": "default project",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\default_project\\scripts\\Jam-Crime-With_pause",
-            "multiplayerServerPort": 9001
-        },
-        {
-            "path": "projects/test-add-code",
-            "selectedNode": "main",
-            "projectGuid": "af6813fb-0822-4ca0-aefb-d95615c120d5",
-            "name": "test-add-code",
-            "selectedParent": "test-add-code"
-        },
-        {
-            "path": "projects/4play",
-            "selectedNode": "main",
-            "projectGuid": "648c68e1-e88c-4f38-aae0-096d59af2bde",
-            "name": "4play",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\4play\\scripts\\4play"
-        },
-        {
-            "path": "projects/test_functions",
-            "selectedNode": "main",
-            "projectGuid": "0c42f92c-1786-4d80-a638-c3c2b496218a",
-            "name": "test functions",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_functions\\scripts\\Fighting Game"
-        },
-        {
-            "path": "projects/test_dynamic_sprite_load",
-            "selectedNode": "main",
-            "projectGuid": "df44783e-ea52-45c7-83ad-a92078b0ccbd",
-            "name": "test dynamic sprite load",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_dynamic_sprite_load\\scripts\\test dynamic sprite load"
-        },
-        {
-            "path": "projects/English_Game",
-            "selectedNode": "main",
-            "projectGuid": "2de1cc6f-fcc8-4c04-94d2-e92d4372754b",
-            "name": "English Game",
-            "selectedParent": "English Game"
-        },
-        {
-            "itchWindowsChannel": "",
-            "itchGamePage": "",
-            "multiplayerDeployOs": "Windows",
-            "itchMacChannel": "",
-            "itchLinuxChannel": "",
-            "path": "projects/Fighting_Game",
-            "multiplayerPassword": "",
-            "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "main",
-            "projectGuid": "a595d550-a3ee-41eb-b87d-b6df4c012ba8",
-            "name": "Fighting Game",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Fighting_Game\\scripts\\tests",
-            "multiplayerServerPort": 9001
-        },
-        {
-            "path": "projects/proj1",
-            "selectedNode": "main",
-            "projectGuid": "540df981-82ee-4a15-ada3-c0d6b3974232",
-            "name": "proj1",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj1\\scripts\\proj1"
-        },
-        {
-            "path": "projects/proj2",
-            "selectedNode": "main",
-            "projectGuid": "51c3e7e5-1d24-4b8a-97fe-b7da87c6f290",
-            "name": "proj2",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj2\\scripts\\proj2\\level3"
-        },
-        {
-            "path": "projects/test_gemini",
-            "selectedNode": "main",
-            "projectGuid": "85a99264-0895-47e9-90fb-5f8392e5a879",
-            "name": "test gemini",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_gemini\\scripts\\GeminiAI"
-        },
-        {
-            "path": "projects/demo1",
-            "selectedNode": "main",
-            "projectGuid": "ec0d2d96-5797-48e8-b2e9-093a0be56db2",
-            "name": "demo1",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\demo1\\scripts\\demo1"
-        },
-        {
-            "path": "projects/test_designer",
-            "selectedNode": "level1.smdesign",
-            "projectGuid": "56ad1c30-1b01-4e08-963b-393eca20ba41",
-            "name": "test designer",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_designer\\scripts\\test designer\\level1"
-        },
-        {
-            "path": "projects/AI_tests",
-            "itchWindowsChannel": "",
-            "selectedNode": "main",
-            "itchGamePage": "",
-            "projectGuid": "66983f74-f51c-417f-85ef-ebb28d859541",
-            "name": "AI_tests",
-            "itchButlerPath": "",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game",
-            "itchMacChannel": "",
-            "itchLinuxChannel": ""
-        },
-        {
-            "path": "projects/hello_dragon_tutorial",
-            "itchWindowsChannel": "",
-            "selectedNode": "main",
-            "itchGamePage": "",
-            "projectGuid": "1e299825-6a98-4966-ac32-a22602a01933",
-            "name": "hello_dragon_tutorial",
-            "itchButlerPath": "",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\hello_dragon_tutorial\\scripts\\dragon_scene",
-            "itchMacChannel": "",
-            "itchLinuxChannel": ""
-        },
-        {
-            "itchWindowsChannel": "",
-            "itchGamePage": "",
-            "multiplayerDeployOs": "Windows",
-            "itchMacChannel": "",
-            "itchLinuxChannel": "",
-            "path": "projects/multi-player-test",
-            "multiplayerPassword": "",
-            "multiplayerServerIp": "127.0.0.1",
-            "selectedNode": "horse1.code",
-            "projectGuid": "845fa4dd-4351-4924-89a9-b7700a90fec6",
-            "name": "multi-player-test",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test",
-            "multiplayerServerPort": 9001
-        },
-        {
-            "itchWindowsChannel": "windows",
-            "itchGamePage": "https://adi-barda.itch.io/kumite-fighting-club",
-            "multiplayerDeployOs": "Linux",
-            "itchMacChannel": "macos",
-            "itchLinuxChannel": "linux",
-            "lastActiveAt": 1786279560783,
-            "path": "projects/GMTK_2026",
-            "multiplayerPassword": "",
-            "multiplayerServerIp": "178.128.144.17",
-            "projectorType": "classic",
-            "selectedNode": "network_events.code",
-            "projectGuid": "a0b355af-0b53-4886-86f3-b8c329a4f575",
-            "name": "GMTK 2026",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\GMTK_2026\\scripts\\GMTK 2026\\level1",
-            "multiplayerServerPort": 9001
-        },
-        {
-            "itchWindowsChannel": "",
-            "itchGamePage": "",
-            "multiplayerDeployOs": "Windows",
-            "itchMacChannel": "",
-            "itchLinuxChannel": "",
-            "lastActiveAt": 1786394513887,
-            "path": "projects/Bevy_Tests",
-            "multiplayerPassword": "",
-            "multiplayerServerIp": "127.0.0.1",
-            "projectorType": "nextgen",
-            "selectedNode": "main",
-            "projectGuid": "9847c57b-f144-42be-aad6-f7d6e51d4697",
-            "name": "Bevy Tests",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Bevy_Tests\\scripts\\Bevy Tests",
-            "multiplayerServerPort": 9001
-        },
-        {
-            "itchWindowsChannel": "windows",
-            "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
-            "multiplayerDeployOs": "Windows",
-            "itchMacChannel": "macos",
-            "itchLinuxChannel": "linux",
-            "lastActiveAt": 1789290954715,
-            "path": "projects/fighting_game_project_-_bevy",
-            "multiplayerPassword": "",
-            "multiplayerServerIp": "127.0.0.1",
-            "projectorType": "nextgen",
-            "selectedNode": "codex_gltf_hide_probe.code",
-            "projectGuid": "f158c844-599c-443b-8dce-ad31e02ecadb",
-            "name": "fighting game project - bevy",
-            "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
-            "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project_-_bevy\\scripts\\Fighting Game\\side_tests",
-            "multiplayerServerPort": 9001
-        }
-    ],
-    "selectedProject": "fighting game project - bevy"
+  "projects": [
+    {
+      "itchWindowsChannel": "windows",
+      "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
+      "multiplayerDeployOs": "Windows",
+      "itchMacChannel": "macos",
+      "itchLinuxChannel": "linux",
+      "lastActiveAt": 1788149578158,
+      "path": "projects/fighting_game_project",
+      "multiplayerPassword": "",
+      "multiplayerServerIp": "127.0.0.1",
+      "projectorType": "nextgen",
+      "selectedNode": "bevy_shader1.smshader",
+      "projectGuid": "b616bee4-eeca-4b8f-939b-37510d338fa3",
+      "name": "fighting game project",
+      "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game\\shaders",
+      "multiplayerServerPort": 9001
+    },
+    {
+      "itchWindowsChannel": "",
+      "itchGamePage": "",
+      "multiplayerDeployOs": "Windows",
+      "itchMacChannel": "",
+      "itchLinuxChannel": "",
+      "path": "projects/default_project",
+      "multiplayerPassword": "",
+      "multiplayerServerIp": "127.0.0.1",
+      "selectedNode": "main",
+      "projectGuid": "e900ce5a-50ea-4c7d-aab1-3af562f4396c",
+      "name": "default project",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\default_project\\scripts\\Jam-Crime-With_pause",
+      "multiplayerServerPort": 9001
+    },
+    {
+      "path": "projects/test-add-code",
+      "selectedNode": "main",
+      "projectGuid": "af6813fb-0822-4ca0-aefb-d95615c120d5",
+      "name": "test-add-code",
+      "selectedParent": "test-add-code"
+    },
+    {
+      "path": "projects/4play",
+      "selectedNode": "main",
+      "projectGuid": "648c68e1-e88c-4f38-aae0-096d59af2bde",
+      "name": "4play",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\4play\\scripts\\4play"
+    },
+    {
+      "path": "projects/test_functions",
+      "selectedNode": "main",
+      "projectGuid": "0c42f92c-1786-4d80-a638-c3c2b496218a",
+      "name": "test functions",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_functions\\scripts\\Fighting Game"
+    },
+    {
+      "path": "projects/test_dynamic_sprite_load",
+      "selectedNode": "main",
+      "projectGuid": "df44783e-ea52-45c7-83ad-a92078b0ccbd",
+      "name": "test dynamic sprite load",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_dynamic_sprite_load\\scripts\\test dynamic sprite load"
+    },
+    {
+      "path": "projects/English_Game",
+      "selectedNode": "main",
+      "projectGuid": "2de1cc6f-fcc8-4c04-94d2-e92d4372754b",
+      "name": "English Game",
+      "selectedParent": "English Game"
+    },
+    {
+      "itchWindowsChannel": "",
+      "itchGamePage": "",
+      "multiplayerDeployOs": "Windows",
+      "itchMacChannel": "",
+      "itchLinuxChannel": "",
+      "path": "projects/Fighting_Game",
+      "multiplayerPassword": "",
+      "multiplayerServerIp": "127.0.0.1",
+      "selectedNode": "main",
+      "projectGuid": "a595d550-a3ee-41eb-b87d-b6df4c012ba8",
+      "name": "Fighting Game",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Fighting_Game\\scripts\\tests",
+      "multiplayerServerPort": 9001
+    },
+    {
+      "path": "projects/proj1",
+      "selectedNode": "main",
+      "projectGuid": "540df981-82ee-4a15-ada3-c0d6b3974232",
+      "name": "proj1",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj1\\scripts\\proj1"
+    },
+    {
+      "path": "projects/proj2",
+      "selectedNode": "main",
+      "projectGuid": "51c3e7e5-1d24-4b8a-97fe-b7da87c6f290",
+      "name": "proj2",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\proj2\\scripts\\proj2\\level3"
+    },
+    {
+      "path": "projects/test_gemini",
+      "selectedNode": "main",
+      "projectGuid": "85a99264-0895-47e9-90fb-5f8392e5a879",
+      "name": "test gemini",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_gemini\\scripts\\GeminiAI"
+    },
+    {
+      "path": "projects/demo1",
+      "selectedNode": "main",
+      "projectGuid": "ec0d2d96-5797-48e8-b2e9-093a0be56db2",
+      "name": "demo1",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\demo1\\scripts\\demo1"
+    },
+    {
+      "path": "projects/test_designer",
+      "selectedNode": "level1.smdesign",
+      "projectGuid": "56ad1c30-1b01-4e08-963b-393eca20ba41",
+      "name": "test designer",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\test_designer\\scripts\\test designer\\level1"
+    },
+    {
+      "path": "projects/AI_tests",
+      "itchWindowsChannel": "",
+      "selectedNode": "main",
+      "itchGamePage": "",
+      "projectGuid": "66983f74-f51c-417f-85ef-ebb28d859541",
+      "name": "AI_tests",
+      "itchButlerPath": "",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project\\scripts\\Fighting Game",
+      "itchMacChannel": "",
+      "itchLinuxChannel": ""
+    },
+    {
+      "path": "projects/hello_dragon_tutorial",
+      "itchWindowsChannel": "",
+      "selectedNode": "main",
+      "itchGamePage": "",
+      "projectGuid": "1e299825-6a98-4966-ac32-a22602a01933",
+      "name": "hello_dragon_tutorial",
+      "itchButlerPath": "",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\hello_dragon_tutorial\\scripts\\dragon_scene",
+      "itchMacChannel": "",
+      "itchLinuxChannel": ""
+    },
+    {
+      "itchWindowsChannel": "",
+      "itchGamePage": "",
+      "multiplayerDeployOs": "Windows",
+      "itchMacChannel": "",
+      "itchLinuxChannel": "",
+      "path": "projects/multi-player-test",
+      "multiplayerPassword": "",
+      "multiplayerServerIp": "127.0.0.1",
+      "selectedNode": "horse1.code",
+      "projectGuid": "845fa4dd-4351-4924-89a9-b7700a90fec6",
+      "name": "multi-player-test",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\multi-player-test\\scripts\\multi-player-test",
+      "multiplayerServerPort": 9001
+    },
+    {
+      "itchWindowsChannel": "windows",
+      "itchGamePage": "https://adi-barda.itch.io/kumite-fighting-club",
+      "multiplayerDeployOs": "Linux",
+      "itchMacChannel": "macos",
+      "itchLinuxChannel": "linux",
+      "lastActiveAt": 1791833001963,
+      "path": "projects/GMTK_2026",
+      "multiplayerPassword": "",
+      "multiplayerServerIp": "178.128.144.17",
+      "projectorType": "classic",
+      "selectedNode": "network_events.code",
+      "projectGuid": "a0b355af-0b53-4886-86f3-b8c329a4f575",
+      "name": "GMTK 2026",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\GMTK_2026\\scripts\\GMTK 2026\\level1",
+      "multiplayerServerPort": 9001
+    },
+    {
+      "itchWindowsChannel": "",
+      "itchGamePage": "",
+      "multiplayerDeployOs": "Windows",
+      "itchMacChannel": "",
+      "itchLinuxChannel": "",
+      "lastActiveAt": 1786394513887,
+      "path": "projects/Bevy_Tests",
+      "multiplayerPassword": "",
+      "multiplayerServerIp": "127.0.0.1",
+      "projectorType": "nextgen",
+      "selectedNode": "main",
+      "projectGuid": "9847c57b-f144-42be-aad6-f7d6e51d4697",
+      "name": "Bevy Tests",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\Bevy_Tests\\scripts\\Bevy Tests",
+      "multiplayerServerPort": 9001
+    },
+    {
+      "itchWindowsChannel": "windows",
+      "itchGamePage": "https://adi-barda.itch.io/fighting-game-concept",
+      "multiplayerDeployOs": "Windows",
+      "itchMacChannel": "macos",
+      "itchLinuxChannel": "linux",
+      "lastActiveAt": 1791832980410,
+      "path": "projects/fighting_game_project_-_bevy",
+      "multiplayerPassword": "",
+      "multiplayerServerIp": "127.0.0.1",
+      "projectorType": "nextgen",
+      "selectedNode": "main",
+      "projectGuid": "f158c844-599c-443b-8dce-ad31e02ecadb",
+      "name": "fighting game project - bevy",
+      "itchButlerPath": "C:\\dev\\scenemax_desktop\\tools\\butler\\butler.exe",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\fighting_game_project_-_bevy\\scripts\\Fighting Game\\game_intro",
+      "multiplayerServerPort": 9001
+    },
+    {
+      "name": "GMTK 2026 Bevy",
+      "path": "projects/GMTK_2026_Bevy",
+      "projectorType": "nextgen",
+      "projectGuid": "8f7740c2-ce84-42c9-9823-4d2ef77eadc5",
+      "multiplayerServerIp": "127.0.0.1",
+      "multiplayerServerPort": 9001,
+      "multiplayerDeployOs": "Windows",
+      "selectedNode": "main",
+      "selectedParent": "C:\\dev\\scenemax_desktop\\projects\\GMTK_2026_Bevy\\scripts\\GMTK 2026 Bevy",
+      "lastActiveAt": 0
+    }
+  ],
+  "selectedProject": "GMTK 2026"
 }

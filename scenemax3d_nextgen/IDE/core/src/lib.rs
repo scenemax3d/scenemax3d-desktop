@@ -4,6 +4,7 @@
 pub mod assistance;
 pub mod completion;
 pub mod deployment;
+pub mod multiplayer;
 mod document;
 mod editing;
 mod history;

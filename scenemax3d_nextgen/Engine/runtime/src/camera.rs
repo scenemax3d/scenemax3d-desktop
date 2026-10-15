@@ -1,4 +1,5 @@
 use super::*;
+pub(super) mod motion;
 use bevy::camera::primitives::{Aabb, MeshAabb};
 
 #[derive(Component, Debug, Clone)]
@@ -323,6 +324,7 @@ pub(super) fn load_cinematic_rigs(
 ) {
     let mut remaining = HashSet::new();
     collect_cinematic_rig_ids(&program.statements, &mut remaining);
+    remaining.retain(|id| !camera_system.cinematic_rigs.contains_key(&id.to_ascii_lowercase()));
     if remaining.is_empty() {
         return;
     }
@@ -388,6 +390,7 @@ fn collect_cinematic_rig_ids(statements: &[Statement], wanted: &mut HashSet<Stri
             | Statement::Repeat { actions, .. }
             | Statement::DoWhile { actions, .. }
             | Statement::LoopContinue { actions, .. }
+            | Statement::ScopedBlock { actions }
             | Statement::Async { actions } => collect_cinematic_rig_ids(actions, wanted),
             _ => {}
         }
@@ -768,7 +771,10 @@ mod tests {
         let transforms = HashMap::from([("target".to_owned(), Transform::default())]);
         let object_pools = SceneMaxObjectPools::default();
 
-        start_cinematic_camera(&play, &transforms, &object_pools, None, &mut camera_system);
+        let mut vars = SceneMaxVars::default();
+        vars.2.insert("alias".into(), scenemax_runtime_vm_core::references::Reference::entity("shot_cam"));
+        let play = CinematicPlayStatement { target: "alias".into(), ..play };
+        start_cinematic_camera(&play, &transforms, &object_pools, &vars, None, &mut camera_system);
 
         assert!(camera_system.active_cinematic.is_some());
         assert!(camera_system.attached.is_none());
@@ -788,6 +794,7 @@ mod tests {
     #[test]
     fn entity_target_cinematic_follows_live_target_position_and_look_at() {
         let mut active = ActiveCinematicCamera {
+            completion: std::sync::Arc::new(()),
             rig: RuntimeCinematicRig {
                 id: "rig".to_owned(),
                 name: "Rig".to_owned(),
@@ -839,6 +846,7 @@ mod tests {
         let authored_rotation = Quat::from_rotation_y(30.0_f32.to_radians());
         let target_start_rotation = Quat::from_rotation_y(120.0_f32.to_radians());
         let mut active = ActiveCinematicCamera {
+            completion: std::sync::Arc::new(()),
             rig: RuntimeCinematicRig {
                 id: "rig".to_owned(),
                 name: "Rig".to_owned(),
@@ -978,11 +986,13 @@ pub(super) fn stop_camera_attachment(camera_system: &mut SceneMaxCameraSystem) {
 pub(super) fn start_cinematic_camera(
     play: &CinematicPlayStatement,
     _transforms_by_name: &HashMap<String, Transform>,
-    _object_pools: &SceneMaxObjectPools,
-    _scope: Option<&SceneMaxScopeFrame>,
+    object_pools: &SceneMaxObjectPools,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
     camera_system: &mut SceneMaxCameraSystem,
 ) {
-    let Some(camera_ref) = camera_system.cinematic_vars.get(&play.target).cloned() else {
+    let target = scenemax_runtime_vm_core::references::entity_name_with_aliases(&play.target, vars, scope, &object_pools.aliases);
+    let Some(camera_ref) = camera_system.cinematic_vars.get(&target).cloned() else {
         write_runtime_diagnostic_line(format!("cinematic camera {} was not declared", play.target));
         return;
     };
@@ -1004,12 +1014,16 @@ pub(super) fn start_cinematic_camera(
     }
 
     let mut active = ActiveCinematicCamera {
+            completion: std::sync::Arc::new(()),
         rig,
         playback,
         elapsed_seconds: 0.0,
         duration_seconds: play.duration_seconds.max(0.1),
         playback_fov_degrees: None,
-        look_at: play.look_at.clone(),
+        look_at: play.look_at.as_ref().map(|target| match target {
+            CinematicLookAt::Entity(name) => CinematicLookAt::Entity(scenemax_runtime_vm_core::references::entity_name_with_aliases(name, vars, scope, &object_pools.aliases)),
+            other => other.clone(),
+        }),
         reverse: play.reverse,
         locked_target_placement_rotation: None,
     };
@@ -1023,6 +1037,9 @@ pub(super) fn start_cinematic_camera(
         reverse = active.reverse,
         "started SceneMax cinematic camera"
     );
+    if std::env::var_os("SCENEMAX_ATTACHMENT_AUDIT").is_some() {
+        write_runtime_diagnostic_line(format!("CINEMATIC_PLAY target={} resolved={} rig={}", play.target, target, active.rig.id));
+    }
     camera_system.active_cinematic = Some(active);
 }
 

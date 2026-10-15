@@ -19,6 +19,8 @@ pub const NETWORK_EVENT: u8 = 24;
 pub const NETWORK_VARIABLE_UPDATE: u8 = 25;
 pub const SERVER_EVENT_REGISTER: u8 = 26;
 pub const NETWORK_ENTITY_DATA_UPDATE: u8 = 27;
+/// Additive v1 acknowledgement of an exact numbered action end.
+pub const ACTION_END_RECEIPT: u8 = 28;
 pub const SNAPSHOT: u8 = 30;
 pub const SERVER_STATE: u8 = 31;
 pub const INITIAL_SYNC_COMPLETE: u8 = 32;
@@ -90,3 +92,9 @@ mod tests {
         assert_eq!(bytes, vec![0x53, 0x58, 0x4d, 0x50, 1, 4, 42, 0]);
     }
 }
+/// Java/Zig-compatible SceneMax UDP protocol.
+pub mod protocol;
+pub mod client;
+#[cfg(test)]
+#[path = "tests.rs"]
+mod protocol_tests;

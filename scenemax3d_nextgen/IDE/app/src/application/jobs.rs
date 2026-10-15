@@ -419,7 +419,7 @@ pub(crate) fn apply_storage(
                         .run_target(session.workspace.document(id)?.path())
                         .ok_or_else(|| anyhow::anyhow!("The active file is not runnable"))?;
                     services.projector.start(project.root(), &target)?;
-                    session.status = "Bevy projector started".into();
+                    session.status = "Preparing Bevy projector...".into();
                 }
                 Some(SavePurpose::ProjectRun) if !dirty && !session.closing => {
                     let project = session.workspace.project();
@@ -427,13 +427,13 @@ pub(crate) fn apply_storage(
                         anyhow::anyhow!("No main file under the project's scripts folder")
                     })?;
                     services.projector.start(project.root(), entry)?;
-                    session.status = "Bevy project started".into();
+                    session.status = "Preparing Bevy project...".into();
                 }
                 Some(SavePurpose::PathRun(path)) if !dirty && !session.closing => {
                     services
                         .projector
                         .start(session.workspace.project().root(), &path)?;
-                    session.status = "Bevy projector started".into();
+                    session.status = "Preparing Bevy projector...".into();
                 }
                 Some(SavePurpose::Run(_) | SavePurpose::PathRun(_) | SavePurpose::ProjectRun) => {
                     session.status = "Run cancelled: save newer edits and run again".into()
@@ -487,6 +487,7 @@ pub(crate) fn poll_jobs(
     for line in services.projector.drain_output(32) {
         session.append_output(&line);
     }
+    let was_preparing = services.projector.is_preparing();
     match services.projector.poll_exit() {
         Ok(Some(status)) => {
             session.status = format!("Projector exited: {status}");
@@ -494,7 +495,11 @@ pub(crate) fn poll_jobs(
             session.append_output(&message);
         }
         Err(error) => session.status = error.to_string(),
-        Ok(None) => {}
+        Ok(None) => {
+            if was_preparing && !services.projector.is_preparing() && services.projector.is_running() {
+                session.status = "Bevy projector started".into();
+            }
+        }
     }
 }
 

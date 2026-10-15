@@ -1,12 +1,16 @@
+#include <cmath>
+
 #include "scenemax_effekseer_bevy.h"
 
 #include <Effekseer.h>
+#include <Effekseer/Effekseer.EffectImplemented.h>
 #include <EffekseerRendererVulkan.h>
 
 #include <algorithm>
 #include <codecvt>
 #include <cstdint>
 #include <locale>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -85,6 +89,7 @@ struct RetiredVulkanRenderPass {
 };
 
 struct SceneMaxEffekseerRenderer {
+  bool elapsedPlaybackEnabled = false; // Old callers leave tail padding undefined.
   VkDevice device = VK_NULL_HANDLE;
   VkQueue queue = VK_NULL_HANDLE;
   VkFormat colorFormat = VK_FORMAT_UNDEFINED;
@@ -338,6 +343,9 @@ void applyInstance(SceneMaxEffekseerRenderer* ctx,
   }
 }
 
+static_assert(sizeof(SceneMaxEffekseerInstanceDesc) == 128);
+static_assert(offsetof(SceneMaxEffekseerInstanceDesc, elapsed_seconds) == 124);
+
 uint64_t playInstance(SceneMaxEffekseerRenderer* ctx,
                       uint64_t effectId,
                       const SceneMaxEffekseerInstanceDesc* instance) {
@@ -372,6 +380,13 @@ uint64_t playInstance(SceneMaxEffekseerRenderer* ctx,
     ctx->appliedOptions.erase(instance->id);
   }
   applyInstance(ctx, handle, *instance);
+  // Seek only a newly created finite playback, independently of preview/global time.
+  // Seeking advances simulation frames, so temporarily remove playback speed scaling.
+  if (ctx->elapsedPlaybackEnabled && !instance->looped && std::isfinite(instance->elapsed_seconds) && instance->elapsed_seconds > 0.0f) {
+    ctx->manager->SetSpeed(handle, 1.0f);
+    ctx->manager->UpdateHandleToMoveToFrame(handle, std::clamp(instance->elapsed_seconds * 60.0f, 0.0f, 36000.0f));
+    ctx->manager->SetSpeed(handle, std::max(instance->playback_speed, 0.001f));
+  }
   ctx->status = "playing";
   return static_cast<uint64_t>(handle);
 }
@@ -379,6 +394,11 @@ uint64_t playInstance(SceneMaxEffekseerRenderer* ctx,
 } // namespace
 
 extern "C" {
+
+SCENEMAX_EFFEKSEER_API void
+scenemax_effekseer_enable_elapsed_playback(SceneMaxEffekseerRenderer* renderer) {
+  if (renderer != nullptr) renderer->elapsedPlaybackEnabled = true;
+}
 
 SCENEMAX_EFFEKSEER_API SceneMaxEffekseerRenderer*
 scenemax_effekseer_create_vulkan(const SceneMaxEffekseerVulkanContext* context) {
@@ -561,6 +581,13 @@ scenemax_effekseer_render_vulkan(SceneMaxEffekseerRenderer* renderer,
     it = renderer->handles.erase(it);
   }
 
+  // Completed handles are erased above, but their generation must survive until
+  // feedback is consumed. Discard it when the instance leaves the submitted set.
+  for (auto it = renderer->playGenerations.begin(); it != renderer->playGenerations.end();) {
+    if (submittedIds.find(it->first) == submittedIds.end()) it = renderer->playGenerations.erase(it);
+    else ++it;
+  }
+
   for (const auto& entry : renderer->previewOptions) {
     auto handle = renderer->handles.find(entry.first);
     if (handle == renderer->handles.end() || !renderer->manager->Exists(handle->second)) continue;
@@ -709,6 +736,35 @@ SCENEMAX_EFFEKSEER_API const char* scenemax_effekseer_status(SceneMaxEffekseerRe
     return "missing renderer";
   }
   return renderer->status.c_str();
+}
+
+SCENEMAX_EFFEKSEER_API float
+scenemax_effekseer_effect_duration(const uint8_t* data, size_t length) {
+  if (data == nullptr || length < 8 || length > static_cast<size_t>(std::numeric_limits<int32_t>::max())) return -1.0f;
+  try {
+    auto settings = Effekseer::Setting::Create();
+    auto effect = Effekseer::Effect::Create(settings, data, static_cast<int32_t>(length));
+    if (effect == nullptr) return -1.0f;
+    // Static term analysis cannot bound equations that depend on runtime inputs.
+    // Let generation-owned native completion, rather than project preview ranges,
+    // decide when such an instance ends.
+    if (!static_cast<Effekseer::EffectImplemented*>(effect.Get())->GetDynamicEquation().empty())
+      return std::numeric_limits<float>::infinity();
+    const auto frames = effect->CalculateTerm().TermMax;
+    if (frames < 0 || frames == std::numeric_limits<int32_t>::max()) return std::numeric_limits<float>::infinity();
+    return static_cast<float>((static_cast<double>(frames) + 1.0) / 60.0);
+  } catch (...) {
+    return -1.0f;
+  }
+}
+
+SCENEMAX_EFFEKSEER_API bool
+scenemax_effekseer_playback_finished(SceneMaxEffekseerRenderer* renderer, uint64_t id, uint64_t generation) {
+  if (renderer == nullptr || renderer->manager == nullptr) return false;
+  const auto played = renderer->playGenerations.find(id);
+  if (played == renderer->playGenerations.end() || played->second != generation) return false;
+  const auto handle = renderer->handles.find(id);
+  return handle == renderer->handles.end() || !renderer->manager->Exists(handle->second);
 }
 
 SCENEMAX_EFFEKSEER_API bool

@@ -200,6 +200,7 @@ pub(super) fn apply_light_probe_add(
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> (Entity, Transform) {
     let light = LightDeclarationStatement {
+        shared: false,
         name: probe.name.clone(),
         light_type: LightType::Probe,
         color: None,

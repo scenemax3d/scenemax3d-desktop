@@ -22,6 +22,34 @@ pub struct Playback {
     pub dynamic_inputs: [f32; 4],
     pub elapsed_seconds: f32,
 }
+/// Render-thread completion feedback, keyed by instance and exact playback generation.
+/// Entries are retained only while that finite playback remains extracted.
+#[derive(Resource, Clone, Default)]
+pub struct PlaybackCompletions(pub Arc<Mutex<std::collections::HashSet<(u64, u64)>>>);
+impl PlaybackCompletions {
+    pub fn contains(&self, instance: u64, generation: u64) -> bool {
+        self.0.lock().is_ok_and(|entries| entries.contains(&(instance, generation)))
+    }
+}
+
+/// Finite lifetime bound from a compiled effect, without creating a graphics device.
+/// Returns positive infinity for unbounded or dynamically evaluated terms.
+/// Returns None only for unavailable native support or invalid files.
+pub fn native_duration_seconds(path: &std::path::Path) -> Option<f32> {
+    #[cfg(feature = "effekseer_native")]
+    {
+        unsafe extern "C" {
+            fn scenemax_effekseer_effect_duration(data: *const u8, len: usize) -> f32;
+        }
+        let data = std::fs::read(path).ok()?;
+        // The native parser borrows these bytes only for this synchronous call.
+        let seconds = unsafe { scenemax_effekseer_effect_duration(data.as_ptr(), data.len()) };
+        (seconds > 0.).then_some(seconds)
+    }
+    #[cfg(not(feature = "effekseer_native"))]
+    { let _ = path; None }
+}
+
 /// Optional editor-owned simulation clock; zero freezes particles while orbiting.
 #[derive(Resource, Default)]
 pub struct PreviewClock {

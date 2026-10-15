@@ -50,6 +50,7 @@ const PacketType = enum(u8) {
     network_variable_update = 25,
     server_event_register = 26,
     network_entity_data_update = 27,
+    action_end_receipt = 28,
     snapshot = 30,
     server_state = 31,
     initial_sync_complete = 32,
@@ -78,6 +79,7 @@ const Client = struct {
     player_name: [64]u8 = [_]u8{0} ** 64,
     address: net.IpAddress = undefined,
     last_seen_ms: i64 = 0,
+    generation: u32 = 1,
 };
 
 const Entity = struct {
@@ -96,6 +98,12 @@ const Entity = struct {
     animation: [64]u8 = [_]u8{0} ** 64,
     spawn_command: [spawn_command_size]u8 = [_]u8{0} ** spawn_command_size,
     active_actions: [max_active_actions]ActiveAction = [_]ActiveAction{.{}} ** max_active_actions,
+    // Retain per-slot watermarks after end/expiry so delayed starts cannot
+    // reactivate a completed action. Entity replacement resets this history.
+    action_sequences: [256]?u16 = [_]?u16{null} ** 256,
+    action_ended: [256]bool = [_]bool{false} ** 256,
+    first_shader: [network_entity_data_value_size]u8 = [_]u8{0} ** network_entity_data_value_size,
+    shader_base_material: [active_action_command_size]u8 = [_]u8{0} ** active_action_command_size,
 };
 
 const ActiveAction = struct {
@@ -139,11 +147,21 @@ export var scenemax_mp_config_block: [config_begin.len + config_payload_size + c
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const config = readConfig();
-    var bind_addr = try net.IpAddress.parseIp4("0.0.0.0", config.port);
+    // Local acceptance runs must not request access to external interfaces.
+    // Unset preserves normal LAN/Internet hosting; invalid overrides fail closed.
+    const bind_host = init.environ_map.get("SCENEMAX_MP_BIND_ADDRESS") orelse "0.0.0.0";
+    // Port zero lets the OS allocate a port without a fixed-port UDP listener
+    // notification on Windows. Fixtures discover the actual port from startup.
+    const bind_port = if (init.environ_map.get("SCENEMAX_MP_PORT")) |value|
+        try std.fmt.parseInt(u16, value, 10)
+    else
+        config.port;
+    var bind_addr = try net.IpAddress.parseIp4(bind_host, bind_port);
     const sock = try bind_addr.bind(io, .{ .mode = .dgram, .protocol = .udp });
     defer sock.close(io);
-    std.debug.print("[SceneMax MP] server listening port={d} game=\"{s}\" projectGuid=\"{s}\"\n", .{
-        config.port,
+    std.debug.print("[SceneMax MP] server listening address={s} port={d} game=\"{s}\" projectGuid=\"{s}\"\n", .{
+        bind_host,
+        sock.address.getPort(),
         fixedText(&config.game_name),
         fixedText(&config.project_guid),
     });
@@ -154,6 +172,7 @@ pub fn main(init: std.process.Init) !void {
     var network_variables = [_]NetworkVariable{.{}} ** max_network_variables;
     var network_entity_data = [_]NetworkEntityData{.{}} ** max_network_entity_data;
     var server_events = [_]ServerEvent{.{}} ** max_server_events;
+    var end_deliveries = EndDeliveries{};
     var next_client_id: u16 = 1;
     var next_session_id: u32 = 1000;
     var next_entity_id: u32 = 1;
@@ -174,6 +193,7 @@ pub fn main(init: std.process.Init) !void {
         const payload = buffer[8..received];
         const now = nowMs(io);
         expireActiveActions(&entities, now);
+        end_deliveries.pump(sock, io, &clients, &entities, now);
 
         switch (packet_type) {
             .login_request => {
@@ -192,7 +212,10 @@ pub fn main(init: std.process.Init) !void {
                     try sendReject(sock, io, message.from);
                     continue;
                 }
-                const session = resolveSession(&sessions, &next_session_id, login.requested_session_id, login.create_session, login.session_name);
+                const session = resolveSession(&sessions, &next_session_id, login.requested_session_id, login.create_session, login.session_name) orelse {
+                    try sendReject(sock, io, message.from);
+                    continue;
+                };
                 const assigned = next_client_id;
                 next_client_id +%= 1;
                 if (next_client_id == 0) next_client_id = 1;
@@ -208,9 +231,10 @@ pub fn main(init: std.process.Init) !void {
                 };
                 try sendLoginAccepted(sock, io, message.from, assigned, session.id, session.name);
                 try broadcastServerState(sock, io, &clients, &sessions);
+                try sendSurfaceBases(sock, io, message.from, &entities, &network_entity_data, session.id, login.scene_id);
+                try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, session.id, login.scene_id);
                 try sendSnapshot(sock, io, message.from, &entities, session.id, login.scene_id, now);
                 try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, session.id, login.scene_id);
-                try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, session.id, login.scene_id);
                 try sendInitialSyncComplete(sock, io, message.from, assigned);
             },
             .heartbeat => {
@@ -221,6 +245,7 @@ pub fn main(init: std.process.Init) !void {
             },
             .join_scene => {
                 if (findClient(&clients, client_id)) |client| {
+                    client.generation +%= 1;
                     client.last_seen_ms = now;
                     client.address = message.from;
                     const old_scene_id = client.scene_id;
@@ -235,23 +260,29 @@ pub fn main(init: std.process.Init) !void {
                     }
                     try destroyClientEntities(sock, io, &clients, &entities, &network_entity_data, client.id, client.session_id, old_scene_id);
                     clearSceneNetworkStateIfEmpty(&clients, &network_variables, &network_entity_data, &server_events, client.session_id, old_scene_id);
+                    try sendSurfaceBases(sock, io, message.from, &entities, &network_entity_data, client.session_id, client.scene_id);
+                    try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, client.session_id, client.scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
-                    try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, client.session_id, client.scene_id);
                     try sendInitialSyncComplete(sock, io, message.from, client.id);
                 }
             },
             .join_session => {
                 if (findClient(&clients, client_id)) |client| {
                     if (payload.len < 68) continue;
-                    client.last_seen_ms = now;
-                    client.address = message.from;
                     const old_session_id = client.session_id;
                     const old_scene_id = client.scene_id;
                     const requested_session_id = std.mem.readInt(u32, payload[0..][0..4], .little);
                     var requested_session_name = [_]u8{0} ** 64;
                     copyFixed(&requested_session_name, payload, 4);
-                    const session = resolveJoinSession(&sessions, &next_session_id, requested_session_id, requested_session_name);
+                    const session = resolveJoinSession(&sessions, &next_session_id, requested_session_id, requested_session_name) orelse {
+                        // v1 has no join-rejection packet: retain the old room
+                        // while the client applies its bounded join timeout.
+                        continue;
+                    };
+                    client.generation +%= 1;
+                    client.last_seen_ms = now;
+                    client.address = message.from;
                     if (verbose_packet_logs) {
                         std.debug.print("[SceneMax MP] join session client={d} from={d} to={d} name=\"{s}\" scene=\"{s}\"\n", .{
                             client.id,
@@ -266,9 +297,10 @@ pub fn main(init: std.process.Init) !void {
                     clearSceneNetworkStateIfEmpty(&clients, &network_variables, &network_entity_data, &server_events, old_session_id, old_scene_id);
                     try sendLoginAccepted(sock, io, message.from, client.id, session.id, session.name);
                     try broadcastServerState(sock, io, &clients, &sessions);
+                    try sendSurfaceBases(sock, io, message.from, &entities, &network_entity_data, client.session_id, client.scene_id);
+                    try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, client.session_id, client.scene_id);
                     try sendSnapshot(sock, io, message.from, &entities, client.session_id, client.scene_id, now);
                     try sendNetworkVariableSnapshot(sock, io, message.from, &network_variables, client.session_id, client.scene_id);
-                    try sendNetworkEntityDataSnapshot(sock, io, message.from, &network_entity_data, client.session_id, client.scene_id);
                     try sendInitialSyncComplete(sock, io, message.from, client.id);
                 }
             },
@@ -315,15 +347,27 @@ pub fn main(init: std.process.Init) !void {
             .active_action_start => {
                 const client = findClient(&clients, client_id) orelse continue;
                 const entity = findOwnedActiveEntity(&entities, client.id, client.session_id, client.scene_id, payload) orelse continue;
-                storeActiveAction(entity, payload, now);
-                if (isStructuralActionStart(payload)) {
+                if (storeActiveAction(entity, payload, now)) {
                     try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
                 }
             },
             .active_action_end => {
                 const client = findClient(&clients, client_id) orelse continue;
+                if (!std.meta.eql(client.address, message.from)) continue;
                 const entity = findOwnedActiveEntity(&entities, client.id, client.session_id, client.scene_id, payload) orelse continue;
-                clearActiveAction(entity, payload);
+                for (&entities, 0..) |*candidate, index| {
+                    if (candidate != entity) continue;
+                    if (end_deliveries.accept(&clients, entity, index, payload, now)) {
+                        sendEndPacket(sock, io, message.from, .action_end_receipt, 0, payload[0..8]);
+                        end_deliveries.pump(sock, io, &clients, &entities, now);
+                    }
+                    break;
+                }
+            },
+            .action_end_receipt => {
+                const client = findClient(&clients, client_id) orelse continue;
+                if (!std.meta.eql(client.address, message.from)) continue;
+                end_deliveries.receipt(client.*, payload);
             },
             .network_event => {
                 const client = findClient(&clients, client_id) orelse continue;
@@ -351,6 +395,7 @@ pub fn main(init: std.process.Init) !void {
                 client.address = message.from;
                 const stored = storeNetworkEntityData(&network_entity_data, client.session_id, client.scene_id, payload);
                 if (stored) {
+                    retireMaterialForShader(&entities, payload);
                     try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
                 }
             },
@@ -476,54 +521,73 @@ fn decodeLoginRequest(payload: []const u8) ?LoginRequest {
     return login;
 }
 
-fn resolveSession(sessions: *[max_sessions]Session, next_session_id: *u32, requested_id: u32, create: bool, requested_name: [64]u8) *Session {
+fn allocateSession(sessions: *[max_sessions]Session, next_session_id: *u32, requested_id: u32, requested_name: [64]u8) ?*Session {
+    // IDs are identities, not storage indices; never overwrite occupied rooms.
+    var free: ?*Session = null;
+    for (sessions) |*session| {
+        if (!session.active) { free = session; break; }
+    }
+    const slot = free orelse return null;
+    var id = requested_id;
+    if (id == 0) {
+        id = next_session_id.*;
+        while (id == 0 or findSession(sessions, id) != null) id +%= 1;
+        next_session_id.* = id +% 1;
+    }
+    slot.* = .{ .active = true, .id = id };
+    if (isEmpty(&requested_name)) {
+        writeDefaultSessionName(&slot.name, id);
+    } else {
+        slot.name = requested_name;
+    }
+    return slot;
+}
+
+fn resolveSession(sessions: *[max_sessions]Session, next_session_id: *u32, requested_id: u32, create: bool, requested_name: [64]u8) ?*Session {
     if (!create and requested_id != 0) {
         if (findSession(sessions, requested_id)) |session| return session;
     }
-
-    const id = if (create or requested_id == 0) blk: {
-        const allocated = next_session_id.*;
-        next_session_id.* += 1;
-        break :blk allocated;
-    } else requested_id;
-
-    const slot = id % max_sessions;
-    sessions[slot] = .{ .active = true, .id = id };
-    if (isEmpty(&requested_name)) {
-        writeDefaultSessionName(&sessions[slot].name, id);
-    } else {
-        sessions[slot].name = requested_name;
-    }
-    return &sessions[slot];
+    return allocateSession(sessions, next_session_id, if (create) 0 else requested_id, requested_name);
 }
 
-fn resolveJoinSession(sessions: *[max_sessions]Session, next_session_id: *u32, requested_id: u32, requested_name: [64]u8) *Session {
+fn resolveJoinSession(sessions: *[max_sessions]Session, next_session_id: *u32, requested_id: u32, requested_name: [64]u8) ?*Session {
     if (requested_id != 0) {
         if (findSession(sessions, requested_id)) |session| return session;
-        const slot = requested_id % max_sessions;
-        sessions[slot] = .{ .active = true, .id = requested_id };
-        if (isEmpty(&requested_name)) {
-            writeDefaultSessionName(&sessions[slot].name, requested_id);
-        } else {
-            sessions[slot].name = requested_name;
-        }
-        return &sessions[slot];
-    }
-
-    if (!isEmpty(&requested_name)) {
+    } else if (!isEmpty(&requested_name)) {
         if (findSessionByName(sessions, requested_name)) |session| return session;
     }
+    return allocateSession(sessions, next_session_id, requested_id, requested_name);
+}
 
-    const allocated = next_session_id.*;
-    next_session_id.* += 1;
-    const slot = allocated % max_sessions;
-    sessions[slot] = .{ .active = true, .id = allocated };
-    if (isEmpty(&requested_name)) {
-        writeDefaultSessionName(&sessions[slot].name, allocated);
-    } else {
-        sessions[slot].name = requested_name;
+test "room allocation preserves explicit identities generated IDs and capacity" {
+    var sessions = [_]Session{.{}} ** max_sessions;
+    var next: u32 = 1000;
+    var name = [_]u8{0} ** 64;
+    writeAscii(&name, "named-room");
+    const original = resolveSession(&sessions, &next, 1000, false, [_]u8{0} ** 64).?;
+    const collision = resolveJoinSession(&sessions, &next, 1256, [_]u8{0} ** 64).?;
+    try std.testing.expect(original != collision);
+    const generated = resolveJoinSession(&sessions, &next, 0, name).?;
+    try std.testing.expectEqual(@as(u32, 1001), generated.id);
+    try std.testing.expectEqual(@as(u32, 1000), original.id);
+    try std.testing.expect(resolveJoinSession(&sessions, &next, 0, name).? == generated);
+    while (activeSessionCount(&sessions) < max_sessions) {
+        _ = resolveSession(&sessions, &next, 0, true, [_]u8{0} ** 64).?;
     }
-    return &sessions[slot];
+    const before = next;
+    try std.testing.expect(resolveJoinSession(&sessions, &next, 99999, name) == null);
+    try std.testing.expectEqual(before, next);
+    try std.testing.expect(resolveJoinSession(&sessions, &next, 1000, name).? == original);
+    try std.testing.expectEqual(@as(u32, 1256), collision.id);
+}
+
+test "generated room IDs wrap without zero or overwriting occupied IDs" {
+    var sessions = [_]Session{.{}} ** max_sessions;
+    var next: u32 = std.math.maxInt(u32);
+    const empty = [_]u8{0} ** 64;
+    _ = resolveJoinSession(&sessions, &next, 1, empty).?;
+    try std.testing.expectEqual(std.math.maxInt(u32), resolveSession(&sessions, &next, 0, true, empty).?.id);
+    try std.testing.expectEqual(@as(u32, 2), resolveSession(&sessions, &next, 0, true, empty).?.id);
 }
 
 fn findSession(sessions: *[max_sessions]Session, session_id: u32) ?*Session {
@@ -599,18 +663,84 @@ fn expireClients(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, en
     }
 }
 
-fn storeActiveAction(entity: *Entity, payload: []const u8, now: i64) void {
-    if (payload.len < 12 + active_action_command_size) return;
+fn newerActionSequence(sequence: u16, previous: u16) bool {
+    const distance = sequence -% previous;
+    return distance != 0 and distance < 0x8000;
+}
+
+fn testActionPayload(slot: u8, sequence: u16) [12 + active_action_command_size]u8 {
+    var payload = [_]u8{0} ** (12 + active_action_command_size);
+    payload[4] = slot;
+    std.mem.writeInt(u16, payload[6..][0..2], sequence, .little);
+    std.mem.writeInt(u32, payload[8..][0..4], 10000, .little);
+    @memcpy(payload[12..16], "test");
+    return payload;
+}
+
+test "duplicate starts do not restart duration and sequence wrap is accepted" {
+    var entity: Entity = .{};
+    const first = testActionPayload(64, 65535);
+    try std.testing.expect(storeActiveAction(&entity, &first, 100));
+    try std.testing.expect(!storeActiveAction(&entity, &first, 500));
+    try std.testing.expectEqual(@as(i64, 100), entity.active_actions[0].started_at_ms);
+    const wrapped = testActionPayload(64, 0);
+    try std.testing.expect(storeActiveAction(&entity, &wrapped, 600));
+    try std.testing.expect(!storeActiveAction(&entity, &first, 700));
+    _ = clearActiveAction(&entity, first[0..8]);
+    try std.testing.expect(entity.active_actions[0].active);
+    try std.testing.expectEqual(@as(u16, 0), entity.active_actions[0].sequence);
+}
+
+test "end before start and after expiry prevents resurrection" {
+    var entity: Entity = .{};
+    const ended = testActionPayload(1, 7);
+    _ = clearActiveAction(&entity, ended[0..8]);
+    try std.testing.expect(!storeActiveAction(&entity, &ended, 10));
+    const old = testActionPayload(1, 6);
+    try std.testing.expect(!storeActiveAction(&entity, &old, 20));
+    const next = testActionPayload(1, 8);
+    try std.testing.expect(storeActiveAction(&entity, &next, 30));
+    _ = clearActiveAction(&entity, next[0..8]);
+    try std.testing.expect(!entity.active_actions[0].active);
+    try std.testing.expect(!storeActiveAction(&entity, &next, 40));
+    const later = testActionPayload(1, 9);
+    try std.testing.expect(storeActiveAction(&entity, &later, 50));
+    entity.active_actions[0].active = false; // Expiry frees storage, not its watermark.
+    try std.testing.expect(!storeActiveAction(&entity, &later, 60));
+    entity = .{}; // New entity generation may reuse the storage.
+    try std.testing.expect(storeActiveAction(&entity, &ended, 70));
+}
+
+test "action capacity rejection does not consume sequence and slots are independent" {
+    var entity: Entity = .{};
+    for (1..max_active_actions + 1) |slot| {
+        const payload = testActionPayload(@intCast(slot), 12);
+        try std.testing.expect(storeActiveAction(&entity, &payload, 0));
+    }
+    const overflow = testActionPayload(64, 12);
+    try std.testing.expect(!storeActiveAction(&entity, &overflow, 0));
+    const end = testActionPayload(1, 12);
+    _ = clearActiveAction(&entity, end[0..8]);
+    try std.testing.expect(storeActiveAction(&entity, &overflow, 10));
+    const invalid = testActionPayload(0, 12);
+    try std.testing.expect(!storeActiveAction(&entity, &invalid, 0));
+    try std.testing.expect(!storeActiveAction(&entity, overflow[0..8], 0));
+    _ = clearActiveAction(&entity, overflow[0..7]);
+    try std.testing.expect(entity.active_actions[0].active);
+}
+
+fn storeActiveAction(entity: *Entity, payload: []const u8, now: i64) bool {
+    if (payload.len < 12 + active_action_command_size) return false;
     const slot = payload[4];
-    if (slot == 0) return;
+    if (slot == 0) return false;
     const sequence = std.mem.readInt(u16, payload[6..][0..2], .little);
+    if (entity.action_sequences[slot]) |previous| {
+        if (!newerActionSequence(sequence, previous)) return false;
+    }
     const duration_ms = std.mem.readInt(u32, payload[8..][0..4], .little);
     var target: ?*ActiveAction = null;
     for (&entity.active_actions) |*action| {
         if (action.active and action.slot == slot) {
-            if (sequence < action.sequence) {
-                return;
-            }
             target = action;
             break;
         }
@@ -623,7 +753,9 @@ fn storeActiveAction(entity: *Entity, payload: []const u8, now: i64) void {
             }
         }
     }
-    const action = target orelse return;
+    const action = target orelse return false;
+    entity.action_sequences[slot] = sequence;
+    entity.action_ended[slot] = false;
     action.* = .{
         .active = true,
         .slot = slot,
@@ -641,30 +773,52 @@ fn storeActiveAction(entity: *Entity, payload: []const u8, now: i64) void {
             fixedText(&action.command),
         });
     }
+    return true;
 }
 
-fn isStructuralActionStart(payload: []const u8) bool {
-    if (payload.len < 5) return false;
-    return payload[4] >= 64;
-}
-
-fn clearActiveAction(entity: *Entity, payload: []const u8) void {
-    if (payload.len < 8) return;
+// Returns true only for a newly accepted end, including end-before-start or
+// an end received after local expiry. Callers relay only accepted notifications.
+fn clearActiveAction(entity: *Entity, payload: []const u8) bool {
+    if (payload.len < 8) return false;
     const slot = payload[4];
+    if (slot == 0) return false;
     const sequence = std.mem.readInt(u16, payload[6..][0..2], .little);
-    for (&entity.active_actions) |*action| {
-        if (action.active and action.slot == slot and action.sequence == sequence) {
-            action.active = false;
-            if (verbose_packet_logs) {
-                std.debug.print("[SceneMax MP] active action end entity={d} slot={d} seq={d}\n", .{
-                    entity.network_id,
-                    slot,
-                    sequence,
-                });
-            }
-            return;
-        }
+    if (entity.action_sequences[slot]) |previous| {
+        if (sequence == previous) {
+            if (entity.action_ended[slot]) return false;
+        } else if (!newerActionSequence(sequence, previous)) return false;
     }
+    entity.action_sequences[slot] = sequence;
+    entity.action_ended[slot] = true;
+    for (&entity.active_actions) |*action| {
+        if (action.active and action.slot == slot) action.active = false;
+    }
+    if (verbose_packet_logs) {
+        std.debug.print("[SceneMax MP] active action end entity={d} slot={d} seq={d}\n", .{ entity.network_id, slot, sequence });
+    }
+    return true;
+}
+
+test "ends relay once including after expiry and across sequence wrap" {
+    var entity: Entity = .{};
+    const first = testActionPayload(1, 65535);
+    try std.testing.expect(storeActiveAction(&entity, &first, 0));
+    entity.active_actions[0].active = false;
+    try std.testing.expect(clearActiveAction(&entity, first[0..8]));
+    try std.testing.expect(!clearActiveAction(&entity, first[0..8]));
+    const wrapped = testActionPayload(1, 0);
+    try std.testing.expect(storeActiveAction(&entity, &wrapped, 1));
+    try std.testing.expect(!clearActiveAction(&entity, first[0..8]));
+    try std.testing.expect(entity.active_actions[0].active);
+    try std.testing.expect(clearActiveAction(&entity, wrapped[0..8]));
+    try std.testing.expect(!clearActiveAction(&entity, wrapped[0..8]));
+    const ahead = testActionPayload(1, 1);
+    try std.testing.expect(clearActiveAction(&entity, ahead[0..8]));
+    try std.testing.expect(!storeActiveAction(&entity, &ahead, 2));
+    try std.testing.expect(!clearActiveAction(&entity, ahead[0..8]));
+    try std.testing.expect(!clearActiveAction(&entity, ahead[0..7]));
+    entity = .{};
+    try std.testing.expect(clearActiveAction(&entity, ahead[0..8]));
 }
 
 fn expireActiveActions(entities: *[max_entities]Entity, now: i64) void {
@@ -727,6 +881,7 @@ fn decodePacketType(value: u8) ?PacketType {
         25 => .network_variable_update,
         26 => .server_event_register,
         27 => .network_entity_data_update,
+        28 => .action_end_receipt,
         30 => .snapshot,
         31 => .server_state,
         32 => .initial_sync_complete,
@@ -953,6 +1108,96 @@ fn networkVariableSlot(network_variables: *[max_network_variables]NetworkVariabl
         if (!network_variables[slot].active) return slot;
     }
     return null;
+}
+
+// Shader application removes the native material override. Keep the shader
+// base for later material assignments, whose empty-name reset restores it.
+fn shaderReset(value: []const u8) bool {
+    if (value.len == 0 or std.mem.eql(u8, value, "null")) return true;
+    const parsed = std.json.parseFromSlice([]const u8, std.heap.page_allocator, value, .{}) catch return false;
+    defer parsed.deinit();
+    return std.mem.trim(u8, parsed.value, " \t\r\n").len == 0;
+}
+
+fn shaderLiteral(encoded: []const u8) ?[network_entity_data_value_size]u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, encoded, .{}) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+    const value = parsed.value.object.get("value") orelse return null;
+    if (value != .string and value != .null) return null;
+    const literal = std.json.Stringify.valueAlloc(std.heap.page_allocator, value, .{}) catch return null;
+    defer std.heap.page_allocator.free(literal);
+    if (literal.len >= network_entity_data_value_size) return null;
+    var result = [_]u8{0} ** network_entity_data_value_size;
+    @memcpy(result[0..literal.len], literal);
+    return result;
+}
+
+fn retireMaterialForShader(entities: *[max_entities]Entity, payload: []const u8) void {
+    if (payload.len < network_entity_data_update_size) return;
+    var field = [_]u8{0} ** network_entity_data_field_size;
+    copyFixed(&field, payload, 4);
+    if (!std.ascii.eqlIgnoreCase(fixedText(&field), "shader")) return;
+    const id = std.mem.readInt(u32, payload[0..][0..4], .little);
+    for (entities) |*entity| {
+        if (!entity.active or entity.network_id != id) continue;
+        var value = [_]u8{0} ** network_entity_data_value_size;
+        copyFixed(&value, payload, 4 + network_entity_data_field_size);
+        value = shaderLiteral(fixedText(&value)) orelse return;
+        if (isEmpty(&entity.first_shader)) {
+            // A reset before any shader is a no-op, including for native bindings.
+            if (shaderReset(fixedText(&value))) return;
+            entity.first_shader = value;
+            for (entity.active_actions) |action| {
+                if (action.active and action.slot == 251) entity.shader_base_material = action.command;
+            }
+        }
+        for (&entity.active_actions) |*action| {
+            if (action.active and action.slot == 251) action.active = false;
+        }
+        entity.action_ended[251] = true;
+        return;
+    }
+}
+
+test "shader retires material override while preserving other actions" {
+    var entities = [_]Entity{.{}} ** max_entities;
+    entities[0].active = true;
+    entities[0].network_id = 7;
+    entities[0].active_actions[0] = .{ .active = true, .slot = 251, .sequence = 3 };
+    entities[0].active_actions[1] = .{ .active = true, .slot = 3, .sequence = 4 };
+    entities[0].action_sequences[251] = 3;
+    var payload = [_]u8{0} ** network_entity_data_update_size;
+    std.mem.writeInt(u32, payload[0..4], 7, .little);
+    @memcpy(payload[4..10], "custom");
+    retireMaterialForShader(&entities, &payload);
+    try std.testing.expect(entities[0].active_actions[0].active);
+    @memcpy(payload[4..10], "shader");
+    const empty = "{\"type\":\"string\",\"value\":\"\"}";
+    @memcpy(payload[68..][0..empty.len], empty);
+    retireMaterialForShader(&entities, &payload);
+    try std.testing.expect(entities[0].active_actions[0].active);
+    try std.testing.expect(isEmpty(&entities[0].first_shader));
+    @memcpy(entities[0].active_actions[0].command[0..8], "original");
+    @memset(payload[68..], 0);
+    const base = "{\"type\":\"string\",\"value\":\"base\"}";
+    @memcpy(payload[68..][0..base.len], base);
+    retireMaterialForShader(&entities, &payload);
+    try std.testing.expect(!entities[0].active_actions[0].active);
+    try std.testing.expect(entities[0].active_actions[1].active);
+    try std.testing.expect(entities[0].action_ended[251]);
+    try std.testing.expectEqual(@as(?u16, 3), entities[0].action_sequences[251]);
+    try std.testing.expectEqualStrings("original", fixedText(&entities[0].shader_base_material));
+    entities[0].active_actions[0].active = true;
+    @memcpy(entities[0].active_actions[0].command[0..8], "replaced");
+    @memset(payload[68..], 0);
+    const reset = "{\"type\":\"null\",\"value\":null}";
+    @memcpy(payload[68..][0..reset.len], reset);
+    retireMaterialForShader(&entities, &payload);
+    try std.testing.expect(!entities[0].active_actions[0].active);
+    try std.testing.expectEqualStrings("original", fixedText(&entities[0].shader_base_material));
+    try std.testing.expectEqualStrings("\"base\"", fixedText(&entities[0].first_shader));
+    try std.testing.expect(shaderReset("\" \\t\""));
 }
 
 fn storeNetworkEntityData(network_entity_data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8, payload: []const u8) bool {
@@ -1198,6 +1443,28 @@ fn sendNetworkVariableSnapshot(sock: net.Socket, io: std.Io, address: net.IpAddr
             fixedText(&scene_id),
             sent,
         });
+    }
+}
+
+// A bounded SceneMax command preamble recreates the first pre-shader material.
+// It precedes latest shader data and surviving material overrides, without adding
+// per-frame synchronization or changing packet layouts.
+fn sendSurfaceBases(sock: net.Socket, io: std.Io, address: net.IpAddress, entities: *[max_entities]Entity, data: *[max_network_entity_data]NetworkEntityData, session_id: u32, scene_id: [128]u8) !void {
+    var field = [_]u8{0} ** network_entity_data_field_size;
+    @memcpy(field[0..6], "shader");
+    for (entities) |entity| {
+        if (!entity.active or entity.session_id != session_id or !sameScene(entity.scene_id, scene_id) or isEmpty(&entity.first_shader)) continue;
+        const latest = findNetworkEntityData(data, session_id, scene_id, entity.network_id, field) orelse continue;
+        // A current shader alone already captures the unchanged imported base.
+        const latest_literal = shaderLiteral(fixedText(&latest.value)) orelse continue;
+        if (isEmpty(&entity.shader_base_material) and !shaderReset(fixedText(&latest_literal))) continue;
+        var packet: [max_packet_size]u8 = undefined;
+        writeHeader(&packet, .command_dispatch, 0);
+        std.mem.writeInt(u32, packet[8..12], entity.network_id, .little);
+        const command = try std.fmt.bufPrint(packet[12..], "{s}\n{{network_entity}}.shader = {s}", .{
+            fixedText(&entity.shader_base_material), fixedText(&entity.first_shader),
+        });
+        sendUdp(sock, io, address, packet[0 .. 12 + command.len]);
     }
 }
 
@@ -1532,4 +1799,162 @@ fn logRelayPacket(packet_type: PacketType, client_id: u16, payload: []const u8) 
             payload.len,
         });
     }
+}
+
+// A bounded per-recipient outbox. A source receipt means all current recipients
+// were admitted, not that they have received the end. Old clients may ignore
+// receipts; retry state expires without changing protocol-v1 packet layouts.
+const max_end_deliveries = 4096;
+const end_retry_ms = 250;
+const end_retention_ms = 8000;
+const EndDelivery = struct {
+    active: bool = false,
+    client_index: usize = 0,
+    client_id: u16 = 0,
+    generation: u32 = 0,
+    entity_index: usize = 0,
+    entity_id: u32 = 0,
+    slot: u8 = 0,
+    sequence: u16 = 0,
+    started: i64 = 0,
+    sent: ?i64 = null,
+    fn valid(self: EndDelivery, clients: *const [max_clients]Client, entities: *const [max_entities]Entity, now: i64) bool {
+        if (!self.active or now - self.started >= end_retention_ms) return false;
+        const client = clients[self.client_index];
+        const entity = &entities[self.entity_index];
+        return client.active and client.id == self.client_id and client.generation == self.generation and
+            entity.active and entity.network_id == self.entity_id and
+            client.session_id == entity.session_id and sameScene(client.scene_id, entity.scene_id) and
+            entity.action_sequences[self.slot] == self.sequence and entity.action_ended[self.slot];
+    }
+};
+const EndDeliveries = struct {
+    entries: [max_end_deliveries]EndDelivery = [_]EndDelivery{.{}} ** max_end_deliveries,
+    cursor: usize = 0,
+    fn accept(self: *EndDeliveries, clients: *[max_clients]Client, entity: *Entity, entity_index: usize, payload: []const u8, now: i64) bool {
+        if (payload.len != 8 or payload[4] == 0) return false;
+        const slot = payload[4];
+        const sequence = std.mem.readInt(u16, payload[6..][0..2], .little);
+        if (entity.action_sequences[slot]) |previous| {
+            // A duplicate only repeats the source receipt, not downstream work.
+            if ((previous == sequence and entity.action_ended[slot]) or
+                (previous != sequence and !newerActionSequence(sequence, previous))) return true;
+        }
+        var required: usize = 0;
+        for (clients) |client| {
+            if (client.active and client.id != entity.owner_client and client.session_id == entity.session_id and sameScene(client.scene_id, entity.scene_id)) required += 1;
+        }
+        var available: usize = 0;
+        for (self.entries) |entry| { if (!entry.active) { available += 1; } }
+        // Admission is atomic: pressure must not consume the entity watermark.
+        if (available < required) return false;
+        if (!clearActiveAction(entity, payload)) return false;
+        var next: usize = 0;
+        for (clients, 0..) |client, index| {
+            if (!client.active or client.id == entity.owner_client or client.session_id != entity.session_id or !sameScene(client.scene_id, entity.scene_id)) continue;
+            while (self.entries[next].active) : (next += 1) {}
+            self.entries[next] = .{ .active = true, .client_index = index, .client_id = client.id, .generation = client.generation,
+                .entity_index = entity_index, .entity_id = entity.network_id, .slot = slot, .sequence = sequence, .started = now };
+            next += 1;
+        }
+        return true;
+    }
+    fn receipt(self: *EndDeliveries, client: Client, payload: []const u8) void {
+        if (payload.len != 8) return;
+        const id = std.mem.readInt(u32, payload[0..][0..4], .little);
+        const sequence = std.mem.readInt(u16, payload[6..][0..2], .little);
+        for (&self.entries) |*entry| {
+            if (entry.active and entry.client_id == client.id and entry.generation == client.generation and
+                entry.entity_id == id and entry.slot == payload[4] and entry.sequence == sequence) entry.active = false;
+        }
+    }
+    fn pump(self: *EndDeliveries, sock: net.Socket, io: std.Io, clients: *[max_clients]Client, entities: *[max_entities]Entity, now: i64) void {
+        var examined: usize = 0;
+        var sent: usize = 0;
+        while (examined < self.entries.len and sent < 128) : (examined += 1) {
+            const entry = &self.entries[self.cursor];
+            self.cursor = (self.cursor + 1) % self.entries.len;
+            if (!entry.valid(clients, entities, now)) { entry.active = false; continue; }
+            if (entry.sent) |last| { if (now - last < end_retry_ms) continue; }
+            var payload = [_]u8{0} ** 8;
+            std.mem.writeInt(u32, payload[0..4], entry.entity_id, .little);
+            payload[4] = entry.slot;
+            std.mem.writeInt(u16, payload[6..8], entry.sequence, .little);
+            sendEndPacket(sock, io, clients[entry.client_index].address, .active_action_end, entities[entry.entity_index].owner_client, &payload);
+            entry.sent = now;
+            sent += 1;
+        }
+    }
+};
+fn sendEndPacket(sock: net.Socket, io: std.Io, address: net.IpAddress, kind: PacketType, sender: u16, payload: []const u8) void {
+    var packet: [16]u8 = undefined;
+    writeHeader(&packet, kind, sender);
+    @memcpy(packet[8..16], payload[0..8]);
+    sendUdp(sock, io, address, &packet);
+}
+
+
+test "end outbox admits atomically and receipts are recipient generation and sequence bound" {
+    const clients = try std.testing.allocator.create([max_clients]Client);
+    defer std.testing.allocator.destroy(clients);
+    clients.* = [_]Client{.{}} ** max_clients;
+    clients[0] = .{ .active = true, .id = 1, .session_id = 1000 };
+    clients[1] = .{ .active = true, .id = 2, .session_id = 1000 };
+    clients[2] = .{ .active = true, .id = 3, .session_id = 1000 };
+    var entity = Entity{ .active = true, .network_id = 77, .owner_client = 1, .session_id = 1000 };
+    var payload = testActionPayload(3, 65535);
+    std.mem.writeInt(u32, payload[0..4], 77, .little);
+    var outbox = EndDeliveries{};
+    for (&outbox.entries) |*entry| { entry.active = true; }
+    outbox.entries[0].active = false; // two peers cannot fit into one free entry
+    try std.testing.expect(!outbox.accept(clients, &entity, 0, payload[0..8], 0));
+    try std.testing.expect(entity.action_sequences[3] == null);
+    outbox.entries[1].active = false;
+    try std.testing.expect(outbox.accept(clients, &entity, 0, payload[0..8], 0));
+    try std.testing.expect(outbox.entries[0].active and outbox.entries[1].active);
+    const first = outbox.entries[0];
+    try std.testing.expect(outbox.accept(clients, &entity, 0, payload[0..8], 7000));
+    try std.testing.expectEqual(first.started, outbox.entries[0].started);
+    var wrong = payload;
+    std.mem.writeInt(u16, wrong[6..8], 0, .little);
+    outbox.receipt(clients[1], wrong[0..8]);
+    try std.testing.expect(outbox.entries[0].active);
+    var wrong_client = clients[1]; wrong_client.generation += 1;
+    outbox.receipt(wrong_client, payload[0..8]);
+    try std.testing.expect(outbox.entries[0].active);
+    outbox.receipt(clients[1], payload[0..8]);
+    try std.testing.expect(!outbox.entries[0].active and outbox.entries[1].active);
+    outbox.receipt(clients[2], payload[0..8]);
+    try std.testing.expect(!outbox.entries[1].active);
+}
+
+test "end retry ownership expires on wrap replacement destruction leave and deadline" {
+    const clients = try std.testing.allocator.create([max_clients]Client);
+    defer std.testing.allocator.destroy(clients);
+    clients.* = [_]Client{.{}} ** max_clients;
+    clients[0] = .{ .active = true, .id = 2, .session_id = 1000 };
+    const entities = try std.testing.allocator.create([max_entities]Entity);
+    defer std.testing.allocator.destroy(entities);
+    entities.* = [_]Entity{.{}} ** max_entities;
+    entities[0] = .{ .active = true, .network_id = 77, .owner_client = 1, .session_id = 1000 };
+    entities[0].action_sequences[3] = 65535; entities[0].action_ended[3] = true;
+    const entry = EndDelivery{ .active = true, .client_id = 2, .generation = 1, .entity_id = 77, .slot = 3, .sequence = 65535 };
+    try std.testing.expect(entry.valid(clients, entities, 7999));
+    try std.testing.expect(!entry.valid(clients, entities, 8000));
+    clients[0].generation += 1;
+    try std.testing.expect(!entry.valid(clients, entities, 1));
+    clients[0].generation = 1; clients[0].id = 3;
+    try std.testing.expect(!entry.valid(clients, entities, 1));
+    clients[0].id = 2; clients[0].session_id = 2000;
+    try std.testing.expect(!entry.valid(clients, entities, 1));
+    clients[0].session_id = 1000; clients[0].active = false;
+    try std.testing.expect(!entry.valid(clients, entities, 1));
+    clients[0].active = true; entities[0].active = false;
+    try std.testing.expect(!entry.valid(clients, entities, 1));
+    entities[0].active = true; entities[0].network_id = 78;
+    try std.testing.expect(!entry.valid(clients, entities, 1));
+    entities[0].network_id = 77;
+    const next = testActionPayload(3, 0);
+    try std.testing.expect(storeActiveAction(&entities[0], &next, 1));
+    try std.testing.expect(!entry.valid(clients, entities, 1));
 }

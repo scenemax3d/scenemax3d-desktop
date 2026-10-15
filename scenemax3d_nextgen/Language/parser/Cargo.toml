@@ -6,8 +6,10 @@ rust-version.workspace = true
 build = "build.rs"
 
 [dependencies]
+scenemax_script_values = { path = "../../Common/script_values" }
 antlr-rust = "0.3.0-beta"
 thiserror.workspace = true
+serde_json.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true

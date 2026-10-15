@@ -7,6 +7,7 @@ mod catalog;
 mod diagnostics;
 mod filesystem;
 mod projector;
+pub mod multiplayer;
 mod recovery;
 mod runtime_log;
 mod scene_save;

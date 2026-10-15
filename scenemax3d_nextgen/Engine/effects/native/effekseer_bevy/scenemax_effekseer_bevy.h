@@ -29,6 +29,7 @@ typedef struct SceneMaxEffekseerInstanceDesc {
   float playback_speed;
   bool looped;
   float dynamic_inputs[4];
+  float elapsed_seconds; // Initial finite playback position; applied once per generation.
 } SceneMaxEffekseerInstanceDesc;
 
 typedef struct SceneMaxEffekseerVulkanContext {
@@ -78,6 +79,20 @@ typedef struct SceneMaxEffekseerRenderer SceneMaxEffekseerRenderer;
 
 SCENEMAX_EFFEKSEER_API SceneMaxEffekseerRenderer*
 scenemax_effekseer_create_vulkan(const SceneMaxEffekseerVulkanContext* context);
+
+// Inspect compiled effect lifetime without a renderer or graphics device.
+// Negative means invalid/unavailable, positive infinity means unbounded/dynamic.
+// A finite result includes one frame of margin.
+SCENEMAX_EFFEKSEER_API float
+scenemax_effekseer_effect_duration(const uint8_t* data, size_t length);
+
+// True only for a successfully started, matching generation whose native handle ended.
+SCENEMAX_EFFEKSEER_API bool
+scenemax_effekseer_playback_finished(SceneMaxEffekseerRenderer* renderer, uint64_t id, uint64_t generation);
+
+// Opt in only when the caller supplies elapsed_seconds (formerly tail padding).
+SCENEMAX_EFFEKSEER_API void
+scenemax_effekseer_enable_elapsed_playback(SceneMaxEffekseerRenderer* renderer);
 
 SCENEMAX_EFFEKSEER_API void
 scenemax_effekseer_destroy(SceneMaxEffekseerRenderer* renderer);

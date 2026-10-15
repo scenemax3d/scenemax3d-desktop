@@ -59,14 +59,43 @@ pub(super) fn spawn_scenemax_collider_decl(
     entity.id()
 }
 
+pub(super) fn enqueue_runtime_primitive(
+    commands: &mut Commands,
+    entity: Entity,
+    resource: &str,
+    options: &EntityOptions,
+    runtime_assets: &SceneMaxRuntimeAssets,
+) {
+    if primitive_kind(resource).is_none() { return; }
+    let resource = resource.to_owned();
+    let options = options.clone();
+    let root = runtime_assets.asset_root.clone().unwrap_or_default();
+    let builtin = runtime_assets.builtin_asset_root.clone();
+    commands.queue(move |world: &mut World| {
+        if world.get_entity(entity).is_err()
+            || !world.contains_resource::<Assets<Mesh>>()
+            || !world.contains_resource::<Assets<StandardMaterial>>() {
+            return;
+        }
+        let Some(server) = world.get_resource::<AssetServer>().cloned() else { return; };
+        let primitive = world.resource_scope(|world, mut meshes: Mut<Assets<Mesh>>| {
+            let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+            primitive_mesh(&options, &resource, &server, &root, builtin.as_deref(), &mut meshes, &mut materials)
+        });
+        if let Some(primitive) = primitive {
+            world.entity_mut(entity).insert(primitive);
+        }
+    });
+}
+
 pub(super) fn primitive_mesh(
     options: &EntityOptions,
     resource: &str,
     asset_server: &AssetServer,
     asset_root: &Path,
     builtin_asset_root: Option<&Path>,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
 ) -> Option<(Mesh3d, MeshMaterial3d<StandardMaterial>)> {
     let mesh = match primitive_kind(resource)? {
         SceneMaxPrimitiveKind::Box => {
@@ -785,6 +814,7 @@ impl BoxMeshBuilder {
 }
 
 pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeDecl> {
+    let mut seen = HashSet::new();
     program
         .statements
         .iter()
@@ -797,7 +827,7 @@ pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeD
             else {
                 return None;
             };
-            if cinematic_resource_id(resource).is_some() {
+            if options.resource_value.is_some() || !options.geometry_values.is_empty() || cinematic_resource_id(resource).is_some() || !seen.insert(name.clone()) {
                 return None;
             }
             Some(ModelRuntimeDecl {
@@ -807,89 +837,6 @@ pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeD
             })
         })
         .collect()
-}
-
-pub(super) fn instantiate_object_pool_declarations(
-    program: &Program,
-    functions_by_name: &HashMap<String, FunctionRuntime>,
-    object_pools: &mut SceneMaxObjectPools,
-) -> Vec<ModelRuntimeDecl> {
-    let mut declarations = Vec::new();
-    for statement in &program.statements {
-        let Statement::ObjectPool(pool) = statement else {
-            continue;
-        };
-        let Some(prototype) = object_pool_prototype(pool, functions_by_name) else {
-            tracing::warn!(
-                pool = %pool.name,
-                factory = %pool.factory,
-                "SceneMax object pool factory has no model declaration"
-            );
-            continue;
-        };
-
-        let mut runtime = ObjectPoolRuntime {
-            factory: pool.factory.clone(),
-            prototype: Some(prototype.clone()),
-            ..Default::default()
-        };
-        for index in 0..pool.size.min(256) {
-            let member_name = format!("__pool_{}_{}", pool.name, index);
-            runtime.available.push(member_name.clone());
-            runtime.members.insert(member_name.clone());
-            let mut options = prototype.options.clone();
-            options.hidden = true;
-            declarations.push(ModelRuntimeDecl {
-                name: member_name,
-                resource: prototype.resource.clone(),
-                options,
-            });
-            runtime.created_count += 1;
-        }
-        runtime.available.reverse();
-        object_pools.pools.insert(pool.name.clone(), runtime);
-        tracing::info!(
-            pool = %pool.name,
-            factory = %pool.factory,
-            size = pool.size,
-            "prepared SceneMax object pool"
-        );
-    }
-    declarations
-}
-
-pub(super) fn object_pool_prototype(
-    pool: &ObjectPoolStatement,
-    functions_by_name: &HashMap<String, FunctionRuntime>,
-) -> Option<ModelRuntimeDecl> {
-    let function = functions_by_name.get(&pool.factory)?;
-    function.actions.iter().find_map(|action| {
-        let Statement::ModelDecl {
-            name,
-            resource,
-            options,
-        } = action
-        else {
-            return None;
-        };
-        let returned_name = function.actions.iter().find_map(|action| {
-            let Statement::ReturnValue {
-                value: AssignmentValue::Symbol(value),
-            } = action
-            else {
-                return None;
-            };
-            Some(value)
-        });
-        if returned_name.is_some_and(|returned_name| returned_name != name) {
-            return None;
-        }
-        Some(ModelRuntimeDecl {
-            name: String::new(),
-            resource: resource.clone(),
-            options: options.clone(),
-        })
-    })
 }
 
 pub(super) fn spawn_unsupported_model_placeholder(
@@ -1028,9 +975,11 @@ pub(super) struct SceneMaxRuntimeVisibility {
     pub(super) visible: bool,
 }
 
+// Static scenery must preserve open space and walkable surfaces. Bounds boxes can
+// fill a concave mesh interior and force characters through neighboring surfaces.
+// Authored collision shapes and primitive dimensions still take precedence.
 pub(super) fn should_use_static_mesh_collider(options: &EntityOptions) -> bool {
     matches!(options.body_kind, Some(SceneMaxBodyKind::Static))
-        && options.collider
         && options.collision_shape.is_none()
         && options.size.is_none()
         && options.radius.is_none()
@@ -1041,7 +990,7 @@ pub(super) fn should_fit_model_bounds_collider(
     resource: &str,
     options: &EntityOptions,
 ) -> bool {
-    if options.size.is_some() || options.radius.is_some() {
+    if should_use_static_mesh_collider(options) || options.size.is_some() || options.radius.is_some() {
         return false;
     }
     let Some(body_kind) = physics_body_kind(options) else {
@@ -2980,6 +2929,10 @@ pub(super) fn clear_character_mode(
     entity_commands.try_remove::<SceneMaxCharacterMotor>();
     entity_commands.try_remove::<PendingCharacterMode>();
     entity_commands.try_remove::<TnuaController<SceneMaxControlScheme>>();
+    // Required components outlive removal of their controller. The backend reads
+    // TnuaMotor directly and would otherwise keep applying its last forces.
+    entity_commands.try_remove::<bevy_tnua::TnuaMotor>();
+    entity_commands.try_remove::<bevy_tnua::TnuaRigidBodyTracker>();
     entity_commands.try_remove::<TnuaConfig<SceneMaxControlScheme>>();
     entity_commands.try_remove::<TnuaAvian3dSensorShape>();
     entity_commands.try_remove::<LockedAxes>();
@@ -3440,6 +3393,9 @@ pub(super) fn collision_condition_matches(
         return false;
     }
     let target_exact = transforms_by_name.get(target).copied();
+    if target.contains(".\"") && target_exact.is_none() {
+        return false;
+    }
     let Some(target_transform) = target_exact
         .or_else(|| collision_owner_transform(target, transforms_by_name, collider_bounds))
     else {
@@ -3450,6 +3406,9 @@ pub(super) fn collision_condition_matches(
             return false;
         }
         let source_exact = transforms_by_name.get(source).copied();
+        if source.contains(".\"") && source_exact.is_none() {
+            return false;
+        }
         if let (Some(source_transform), Some(target_transform)) = (source_exact, target_exact) {
             if !attached_collider_owner_distance_allows(
                 source,
@@ -3580,7 +3539,8 @@ pub(super) fn collision_reference_hidden(
 }
 
 pub(super) fn normalize_collision_reference(reference: &str) -> &str {
-    reference.trim().trim_matches('"')
+    let reference = reference.trim();
+    reference.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(reference)
 }
 
 pub(super) fn collision_threshold(source: &str, target: &str) -> f32 {
@@ -3988,21 +3948,47 @@ pub(super) fn transform_from_options_resolved_scoped(
 
 #[cfg(test)]
 pub(super) fn timed_turn_from_statement(turn: &scenemax_parser::TurnStatement) -> TimedTurn {
-    timed_turn_from_statement_resolved(turn, turn.degrees, turn.duration_seconds)
+    timed_turn_from_statement_resolved(turn, turn.degrees, turn.duration_seconds, Quat::IDENTITY)
 }
 
 pub(super) fn timed_turn_from_statement_resolved(
     turn: &scenemax_parser::TurnStatement,
     degrees: f32,
     duration_seconds: f32,
+    rotation: Quat,
 ) -> TimedTurn {
     let duration = duration_seconds.max(0.001);
     TimedTurn {
+        curve: motion_ease::Curve::literal(&turn.easing),        network_lifetime: None,
+        controller_owner: None,
         remaining_seconds: duration,
         duration_seconds: duration,
-        radians_per_second: degrees.to_radians() / duration,
+        radians_per_second: resolved_turn_degrees(turn, degrees, rotation).to_radians() / duration,
+        axis: turn.axis,
+        target_degrees: turn.absolute.then_some(degrees),
         loop_condition: turn.loop_condition.clone(),
     }
+}
+
+/// Read the selected Euler component in the same Y-Z-X convention as reset,
+/// then apply its shortest signed delta in the entity's local axis basis.
+pub(super) fn target_turn_degrees(axis: scenemax_parser::RotationAxis, target: f32, rotation: Quat) -> f32 {
+    if !target.is_finite() || !rotation.is_finite() || rotation.length_squared() < f32::EPSILON { return 0.; }
+    let (y, z, x) = rotation.normalize().to_euler(EulerRot::YZX);
+    let current = match axis {
+        scenemax_parser::RotationAxis::X => x,
+        scenemax_parser::RotationAxis::Y => y,
+        scenemax_parser::RotationAxis::Z => z,
+    }.to_degrees().rem_euclid(360.);
+    let direct = target - current;
+    let wrapped = direct.rem_euclid(360.);
+    if wrapped > 180. || (wrapped == 180. && direct < 0.) { wrapped - 360. } else { wrapped }
+}
+
+pub(super) fn resolved_turn_degrees(turn: &scenemax_parser::TurnStatement, degrees: f32, rotation: Quat) -> f32 {
+    if turn.absolute {
+        turn.axis.map(|axis| target_turn_degrees(axis, degrees, rotation)).unwrap_or(0.)
+    } else { degrees }
 }
 
 #[cfg(test)]
@@ -4028,6 +4014,9 @@ pub(super) fn timed_move_from_statement_resolved(
     let direction = movement_direction_vector(movement.direction, transform);
 
     TimedMove {
+        character_motion: !movement.direction.is_axis(),
+        curve: motion_ease::Curve::literal(&movement.easing),        network_lifetime: None,
+        controller_owner: None,
         remaining_seconds: duration,
         duration_seconds: duration,
         velocity: direction * directional_move_speed_resolved(distance, duration_seconds),
@@ -4049,11 +4038,33 @@ pub(super) fn directional_move_speed_resolved(distance: f32, duration_seconds: f
     }
 }
 
+pub(super) fn append_timed_turn(commands: &mut Commands, entity: Entity, turn: TimedTurn) {
+    commands.queue(move |world: &mut World| {
+        let Ok(mut entity) = world.get_entity_mut(entity) else { return; };
+        if let Some(mut turns) = entity.get_mut::<TimedTurns>() { turns.turns.push(turn); }
+        else { entity.insert(TimedTurns { turns: vec![turn] }); }
+    });
+}
+
 pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_move: TimedMove) {
     commands.queue(move |world: &mut World| {
         let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
             return;
         };
+        if timed_move.character_motion {
+            if let Some(speed) = entity_mut.get::<SceneMaxCharacterController>().map(|c| c.move_speed) {
+                if let Some(mut motor) = entity_mut.get_mut::<SceneMaxCharacterMotor>() {
+                    motor.timed_motion = timed_move.velocity / speed.max(0.001);
+                    motor.timed_motion_remaining_seconds = timed_move.remaining_seconds;
+                    motor.timed_motion_duration_seconds = timed_move.duration_seconds;
+                    motor.timed_motion_curve = timed_move.curve;
+                    motor.timed_motion_loop = timed_move.loop_condition;
+                    motor.timed_motion_owner = timed_move.controller_owner;
+                    motor.network_lifetime = timed_move.network_lifetime;
+                    return;
+                }
+            }
+        }
         let mut timed_move = Some(timed_move);
         if let Some(mut moves) = entity_mut.get_mut::<TimedMoves>() {
             moves.moves.push(timed_move.take().unwrap());
@@ -4222,8 +4233,13 @@ pub(super) fn set_character_move_intent_resolved(
     if continuous_delta_seconds.is_some() {
         set_character_motion(motor, direction, speed_ratio, CHARACTER_INPUT_TTL_SECONDS);
     } else {
+        motor.timed_motion_owner = None;
+        motor.network_lifetime = None;
         motor.timed_motion = direction.normalize_or_zero() * speed_ratio;
         motor.timed_motion_remaining_seconds = duration;
+        motor.timed_motion_duration_seconds = duration;
+        motor.timed_motion_curve = Default::default();
+        motor.timed_motion_loop = movement.loop_condition.clone();
     }
 }
 
@@ -4259,6 +4275,9 @@ pub(super) fn movement_direction_vector(direction: MoveDirection, transform: &Tr
         MoveDirection::Right => -horizontal_right(transform),
         MoveDirection::Up => Vec3::Y,
         MoveDirection::Down => -Vec3::Y,
+        MoveDirection::AxisX => Vec3::X,
+        MoveDirection::AxisY => Vec3::Y,
+        MoveDirection::AxisZ => Vec3::Z,
     }
 }
 
@@ -4350,7 +4369,7 @@ pub(super) fn resolve_position_value_runtime(
 ) -> Option<Vec3> {
     match position {
         PositionValue::Entity(entity) => {
-            Some(lookup_subject_transform(entity, transforms_by_name?)?.translation)
+            Some(lookup_scoped_subject_transform(entity, vars, scope, transforms_by_name?)?.translation)
         }
         PositionValue::Coordinates(values) if values.len() == 3 => Some(Vec3::new(
             resolve_position_expr_runtime(
@@ -4405,7 +4424,7 @@ pub(super) fn resolve_position_expr_runtime(
             axis,
             offset,
         } => {
-            let transform = transforms_by_name?.get(entity)?;
+            let transform = lookup_scoped_subject_transform(entity, vars, scope, transforms_by_name?)?;
             let base = match axis {
                 SceneMaxAxis::X => transform.translation.x,
                 SceneMaxAxis::Y => transform.translation.y,
@@ -4440,6 +4459,20 @@ pub(super) fn evaluate_position_expr(
     }
 }
 
+// Resolve the object identity before looking up its pose. Function parameters
+// and pooled/returned entities need not have a cached authored-name transform.
+fn lookup_scoped_subject_transform(
+    subject: &str,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    transforms: &HashMap<String, Transform>,
+) -> Option<Transform> {
+    let (owner, joint) = crate::ik::split_target(subject);
+    let resolved = scenemax_runtime_vm_core::references::entity_name(owner, vars, scope);
+    let key = crate::ik::reference(&resolved, joint.as_deref());
+    lookup_subject_transform(&key, transforms)
+}
+
 pub(super) fn lookup_subject_transform(
     subject: &str,
     transforms_by_name: &HashMap<String, Transform>,
@@ -4469,7 +4502,7 @@ pub(super) fn update_timed_turns(
     mut commands: Commands,
     mut scene_entities: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
-        Query<(Entity, &mut Transform, &mut TimedTurn)>,
+        Query<(Entity, &mut Transform, &mut TimedTurns, Option<&Camera3d>)>,
     )>,
 ) {
     let transforms_by_name = scene_entities
@@ -4483,24 +4516,90 @@ pub(super) fn update_timed_turns(
         .map(collect_guards_by_name)
         .unwrap_or_default();
 
-    for (entity, mut transform, mut turn) in &mut scene_entities.p1() {
-        let delta = time.delta_secs().min(turn.remaining_seconds);
-        transform.rotate_y(turn.radians_per_second * delta);
-        turn.remaining_seconds -= delta;
-        if turn.remaining_seconds <= 0.0 {
-            if turn.loop_condition.as_ref().is_some_and(|condition| {
-                condition_matches(
-                    condition,
-                    &vars,
-                    &guards_by_name,
-                    Some(&transforms_by_name),
-                    Some(&collider_bounds),
-                )
-            }) {
+    for (entity, mut transform, mut turns, camera) in &mut scene_entities.p1() {
+        turns.turns.retain_mut(|turn| {
+            let delta = time.delta_secs().min(turn.remaining_seconds);
+            if camera.is_some() { camera::motion::apply_camera_turn(&mut transform, turn, delta); }
+            else { apply_turn_delta(&mut transform, turn, delta); }
+            turn.remaining_seconds -= delta;
+            if turn.remaining_seconds > 0. { return true; }
+            if turn.loop_condition.as_ref().is_some_and(|condition| condition_matches(
+                condition, &vars, &guards_by_name, Some(&transforms_by_name), Some(&collider_bounds))) {
                 turn.remaining_seconds = turn.duration_seconds;
-                continue;
+                if let (Some(axis), Some(target)) = (turn.axis, turn.target_degrees) {
+                    turn.radians_per_second = if camera.is_some() { camera::motion::camera_target_delta(axis, target, transform.rotation) } else { target_turn_degrees(axis, target, transform.rotation) }.to_radians() / turn.duration_seconds;
+                }
+                return true;
             }
-            commands.entity(entity).try_remove::<TimedTurn>();
+            false
+        });
+        if turns.turns.is_empty() { commands.entity(entity).try_remove::<TimedTurns>(); }
+    }
+}
+
+pub(super) fn apply_turn_delta(transform: &mut Transform, turn: &TimedTurn, delta: f32) {
+    let radians = turn.radians_per_second * turn.curve.step(turn.duration_seconds, turn.remaining_seconds, delta);
+    if let Some(axis) = turn.axis {
+        let axis = match axis {
+            scenemax_parser::RotationAxis::X => Vec3::X,
+            scenemax_parser::RotationAxis::Y => Vec3::Y,
+            scenemax_parser::RotationAxis::Z => Vec3::Z,
+        };
+        transform.rotate_local(Quat::from_axis_angle(axis, radians));
+    } else {
+        transform.rotate_y(radians);
+    }
+}
+
+#[cfg(test)]
+mod axis_rotation_tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+
+    #[test]
+    fn relative_axes_use_local_basis_and_timed_completion_releases_lifetime() {
+        for (axis, vector) in [("x", Vec3::X), ("y", Vec3::Y), ("z", Vec3::Z)] {
+            let program = scenemax_parser::parse_program(&format!("subject.rotate({axis}+120) in 2 seconds")).unwrap();
+            let Statement::Turn(statement) = &program.statements[0] else { panic!(); };
+            let mut turn = timed_turn_from_statement(statement);
+            let lease = std::sync::Arc::new(());
+            let weak = std::sync::Arc::downgrade(&lease);
+            turn.network_lifetime = Some(lease);
+            let mut world = World::new();
+            world.init_resource::<SceneMaxVars>();
+            world.init_resource::<SceneMaxStartupProgram>();
+            world.init_resource::<SceneMaxColliderBounds>();
+            let mut time = Time::<()>::default();
+            time.advance_by(std::time::Duration::from_secs_f32(0.5));
+            world.insert_resource(time);
+            let base = Quat::from_rotation_y(0.7) * Quat::from_rotation_x(0.3);
+            let entity = world.spawn((Transform::from_rotation(base), TimedTurns { turns: vec![turn] })).id();
+            world.run_system_once(update_timed_turns).unwrap();
+            let expected = base * Quat::from_axis_angle(vector, 30_f32.to_radians());
+            assert!(world.get::<Transform>(entity).unwrap().rotation.abs_diff_eq(expected, 0.0001));
+            assert!(weak.upgrade().is_some());
+            world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs(3));
+            world.run_system_once(update_timed_turns).unwrap();
+            let expected = base * Quat::from_axis_angle(vector, 120_f32.to_radians());
+            assert!(world.get::<Transform>(entity).unwrap().rotation.abs_diff_eq(expected, 0.0001));
+            assert!(world.get::<TimedTurns>(entity).is_none());
+            assert!(weak.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn ordinary_turn_keeps_world_y_and_continuous_rotation_uses_axis() {
+        let base = Quat::from_rotation_z(0.6);
+        for (source, expected) in [
+            ("subject.turn left 90 in 1 seconds", Quat::from_rotation_y(45_f32.to_radians()) * base),
+            ("subject.rotate(x-90) in 1 seconds", base * Quat::from_rotation_x(-45_f32.to_radians())),
+        ] {
+            let p = scenemax_parser::parse_program(source).unwrap();
+            let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+            let turn = timed_turn_from_statement(turn);
+            let mut transform = Transform::from_rotation(base);
+            apply_turn_delta(&mut transform, &turn, 0.5);
+            assert!(transform.rotation.abs_diff_eq(expected, 0.0001));
         }
     }
 }
@@ -4531,7 +4630,7 @@ pub(super) fn update_timed_moves(
         let mut active_moves = Vec::with_capacity(movements.moves.len());
         for mut movement in movements.moves.drain(..) {
             let delta = time.delta_secs().min(movement.remaining_seconds);
-            transform.translation += movement.velocity * delta;
+            transform.translation += movement.velocity * movement.curve.step(movement.duration_seconds, movement.remaining_seconds, delta);
             movement.remaining_seconds -= delta;
             if movement.remaining_seconds <= 0.0 {
                 if let Some(final_translation) = movement.final_translation {
@@ -4579,6 +4678,9 @@ pub(super) fn update_timed_jumps(
 
 pub(super) fn feed_tnua_character_controllers(
     time: Res<Time>,
+    vars: Res<SceneMaxVars>,
+    program: Res<SceneMaxStartupProgram>,
+    positions: Query<(&SceneMaxEntity, &Transform)>,
     mut character_configs: ResMut<Assets<SceneMaxControlSchemeConfig>>,
     mut characters: Query<(
         &SceneMaxCharacterController,
@@ -4588,14 +4690,24 @@ pub(super) fn feed_tnua_character_controllers(
     )>,
 ) {
     let delta = time.delta_secs();
+    let guards = program.0.as_ref().map(collect_guards_by_name).unwrap_or_default();
+    let transforms = positions.iter().map(|(entity, transform)| (entity.name.clone(), *transform)).collect::<HashMap<_,_>>();
     for (settings, mut motor, config_handle, mut controller) in &mut characters {
         controller.initiate_action_feeding();
 
         let mut desired_motion = Vec3::ZERO;
         if motor.timed_motion_remaining_seconds > 0.0 {
-            desired_motion += motor.timed_motion;
-            motor.timed_motion_remaining_seconds =
-                (motor.timed_motion_remaining_seconds - delta).max(0.0);
+            let step = delta.min(motor.timed_motion_remaining_seconds);
+            let curve_delta = motor.timed_motion_curve.step(motor.timed_motion_duration_seconds.max(0.001), motor.timed_motion_remaining_seconds, step);
+            if delta > 0. { desired_motion += motor.timed_motion * (curve_delta / delta); }
+            motor.timed_motion_remaining_seconds = (motor.timed_motion_remaining_seconds - step).max(0.0);
+            if motor.timed_motion_remaining_seconds <= 0. && motor.timed_motion_loop.as_ref().is_some_and(|condition|
+                condition_matches(condition, &vars, &guards, Some(&transforms), None)) {
+                motor.timed_motion_remaining_seconds = motor.timed_motion_duration_seconds;
+            }
+        }
+        if motor.timed_motion_remaining_seconds <= 0.0 {
+            motor.network_lifetime = None;
         }
         if motor.motion_ttl_seconds > 0.0 {
             desired_motion += motor.desired_motion;
@@ -4645,14 +4757,14 @@ mod static_mesh_collider_tests {
     use super::*;
 
     #[test]
-    fn plain_static_imported_model_avoids_mesh_collider() {
+    fn plain_static_imported_model_uses_surface_collider() {
         let options = EntityOptions {
             body_kind: Some(SceneMaxBodyKind::Static),
             ..Default::default()
         };
 
-        assert!(!should_use_static_mesh_collider(&options));
-        assert!(should_fit_model_bounds_collider(
+        assert!(should_use_static_mesh_collider(&options));
+        assert!(!should_fit_model_bounds_collider(
             "scenery",
             "imported_model",
             &options
@@ -4698,6 +4810,12 @@ mod static_mesh_collider_tests {
 
         assert!(!should_use_static_mesh_collider(&explicit_box));
         assert!(!should_use_static_mesh_collider(&explicit_size));
+        for shape in [SceneMaxCollisionShape::Boxes, SceneMaxCollisionShape::None] {
+            let options = EntityOptions { collision_shape: Some(shape), ..explicit_box.clone() };
+            assert!(!should_use_static_mesh_collider(&options));
+            assert_eq!(should_fit_model_bounds_collider("scenery", "imported_model", &options),
+                shape == SceneMaxCollisionShape::Boxes);
+        }
         assert_eq!(
             model_bounds_collision_shape(
                 "scenery",
@@ -4913,6 +5031,43 @@ mod static_mesh_collider_tests {
             target_shape,
             target_transform,
         ));
+    }
+
+    #[test]
+    fn static_imported_surface_preserves_open_space_with_scale_and_rotation() {
+        use bevy::ecs::system::SystemState;
+        let mut world = World::new();
+        let mut meshes = Assets::<Mesh>::default();
+        // Connected floor and walls: a bounds box would fill the walkable interior.
+        let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vec![
+                [-10.0, 0.0, -10.0], [10.0, 0.0, -10.0],
+                [10.0, 0.0, 10.0], [-10.0, 0.0, 10.0],
+                [-10.0, 20.0, -10.0], [10.0, 20.0, -10.0],
+            ])
+            .with_inserted_indices(Indices::U32(vec![0, 2, 1, 0, 3, 2, 0, 1, 5, 0, 5, 4]));
+        let handle = meshes.add(mesh);
+        let root_transform = Transform::from_xyz(2.0, 3.0, -4.0)
+            .with_rotation(Quat::from_rotation_y(0.4))
+            .with_scale(Vec3::splat(0.1));
+        let root_global = GlobalTransform::from(root_transform);
+        let root = world.spawn_empty().id();
+        let child = world.spawn((Mesh3d(handle), root_global)).id();
+        world.entity_mut(root).add_child(child);
+        let mut state = SystemState::<(Query<&Children>, Query<(&Mesh3d, &GlobalTransform)>)>::new(&mut world);
+        let (children, mesh_entities) = state.get(&world).unwrap();
+        let StaticMeshColliderBuild::Ready { mut collider } = build_static_mesh_collider(
+            root, &root_global, &children, &mesh_entities, &meshes,
+        ) else { panic!("expected imported surface collider"); };
+        collider.set_scale(root_transform.scale, 10);
+        let origin = root_transform.translation + Vec3::Y;
+        let (distance, normal) = collider.cast_ray(
+            root_transform.translation, root_transform.rotation, origin, Vec3::NEG_Y, 2.0, true,
+        ).expect("floor must support the character inside the scenery");
+        assert!((distance - 1.0).abs() < 0.0001, "floor should be at the rendered height: {distance}");
+        assert!(normal.dot(Vec3::Y) > 0.99);
+        assert!(collider.cast_ray(root_transform.translation, root_transform.rotation,
+            origin, Vec3::Y, 0.5, true).is_none(), "open space must not become a solid box");
     }
 
     #[test]
@@ -5173,7 +5328,7 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
                 ..Default::default()
             },
             Some([0.02, 0.02, 0.02]),
-            &SceneMaxVars(HashMap::from([("entity_scale".to_owned(), 1.42)])),
+            &SceneMaxVars::from(HashMap::from([("entity_scale".to_owned(), 1.42)])),
             &HashMap::new(),
             None,
             None,
@@ -5187,6 +5342,7 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
         let scope = SceneMaxScopeFrame {
             vars: HashMap::from([("entity_scale".to_owned(), 2.73)]),
             aliases: HashMap::new(),
+            ..Default::default()
         };
         let transform = transform_from_options_resolved_scoped(
             &EntityOptions {
@@ -5217,6 +5373,7 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
         let scope = SceneMaxScopeFrame {
             vars: HashMap::from([("dist".to_owned(), 14.7)]),
             aliases: HashMap::new(),
+            ..Default::default()
         };
         let throw_at = scenemax_parser::PhysicsThrowAtStatement {
             target: "object".to_owned(),
@@ -5399,5 +5556,116 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
             descendant_visibility_for_root(&Visibility::Visible),
             Visibility::Inherited
         );
+    }
+}
+
+#[cfg(test)]
+mod rotate_to_tests {
+    use super::*;
+    use scenemax_parser::RotationAxis;
+    #[test]
+    fn shortest_target_turn_wraps_and_preserves_half_turn_direction() {
+        for (axis, vector) in [(RotationAxis::X, Vec3::X), (RotationAxis::Y, Vec3::Y), (RotationAxis::Z, Vec3::Z)] {
+            for (start, target, expected) in [(350_f32, 10., 20.), (10., 350., -20.), (10., -10., -20.), (350., 730., 20.), (10., 10., 0.)] {
+                let actual = target_turn_degrees(axis, target, Quat::from_axis_angle(vector, start.to_radians()));
+                assert!((actual - expected).abs() < 0.001, "{axis:?}: {actual} != {expected}");
+            }
+        }
+        assert!((target_turn_degrees(RotationAxis::Y, 180., Quat::IDENTITY) - 180.).abs() < 0.001);
+        assert!((target_turn_degrees(RotationAxis::Y, 0., Quat::from_rotation_y(std::f32::consts::PI)) + 180.).abs() < 0.001);
+        assert_eq!(target_turn_degrees(RotationAxis::Y, -180., Quat::IDENTITY), -180.);
+        assert_eq!(target_turn_degrees(RotationAxis::Y, -540., Quat::IDENTITY), -180.);
+        assert_eq!(target_turn_degrees(RotationAxis::Y, 540., Quat::IDENTITY), 180.);
+        assert_eq!(target_turn_degrees(RotationAxis::Y, f32::NAN, Quat::IDENTITY), 0.);
+    }
+    #[test]
+    fn target_turn_uses_current_euler_component_and_local_basis() {
+        let base = rotation_from_degrees(SceneMaxVec3 { x: 30., y: 40., z: 50. });
+        for (axis, vector, start) in [("x", Vec3::X, 30.), ("y", Vec3::Y, 40.), ("z", Vec3::Z, 50.)] {
+            let p = scenemax_parser::parse_program(&format!("subject.rotate to ({axis} {}) in 2 seconds", start + 20.)).unwrap();
+            let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+            let controller = timed_turn_from_statement_resolved(turn, turn.degrees, 2., base);
+            let mut transform = Transform::from_rotation(base);
+            apply_turn_delta(&mut transform, &controller, 1.);
+            assert!(transform.rotation.abs_diff_eq(base * Quat::from_axis_angle(vector, 10_f32.to_radians()), 0.0001));
+            apply_turn_delta(&mut transform, &controller, 1.);
+            assert!(transform.rotation.abs_diff_eq(base * Quat::from_axis_angle(vector, 20_f32.to_radians()), 0.0001));
+        }
+    }
+}
+
+#[cfg(test)]
+mod rotate_to_lifecycle_tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn zero_duration_finishes_and_loop_recalculates_from_current_orientation() {
+        for looped in [false, true] {
+            let source = if looped { "subject.rotate to (y 10) in 1 seconds loop while active == 1" }
+                else { "subject.rotate to (y 10) in 0 seconds" };
+            let p = scenemax_parser::parse_program(source).unwrap();
+            let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+            let rotation = Quat::from_rotation_y(350_f32.to_radians());
+            let controller = timed_turn_from_statement_resolved(turn, 10., turn.duration_seconds, rotation);
+            let mut world = World::new();
+            world.init_resource::<SceneMaxVars>();
+            world.resource_mut::<SceneMaxVars>().0.insert("active".into(), 1.);
+            world.init_resource::<SceneMaxStartupProgram>();
+            world.init_resource::<SceneMaxColliderBounds>();
+            let mut time = Time::<()>::default();
+            time.advance_by(std::time::Duration::from_secs(1));
+            world.insert_resource(time);
+            let entity = world.spawn((Transform::from_rotation(rotation), TimedTurns { turns: vec![controller] })).id();
+            world.run_system_once(update_timed_turns).unwrap();
+            let expected = Quat::from_rotation_y(10_f32.to_radians());
+            assert!(world.get::<Transform>(entity).unwrap().rotation.dot(expected).abs() > 0.99999);
+            assert_eq!(world.get::<TimedTurns>(entity).is_some(), looped);
+            if looped {
+                world.run_system_once(update_timed_turns).unwrap();
+                assert!(world.get::<Transform>(entity).unwrap().rotation.dot(expected).abs() > 0.99999);
+                world.resource_mut::<SceneMaxVars>().0.insert("active".into(), 0.);
+                world.run_system_once(update_timed_turns).unwrap();
+                assert!(world.get::<TimedTurns>(entity).is_none());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod axis_move_tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn axis_moves_ignore_facing_and_scale_and_finish_at_the_requested_delta() {
+        for (axis, vector) in [("x", Vec3::X), ("y", Vec3::Y), ("z", Vec3::Z)] {
+            let p = scenemax_parser::parse_program(&format!("subject.move({axis}-8) in 2 seconds")).unwrap();
+            let Statement::Move(movement) = &p.statements[0] else { panic!(); };
+            let original = Transform::from_xyz(1., 2., 3.)
+                .with_rotation(Quat::from_rotation_y(1.2) * Quat::from_rotation_z(0.4))
+                .with_scale(Vec3::splat(3.));
+            let mut movement = timed_move_from_statement(movement, &original);
+            assert!(movement.velocity.abs_diff_eq(-vector * 4., 0.0001));
+            let lifetime = std::sync::Arc::new(());
+            let weak = std::sync::Arc::downgrade(&lifetime);
+            movement.network_lifetime = Some(lifetime);
+            let mut world = World::new();
+            world.init_resource::<SceneMaxVars>();
+            world.init_resource::<SceneMaxStartupProgram>();
+            world.init_resource::<SceneMaxColliderBounds>();
+            let mut time = Time::<()>::default();
+            time.advance_by(std::time::Duration::from_secs_f32(0.5));
+            world.insert_resource(time);
+            let entity = world.spawn((original, TimedMoves { moves: vec![movement] })).id();
+            world.run_system_once(update_timed_moves).unwrap();
+            assert!(world.get::<Transform>(entity).unwrap().translation.abs_diff_eq(original.translation - vector * 2., 0.0001));
+            world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs(4));
+            world.run_system_once(update_timed_moves).unwrap();
+            let actual = world.get::<Transform>(entity).unwrap();
+            assert!(actual.translation.abs_diff_eq(original.translation - vector * 8., 0.0001));
+            assert_eq!(actual.rotation, original.rotation);
+            assert_eq!(actual.scale, original.scale);
+            assert!(world.get::<TimedMoves>(entity).is_none());
+            assert!(weak.upgrade().is_none());
+        }
     }
 }

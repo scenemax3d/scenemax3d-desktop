@@ -1,3 +1,12 @@
+#[cfg(test)]
+mod resource_lifecycle_tests;
+#[cfg(test)]
+mod input_gameplay_tests;
+mod entity_stop;
+mod pool_lifecycle;
+mod animation_range;
+mod animation_rewind;
+mod motion_ease;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     env, fs,
@@ -46,7 +55,6 @@ use bevy_tnua::{
     prelude::{TnuaConfig, TnuaController, TnuaControllerPlugin, TnuaScheme},
 };
 use bevy_tnua_avian3d::prelude::{TnuaAvian3dPlugin, TnuaAvian3dSensorShape};
-#[cfg(test)]
 use scenemax_parser::AnimationStatement;
 use scenemax_parser::{
     AnimationControllerAction, AnimationControllerActionStatement,
@@ -56,7 +64,7 @@ use scenemax_parser::{
     CharacterModeStatement, CinematicLookAt, CinematicPlayStatement, Condition,
     EffekseerPlayStatement, EntityOptions, KeyEventStatement, KeyTrigger,
     LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
-    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, ObjectPoolStatement,
+    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement,
     PoolReleaseStatement, PositionExpr, PositionValue, PrintStatement, Program, SceneMaxAxis,
     SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement,
     Statement, ThrowMotionApplyStatement, ThrowMotionAsset, ThrowMotionEventStatement,
@@ -72,19 +80,23 @@ use scenemax_runtime_script_core::{
 };
 use scenemax_runtime_ui_core::{
     SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
-    list_view_text, percent, scaled_font_size, solve_widget_layout, sorted_widgets, target_key,
+    percent, scaled_font_size, solve_widget_layout, sorted_widgets, target_key,
 };
 use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpatial};
 use serde::Deserialize;
 
 mod actions;
+mod value_calls;
 mod ambient_light_designer;
 mod animation;
 mod audio;
 mod camera;
 mod effekseer;
+mod effect_commands;
 mod ik;
 mod lighting;
+mod labels;
+mod multiplayer;
 mod physics;
 mod retarget_designer;
 mod shader;
@@ -93,6 +105,7 @@ mod skybox;
 mod skybox_designer;
 mod sprites;
 mod startup;
+mod shared_entities;
 mod ui;
 
 use actions::*;
@@ -152,6 +165,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         asset_root.as_deref(),
     );
     let mut app = App::new();
+    multiplayer::initialize(&mut app, project_root.as_deref(), launch.script.as_deref());
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
         let source_path = builtin_asset_root.to_string_lossy().to_string();
         app.register_asset_source(
@@ -230,7 +244,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .init_resource::<SceneMaxDiagnosticsOverlay>()
         .add_plugins(default_plugins)
         .add_plugins(scenemax_materials::MaterialsPlugin)
+        .add_plugins(ui::shaders::SurfaceShaderPlugin)
+        .add_plugins(shader::ObjectShaderPlugin)
         .add_plugins(scenemax_ik::IkPlugin)
+        .add_systems(Update, (labels::prepare, labels::layout).chain())
+        .add_systems(PostUpdate, labels::billboard.before(bevy::transform::TransformSystems::Propagate))
+        .add_systems(Update, (ui::lists::select, ui::lists::render).chain().after(ui::apply_scenemax_ui_actions))
+        .add_systems(Update, (ui::edits::input, ui::edits::render).chain().after(ui::apply_scenemax_ui_actions).before(actions::apply_key_events))
+        .add_systems(PostUpdate, ui::edits::geometry::refresh.after(bevy::ui::UiSystems::Layout))
         .add_systems(Last, attachments::audit)
         .add_systems(
             PostUpdate,
@@ -239,6 +260,11 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                     .after(bevy::app::AnimationSystems)
                     .before(scenemax_ik::Solve),
                 ik::sync_targets.before(scenemax_ik::Solve),
+                // Resolve attachment targets before IK, then publish attachments
+                // from solved joints before world transforms propagate.
+                attachments::update
+                    .after(scenemax_ik::Solve)
+                    .before(bevy::transform::TransformSystems::Propagate),
                 ik::diagnostics.after(scenemax_ik::Solve),
             ),
         )
@@ -266,6 +292,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
         .add_systems(Update, apply_startup_runs_when_ready)
+        .add_systems(SpawnScene, shader::apply_pending_surfaces.after(SceneSpawnerSystems::SceneSpawn))
         .add_systems(
             SpawnScene,
             (
@@ -284,10 +311,9 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 apply_pending_character_modes,
                 cleanup_character_supports,
                 update_avian_collision_contacts,
-                activate_pending_pool_members,
                 apply_key_events,
                 update_virtual_colliders,
-                update_current_animation_vars,
+                (animation_rewind::apply_pending, update_current_animation_vars).chain(),
                 restore_inactive_animation_visual_rotations,
                 update_animation_runtime_controllers,
                 sync_collider_hidden_state_for_visibility,
@@ -339,6 +365,8 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             (
                 clear_scenemax_ui_on_scene_change,
                 apply_scenemax_ui_actions,
+                ui::image_shaders::update_sources,
+                ui::images::update_failed,
                 update_deferred_draw_clears,
                 update_scenemax_ui_eases,
                 update_scenemax_ui_message_animations,
@@ -740,6 +768,12 @@ fn format_count(count: usize) -> String {
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxObjectPools {
+    entity_templates: HashMap<String, (String, EntityOptions)>,
+    shared_variables: HashSet<String>,
+    shared_entities: HashSet<String>,
+    shared_lights: HashSet<String>,
+    root_entity_names: HashSet<String>,
+    entity_values: SceneMaxVars,
     aliases: HashMap<String, String>,
     pools: HashMap<String, ObjectPoolRuntime>,
 }
@@ -747,10 +781,11 @@ struct SceneMaxObjectPools {
 #[derive(Debug, Default)]
 struct ObjectPoolRuntime {
     factory: String,
-    prototype: Option<ModelRuntimeDecl>,
+    factory_scope: Option<SceneMaxScopeFrame>,
+    source_template: Option<(String, EntityOptions)>,
+    member_values: HashMap<String, scenemax_runtime_vm_core::references::Reference>,
     created_count: usize,
     available: Vec<String>,
-    pending_available: HashSet<String>,
     in_use: HashSet<String>,
     members: HashSet<String>,
 }
@@ -780,6 +815,7 @@ struct DelayedActionQueue {
 
 #[derive(Debug, Clone)]
 struct RegisteredKeyEvent {
+    scope: Option<SceneMaxScopeFrame>,
     id: usize,
     event: KeyEventStatement,
 }
@@ -794,6 +830,7 @@ struct RegisteredKeyEvents {
 struct RegisteredWhenEvent {
     id: usize,
     event: WhenEventStatement,
+    scope: Option<SceneMaxScopeFrame>,
 }
 
 #[derive(Debug, Default)]
@@ -804,6 +841,7 @@ struct RegisteredWhenEvents {
 
 #[derive(Debug, Clone)]
 struct RegisteredRunEvery {
+    scope: Option<SceneMaxScopeFrame>,
     id: usize,
     statement: Statement,
 }
@@ -816,6 +854,8 @@ struct RegisteredRunEveryEvents {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum SceneMaxControllerKey {
+    NetworkAction { entity: u32, slot: u8, sequence: u16 },
+    NetworkWhen(Box<SceneMaxControllerKey>, u32),
     Key(usize),
     RegisteredKey(usize),
     When(usize),
@@ -843,6 +883,8 @@ struct ActiveCollisionEvents {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum SceneMaxWhenEventKey {
+    NetworkTopLevel(usize, u32),
+    NetworkRegistered(usize, u32),
     TopLevel(usize),
     Registered(usize),
 }
@@ -904,7 +946,11 @@ type ModelAnimationRecords = Result<
 
 #[derive(Resource, Default)]
 struct SceneMaxRuntimeAssets {
+    root_entity_declarations: HashMap<String, scenemax_runtime_vm_core::references::Reference>,
+    pending_entity_handles: HashMap<String, Entity>,
     analyzer_records: HashMap<String, ModelAnimationRecords>,
+    named_frame_bounds: HashMap<(String, String), Result<(f32, f32), String>>,
+    frame_timelines: HashMap<bevy::asset::AssetId<Gltf>, Result<Vec<scenemax_assets::animation_ranges::Timeline>, String>>,
     asset_server: Option<AssetServer>,
     asset_root: Option<PathBuf>,
     builtin_asset_root: Option<PathBuf>,
@@ -919,7 +965,8 @@ struct SceneMaxRuntimeAssets {
     external_animations_by_name: HashMap<String, RuntimeExternalAnimation>,
     external_animation_misses: HashSet<String>,
     animation_controllers_by_name: HashMap<String, RuntimeAnimationController>,
-    pending_animation_controller_stops: Vec<String>,
+    pending_animation_rewinds: Vec<animation_rewind::Pending>,
+    pending_animation_controller_stops: Vec<(Entity, std::sync::Weak<()>)>,
     throw_motions_by_name: HashMap<String, RuntimeThrowMotionValue>,
     throw_motion_definitions_by_id: HashMap<String, RuntimeThrowMotionDefinition>,
     pending_throw_motion_applications: Vec<ThrowMotionApplyStatement>,
@@ -994,6 +1041,7 @@ impl SceneMaxAnimationDurations {
             .insert(normalized_animation_name(resolved_clip), duration);
     }
 
+    #[cfg(test)]
     fn lookup(&self, target: &str, requested_clip: &str) -> Option<f32> {
         let clip_key = normalized_animation_name(requested_clip);
         self.by_target_clip
@@ -1012,6 +1060,8 @@ struct SceneMaxUiRuntime {
     sprite_index_root: Option<PathBuf>,
     font_index: HashMap<String, SceneMaxBitmapFontAsset>,
     font_index_root: Option<PathBuf>,
+    font_index_builtin_root: Option<PathBuf>,
+    font_index_loaded: bool,
     bitmap_fonts: HashMap<String, SceneMaxBitmapFont>,
     draw_channels: HashMap<String, Entity>,
     print_channels: HashMap<String, Entity>,
@@ -1029,15 +1079,32 @@ struct LoadedSceneMaxUi {
 struct SceneMaxUiTarget {
     entity: Entity,
     text_entity: Option<Entity>,
+    multiplayer: bool,
+    widget_type: String,
+    ui_scale: f32,
 }
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxUiActionQueue {
+    input_focused: bool,
     actions: Vec<SceneMaxUiAction>,
+    remote_actions: Vec<SceneMaxUiAction>,
 }
 
 #[derive(Debug, Clone)]
 enum SceneMaxUiAction {
+    ImageShader {
+        target: UiTargetPath,
+        state: ui::image_shaders::Snapshot,
+    },
+    SurfaceShader {
+        target: UiTargetPath,
+        state: ui::shaders::Snapshot,
+    },
+    ImageState {
+        target: UiTargetPath,
+        state: ui::images::Snapshot,
+    },
     Load {
         name: String,
     },
@@ -1056,6 +1123,8 @@ enum SceneMaxUiAction {
         easing: String,
         direction: UiEaseDirection,
         duration_seconds: f32,
+        /// Receiver-local origin; preserved while remote UI creation is deferred.
+        received_at: Option<std::time::Instant>,
     },
     SetProperty {
         target: UiTargetPath,
@@ -1144,7 +1213,7 @@ struct SceneMaxBitmapFontAsset {
 
 #[derive(Debug, Clone)]
 struct SceneMaxBitmapFont {
-    image: Handle<Image>,
+    images: HashMap<u32, Handle<Image>>,
     metrics: scenemax_runtime_ui_core::bitmap::Font,
 }
 
@@ -1168,6 +1237,8 @@ struct SceneMaxUiTextVisualState {
 
 #[derive(Debug)]
 struct DelayedActions {
+    motion_wait: Option<String>,
+    controller_guard: Option<std::sync::Weak<()>>,
     remaining_seconds: f32,
     animation_wait: Option<DelayedAnimationWait>,
     actions: Vec<Statement>,
@@ -1177,6 +1248,7 @@ struct DelayedActions {
 
 #[derive(Debug)]
 struct DelayedAnimationWait {
+    controller_run: Option<std::sync::Weak<()>>,
     target: String,
     clip: String,
     started: bool,
@@ -1310,6 +1382,7 @@ struct RuntimeCinematicSegment {
 
 #[derive(Debug, Clone)]
 struct ActiveCinematicCamera {
+    completion: std::sync::Arc<()>,
     rig: RuntimeCinematicRig,
     playback: Vec<CinematicPlaybackSegment>,
     elapsed_seconds: f32,
@@ -1357,6 +1430,11 @@ struct AnimationRecordModel(String);
 
 #[derive(Debug, Component)]
 struct AnimationToPlay {
+    rewind: Option<scenemax_parser::animation_rewind::Playback>,
+    frame_range: Option<scenemax_parser::animation_range::AnimationFrameRange>,
+    frame_range_name: Option<String>,
+    controller_owner: Option<SceneMaxControllerKey>,
+    network_lifetime: Option<multiplayer::ActionLease>,
     clip: String,
     runtime_clip: String,
     looped: bool,
@@ -1402,6 +1480,18 @@ struct SceneMaxEquippedWeapon {
 
 #[derive(Debug, Clone)]
 struct RuntimeAnimationController {
+    declaration_scope: Option<SceneMaxScopeFrame>,
+    rewind_wait: std::sync::Weak<()>,
+    segments: Vec<AnimationStatement>,
+    segment: usize,
+    run_lifetime: Option<multiplayer::ActionLease>,
+    source: Option<(Entity, Handle<Gltf>, Vec<String>, Option<String>)>,
+    scope: Option<SceneMaxScopeFrame>,
+    advance_pending: bool,
+    start_wait: f32,
+
+    lifetime: std::sync::Weak<()>,
+    animation: AnimationStatement,
     target: String,
     clip: String,
     events: Vec<RuntimeAnimationControllerEvent>,
@@ -1633,10 +1723,38 @@ struct SceneMaxSpriteAnimation {
     duration_seconds: f32,
     elapsed_seconds: f32,
     looped: bool,
+    limit_seconds: Option<f32>,
+}
+
+#[derive(Debug, Component)]
+struct NetworkEffectResume(NetworkAnimationResume);
+
+#[derive(Debug, Component)]
+struct NetworkAnimationResume {
+    owner: SceneMaxControllerKey,
+    remaining_seconds: f64,
+    received_at: std::time::Instant,
+}
+impl NetworkAnimationResume {
+    fn loop_seek_seconds(&self, duration: f32, speed: f32, now: std::time::Instant) -> f32 {
+        let age = f64::from(u32::MAX) / 1000. - self.remaining_seconds
+            + now.saturating_duration_since(self.received_at).as_secs_f64();
+        (age.max(0.) * f64::from(speed)).rem_euclid(f64::from(duration.max(0.001))) as f32
+    }
+
+    fn seek_seconds(&self, duration: f32, speed: f32, now: std::time::Instant) -> f32 {
+        let remaining = (self.remaining_seconds - now.saturating_duration_since(self.received_at).as_secs_f64()).max(0.);
+        (duration - (remaining * f64::from(speed.max(0.001))) as f32).clamp(0., duration.max(0.))
+    }
 }
 
 #[derive(Debug, Component)]
 struct CurrentAnimation {
+    rewind: Option<animation_rewind::Playback>,
+    identity: Option<std::sync::Weak<()>>,
+    controller_owner: Option<SceneMaxControllerKey>,
+    network_lifetime: Option<multiplayer::ActionLease>,
+    playback_graphs: Vec<(Entity, Handle<AnimationGraph>)>,
     clip: String,
     looped: bool,
     speed: f32,
@@ -1644,16 +1762,28 @@ struct CurrentAnimation {
     duration_seconds: f32,
 }
 
-#[derive(Debug, Component)]
+#[derive(Debug, Component, Default)]
+struct TimedTurns { turns: Vec<TimedTurn> }
+
+#[derive(Debug)]
 struct TimedTurn {
+    curve: motion_ease::Curve,
+    network_lifetime: Option<multiplayer::ActionLease>,
+    controller_owner: Option<SceneMaxControllerKey>,
     remaining_seconds: f32,
     duration_seconds: f32,
     radians_per_second: f32,
+    axis: Option<scenemax_parser::RotationAxis>,
+    target_degrees: Option<f32>,
     loop_condition: Option<Condition>,
 }
 
 #[derive(Debug, Component)]
 struct TimedMove {
+    character_motion: bool,
+    curve: motion_ease::Curve,
+    network_lifetime: Option<multiplayer::ActionLease>,
+    controller_owner: Option<SceneMaxControllerKey>,
     remaining_seconds: f32,
     duration_seconds: f32,
     velocity: Vec3,
@@ -1693,9 +1823,14 @@ struct SceneMaxCharacterController {
 
 #[derive(Debug, Component, Default)]
 struct SceneMaxCharacterMotor {
+    network_lifetime: Option<multiplayer::ActionLease>,
+    timed_motion_owner: Option<SceneMaxControllerKey>,
     desired_motion: Vec3,
     motion_ttl_seconds: f32,
     timed_motion: Vec3,
+    timed_motion_duration_seconds: f32,
+    timed_motion_curve: motion_ease::Curve,
+    timed_motion_loop: Option<Condition>,
     timed_motion_remaining_seconds: f32,
     jump_hold_seconds: f32,
     pending_jump_speed: Option<f32>,
@@ -2042,7 +2177,7 @@ mod tests {
         let _ = fs::remove_dir_all(&log_dir);
         fs::create_dir_all(&log_dir).unwrap();
         initialize_runtime_logger(Some(&log_dir), None);
-        let vars = SceneMaxVars(HashMap::from([("counter".to_owned(), 7.0)]));
+        let vars = SceneMaxVars::from(HashMap::from([("counter".to_owned(), 7.0)]));
         let guards = HashMap::new();
 
         apply_logger_statement(
@@ -2098,7 +2233,7 @@ mod tests {
 
     #[test]
     fn ui_text_property_resolves_variable_expressions() {
-        let vars = SceneMaxVars(HashMap::from([("timer".to_owned(), 59.0)]));
+        let vars = SceneMaxVars::from(HashMap::from([("timer".to_owned(), 59.0)]));
         let guards = HashMap::new();
 
         assert_eq!(
@@ -2147,6 +2282,10 @@ mod tests {
     fn ui_sprite_frame_rect_selects_health_bar_rows() {
         assert_eq!(parse_ui_frame_value("5"), Some(5));
         assert_eq!(parse_ui_frame_value("5.4"), Some(5));
+        assert_eq!(parse_ui_frame_value("5.9"), Some(5));
+        assert_eq!(parse_ui_frame_value("-1.9"), Some(0));
+        assert_eq!(parse_ui_frame_value("NaN"), None);
+        assert_eq!(parse_ui_frame_value("inf"), None);
 
         let rect = ui_sprite_frame_rect(5, 1, 15, 384, 360);
         assert_eq!(rect.min, Vec2::new(0.0, 120.0));
@@ -2168,6 +2307,23 @@ mod tests {
         apply_ui_image_scale_mode(&widget, &mut image_node);
 
         assert!(matches!(image_node.image_mode, NodeImageMode::Stretch));
+    }
+
+    #[test]
+    fn ui_sprite_catalog_path_is_selected_case_insensitively() {
+        let widget: SceneMaxUiWidgetDef = serde_json::from_str(
+            r#"{"name":"image","type":"IMAGE","spriteName":"MiXeD"}"#,
+        ).unwrap();
+        let mut runtime = SceneMaxUiRuntime::default();
+        runtime.sprite_index.insert("mixed".into(), SceneMaxSpriteAsset {
+            path: "sprites/custom-atlas.png".into(), rows: 2, cols: 3,
+        });
+        let context = SceneMaxLaunchContext {
+            script_root: None, asset_root: None, builtin_asset_root: None,
+            window_width: 640, window_height: 360,
+        };
+        assert_eq!(ui_image_asset_candidates(&widget, &context, &runtime)[0],
+            "sprites/custom-atlas.png");
     }
 
     #[test]
@@ -2207,162 +2363,6 @@ mod tests {
         assert_eq!(sprite.cols, 1);
         assert_eq!(sprite.path, "sprites/bar1.png");
         let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn object_pool_prototype_uses_returned_factory_symbol() {
-        let functions = HashMap::from([(
-            "create_rock".to_owned(),
-            FunctionRuntime {
-                params: Vec::new(),
-                guard: None,
-                guard_recheck: false,
-                actions: vec![
-                    Statement::ModelDecl {
-                        name: "ignored".to_owned(),
-                        resource: "wrong_resource".to_owned(),
-                        options: EntityOptions::default(),
-                    },
-                    Statement::ModelDecl {
-                        name: "rock1".to_owned(),
-                        resource: "meshy_rock1_native".to_owned(),
-                        options: EntityOptions {
-                            hidden: true,
-                            ..Default::default()
-                        },
-                    },
-                    Statement::ReturnValue {
-                        value: AssignmentValue::Symbol("rock1".to_owned()),
-                    },
-                ],
-            },
-        )]);
-        let pool = ObjectPoolStatement {
-            name: "rocks".to_owned(),
-            factory: "create_rock".to_owned(),
-            size: 5,
-        };
-
-        let prototype = object_pool_prototype(&pool, &functions).unwrap();
-
-        assert_eq!(prototype.resource, "meshy_rock1_native");
-        assert!(prototype.options.hidden);
-    }
-
-    #[test]
-    fn object_pool_acquire_runs_factory_assignment_side_effects() {
-        let mut vars = SceneMaxVars(HashMap::from([("index".to_owned(), 1.0)]));
-        let mut object_pools = SceneMaxObjectPools::default();
-        object_pools.pools.insert(
-            "rocks".to_owned(),
-            ObjectPoolRuntime {
-                factory: "create_rock".to_owned(),
-                ..Default::default()
-            },
-        );
-        let functions = HashMap::from([(
-            "create_rock".to_owned(),
-            FunctionRuntime {
-                params: Vec::new(),
-                guard: None,
-                guard_recheck: false,
-                actions: vec![
-                    Statement::ModelDecl {
-                        name: "rock1".to_owned(),
-                        resource: "bone".to_owned(),
-                        options: EntityOptions::default(),
-                    },
-                    Statement::Assignment(scenemax_parser::AssignmentStatement {
-                        name: "index".to_owned(),
-                        value: AssignmentValue::Binary {
-                            left: Box::new(AssignmentValue::Symbol("index".to_owned())),
-                            operator: scenemax_parser::ArithmeticOperator::Add,
-                            right: Box::new(AssignmentValue::Number(1.0)),
-                        },
-                    }),
-                    Statement::ReturnValue {
-                        value: AssignmentValue::Symbol("rock1".to_owned()),
-                    },
-                ],
-            },
-        )]);
-
-        apply_pool_factory_acquire_side_effects(
-            "rocks",
-            &mut vars,
-            &object_pools,
-            &functions,
-            &HashMap::new(),
-            &HashMap::new(),
-            &SceneMaxColliderBounds::default(),
-        );
-
-        assert_eq!(vars.0.get("index"), Some(&2.0));
-    }
-
-    #[test]
-    fn object_pool_factory_returns_fresh_local_scope_for_acquire_transform() {
-        let mut vars = SceneMaxVars(HashMap::from([("next_scale".to_owned(), 1.0)]));
-        let mut object_pools = SceneMaxObjectPools::default();
-        object_pools.pools.insert(
-            "items".to_owned(),
-            ObjectPoolRuntime {
-                factory: "create_item".to_owned(),
-                prototype: Some(ModelRuntimeDecl {
-                    name: String::new(),
-                    resource: "pooled_item".to_owned(),
-                    options: EntityOptions {
-                        scale_value: Some(AssignmentValue::Symbol("item_scale".to_owned())),
-                        ..Default::default()
-                    },
-                }),
-                ..Default::default()
-            },
-        );
-        let functions = HashMap::from([(
-            "create_item".to_owned(),
-            FunctionRuntime {
-                params: Vec::new(),
-                guard: None,
-                guard_recheck: false,
-                actions: vec![
-                    Statement::LocalAssignment(scenemax_parser::AssignmentStatement {
-                        name: "item_scale".to_owned(),
-                        value: AssignmentValue::Symbol("next_scale".to_owned()),
-                    }),
-                    Statement::Assignment(scenemax_parser::AssignmentStatement {
-                        name: "next_scale".to_owned(),
-                        value: AssignmentValue::Binary {
-                            left: Box::new(AssignmentValue::Symbol("next_scale".to_owned())),
-                            operator: scenemax_parser::ArithmeticOperator::Add,
-                            right: Box::new(AssignmentValue::Number(1.0)),
-                        },
-                    }),
-                    Statement::ReturnValue {
-                        value: AssignmentValue::Symbol("pooled_item".to_owned()),
-                    },
-                ],
-            },
-        )]);
-
-        let scales = (0..8)
-            .filter_map(|_| {
-                let scope = apply_pool_factory_acquire_side_effects(
-                    "items",
-                    &mut vars,
-                    &object_pools,
-                    &functions,
-                    &HashMap::new(),
-                    &HashMap::new(),
-                    &SceneMaxColliderBounds::default(),
-                );
-                scope.vars.get("item_scale").copied()
-            })
-            .collect::<Vec<_>>();
-
-        assert!(!vars.0.contains_key("item_scale"));
-        assert_eq!(vars.0.get("next_scale"), Some(&9.0));
-        assert_eq!(scales, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
     }
 
     #[test]
@@ -2414,6 +2414,7 @@ mod tests {
     #[test]
     fn sprite_play_statement_builds_runtime_animation() {
         let animation = sprite_animation_from_statement(&SpritePlayStatement {
+            repeat_count: None, playback_seconds: None,
             target: "b".to_owned(),
             from_frame: 0,
             from_frame_value: AssignmentValue::Number(0 as f32),
@@ -3303,7 +3304,7 @@ mod tests {
         assert!(!pulses.contains("actor.data.ready"));
         assert!(!pulses.contains("score"));
 
-        let mut vars = SceneMaxVars(HashMap::from([
+        let mut vars = SceneMaxVars::from(HashMap::from([
             ("actor.data.ready".to_owned(), 1.0),
             ("score".to_owned(), 10.0),
         ]));
@@ -3329,7 +3330,7 @@ mod tests {
 
         assert!(pulses.contains("enemy_hit"));
 
-        let mut vars = SceneMaxVars(HashMap::from([("enemy_hit".to_owned(), 1.0)]));
+        let mut vars = SceneMaxVars::from(HashMap::from([("enemy_hit".to_owned(), 1.0)]));
         clear_transient_collision_vars(&mut vars, &pulses);
 
         assert_eq!(vars.0.get("enemy_hit").copied(), Some(0.0));
@@ -3382,6 +3383,9 @@ mod tests {
     #[test]
     fn jump_animation_blocks_long_enough_for_character_jump() {
         let jump_animation = AnimationStatement {
+ rewind: None,
+            frame_range: None,
+            frame_range_name: None,
             target: "player1".to_owned(),
             clip: "big_jump".to_owned(),
             speed: 1.0,
@@ -3390,6 +3394,7 @@ mod tests {
             blocking: true,
         };
         let punch_animation = AnimationStatement {
+ rewind: None,
             clip: "CrossPunch".to_owned(),
             speed: 2.5,
             speed_value: AssignmentValue::Number(2.5),
@@ -3406,6 +3411,9 @@ mod tests {
         let mut durations = SceneMaxAnimationDurations::default();
         durations.insert("player2", "HighKick", "Armature|High-Kick", 2.4);
         let animation = AnimationStatement {
+ rewind: None,
+            frame_range: None,
+            frame_range_name: None,
             target: "player2".to_owned(),
             clip: "HighKick".to_owned(),
             speed: 3.0,
@@ -3420,7 +3428,10 @@ mod tests {
     #[test]
     fn timed_turn_preserves_loop_condition() {
         let turn = timed_turn_from_statement(&scenemax_parser::TurnStatement {
+            easing: None,
             target: "axe".to_owned(),
+            axis: None,
+            absolute: false,
             degrees: 360.0,
             degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 1.0,
@@ -3439,7 +3450,10 @@ mod tests {
     #[test]
     fn looped_timed_turns_do_not_block_following_startup_actions() {
         let blocking_turn = Statement::Turn(scenemax_parser::TurnStatement {
+            easing: None,
             target: "gemini".to_owned(),
+            axis: None,
+            absolute: false,
             degrees: 360.0,
             degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 3.0,
@@ -3448,7 +3462,10 @@ mod tests {
             async_run: false,
         });
         let looped_turn = Statement::Turn(scenemax_parser::TurnStatement {
+            easing: None,
             target: "gemini".to_owned(),
+            axis: None,
+            absolute: false,
             degrees: 360.0,
             degrees_value: AssignmentValue::Number(360.0),
             duration_seconds: 3.0,
@@ -3468,6 +3485,7 @@ mod tests {
     fn timed_move_preserves_loop_condition() {
         let movement = timed_move_from_statement(
             &scenemax_parser::MoveStatement {
+                easing: None,
                 target: "player1".to_owned(),
                 direction: MoveDirection::Forward,
                 distance: 0.2,
@@ -3491,6 +3509,7 @@ mod tests {
     #[test]
     fn continuous_character_move_matches_java_walk_vector_speed() {
         let movement = scenemax_parser::MoveStatement {
+            easing: None,
             target: "player1".to_owned(),
             direction: MoveDirection::Forward,
             distance: 0.2,
@@ -3510,6 +3529,7 @@ mod tests {
     #[test]
     fn continuous_when_movement_does_not_use_blocking_timed_path() {
         let movement = Statement::Move(scenemax_parser::MoveStatement {
+            easing: None,
             target: "player1".to_owned(),
             direction: MoveDirection::Forward,
             distance: 0.2,
@@ -3550,6 +3570,7 @@ mod tests {
     #[test]
     fn sprite_play_blocks_until_non_looping_animation_finishes() {
         let blocking = Statement::SpritePlay(SpritePlayStatement {
+            repeat_count: None, playback_seconds: None,
             target: "hit".to_owned(),
             from_frame: 0,
             from_frame_value: AssignmentValue::Number(0.0),
@@ -3560,6 +3581,7 @@ mod tests {
             looped: false,
         });
         let looped = Statement::SpritePlay(SpritePlayStatement {
+            repeat_count: None, playback_seconds: None,
             target: "hit".to_owned(),
             from_frame: 0,
             from_frame_value: AssignmentValue::Number(0.0),
@@ -3584,7 +3606,7 @@ mod tests {
             duration_value: AssignmentValue::Symbol("intro_seconds".to_owned()),
             async_run: false,
         });
-        let vars = SceneMaxVars(HashMap::from([("intro_seconds".to_owned(), 5.0)]));
+        let vars = SceneMaxVars::from(HashMap::from([("intro_seconds".to_owned(), 5.0)]));
         let guards = HashMap::new();
         let transforms = HashMap::new();
 
@@ -3605,6 +3627,7 @@ mod tests {
     #[test]
     fn resolved_async_duration_expression_never_blocks_parent() {
         let action = Statement::Move(scenemax_parser::MoveStatement {
+            easing: None,
             target: "player1".to_owned(),
             direction: MoveDirection::Forward,
             distance: 2.0,
@@ -3614,7 +3637,7 @@ mod tests {
             loop_condition: None,
             async_run: true,
         });
-        let vars = SceneMaxVars(HashMap::from([("move_seconds".to_owned(), 1.25)]));
+        let vars = SceneMaxVars::from(HashMap::from([("move_seconds".to_owned(), 1.25)]));
         let guards = HashMap::new();
         let transforms = HashMap::new();
 
@@ -3733,6 +3756,7 @@ mod tests {
     fn timed_move_uses_lateral_direction_and_duration() {
         let left = timed_move_from_statement(
             &scenemax_parser::MoveStatement {
+                easing: None,
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Left,
                 distance: 4.0,
@@ -3746,6 +3770,7 @@ mod tests {
         );
         let right = timed_move_from_statement(
             &scenemax_parser::MoveStatement {
+                easing: None,
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Right,
                 distance: 4.0,
@@ -3767,6 +3792,7 @@ mod tests {
     fn timed_move_uses_vertical_direction_and_duration() {
         let movement = timed_move_from_statement(
             &scenemax_parser::MoveStatement {
+                easing: None,
                 target: "gemini".to_owned(),
                 direction: MoveDirection::Up,
                 distance: 3.0,
@@ -3891,7 +3917,10 @@ mod tests {
 
     #[test]
     fn detects_matching_current_animation_like_gltf_lookup() {
-        let current = CurrentAnimation {
+        let current = CurrentAnimation { rewind: None, identity: None,
+            controller_owner: None,
+            network_lifetime: None,
+            playback_graphs: Vec::new(),
             clip: "Armature|Run_Sword".to_owned(),
             looped: true,
             speed: 1.0,

@@ -648,6 +648,7 @@ pub(super) fn collect_unsupported_statements(
             | Statement::Repeat { actions, .. }
             | Statement::DoWhile { actions, .. }
             | Statement::LoopContinue { actions, .. }
+            | Statement::ScopedBlock { actions }
             | Statement::Async { actions } => collect_unsupported_statements(actions, unsupported),
             _ => {}
         }
@@ -655,15 +656,15 @@ pub(super) fn collect_unsupported_statements(
 }
 
 pub(super) fn has_scene_content(program: &Program) -> bool {
-    program.statements.iter().any(|statement| {
-        matches!(
-            statement,
-            Statement::ModelDecl { .. }
-                | Statement::LightDecl(_)
-                | Statement::CameraPosition(_)
-                | Statement::CameraRotation(_)
-        )
-    })
+    fn contains_scene(statements: &[Statement]) -> bool {
+        statements.iter().any(|statement| match statement {
+            Statement::ModelDecl { .. } | Statement::LightDecl(_)
+            | Statement::CameraPosition(_) | Statement::CameraRotation(_) => true,
+            Statement::ScopedBlock { actions } => contains_scene(actions),
+            _ => false,
+        })
+    }
+    contains_scene(&program.statements)
 }
 
 pub(super) fn has_ui_runtime_content(program: &Program) -> bool {
@@ -704,6 +705,7 @@ pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
         | Statement::Repeat { actions, .. }
         | Statement::DoWhile { actions, .. }
         | Statement::LoopContinue { actions, .. }
+        | Statement::ScopedBlock { actions }
         | Statement::Async { actions } => actions.iter().any(statement_has_ui_runtime_content),
         _ => false,
     }
@@ -910,18 +912,13 @@ fn spawn_scenemax_program_with_visibility_mode(
     _character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
     visibility_mode: SceneMaxSpawnVisibilityMode,
 ) -> Vec<Handle<Gltf>> {
-    let functions_by_name = collect_functions_by_name(program);
     let guards_by_name = collect_guards_by_name(program);
     let attaches_by_target = collect_attaches_by_target(program);
     let mut startup_gltfs = Vec::new();
-    let mut model_declarations = collect_model_declarations(program);
     if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
-        model_declarations.extend(instantiate_object_pool_declarations(
-            program,
-            &functions_by_name,
-            object_pools,
-        ));
+        object_pools.entity_templates.retain(|_, (_, options)| options.shared);
     }
+    let mut model_declarations = collect_model_declarations(program);
     if visibility_mode == SceneMaxSpawnVisibilityMode::DesignerPreview {
         model_declarations.retain(|declaration| !declaration.options.hidden);
     }
@@ -945,12 +942,16 @@ fn spawn_scenemax_program_with_visibility_mode(
     };
 
     let light_declarations = collect_light_declarations(program);
-    if light_declarations.is_empty() {
+    if light_declarations.is_empty() && object_pools.shared_lights.is_empty() {
         set_fallback_lighting_enabled(commands, true);
         apply_default_ambient_light(commands);
     } else {
         set_fallback_lighting_enabled(commands, false);
         for light in &light_declarations {
+            if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup && shared_entities::retained(&light.name, vars, object_pools, None) {
+                spawned_any = true;
+                continue;
+            }
             let (entity, transform) = spawn_scenemax_light_decl(
                 commands,
                 light,
@@ -960,6 +961,16 @@ fn spawn_scenemax_program_with_visibility_mode(
                 Some(&transforms_by_name),
                 Some(collider_bounds),
             );
+            if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
+                let reference = scenemax_runtime_vm_core::references::Reference::entity(&light.name);
+                scenemax_runtime_vm_core::references::assign(&light.name, reference.clone(), vars, None, false);
+                object_pools.entity_values.2.insert(light.name.clone(), reference);
+                object_pools.root_entity_names.insert(light.name.clone());
+                if light.shared {
+                    object_pools.shared_entities.insert(light.name.clone());
+                    object_pools.shared_lights.insert(light.name.clone());
+                }
+            }
             entities_by_name.insert(light.name.clone(), entity);
             transforms_by_name.insert(light.name.clone(), transform);
             spawned_any = true;
@@ -972,6 +983,22 @@ fn spawn_scenemax_program_with_visibility_mode(
         options,
     } in &model_declarations
     {
+        if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
+            if shared_entities::retained(name, vars, object_pools, None) { spawned_any = true; continue; }
+        }
+        multiplayer::declaration(commands, name, resource, options);
+        if resource.eq_ignore_ascii_case("label") {
+            let transform = transform_from_options_resolved(options, None, vars, &guards_by_name, Some(&transforms_by_name), Some(collider_bounds));
+            let entity = crate::labels::spawn(commands, name, options, transform, vars, &guards_by_name);
+            if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
+                commands.entity(entity).insert(Visibility::Hidden);
+            }
+            entities_by_name.insert(name.clone(), entity);
+            transforms_by_name.insert(name.clone(), transform);
+            spawned_any = true;
+            continue;
+        }
+
         if options.collider {
             let transform = collider_decl_transform(
                 name,
@@ -1313,9 +1340,9 @@ fn spawn_scenemax_program_with_visibility_mode(
         }
     }
 
-    if !spawned_any && has_ui_runtime_content(program) {
+    if !spawned_any && (has_ui_runtime_content(program) || program.statements.iter().any(|s| matches!(s, Statement::ModelDecl { options, .. } if options.resource_value.is_some() || !options.geometry_values.is_empty()))) {
         write_runtime_diagnostic_line(
-            "skipped default placeholder because the program contains UI runtime content",
+            "skipped default placeholder because the program contains deferred runtime content",
         );
     } else if !spawned_any {
         write_runtime_diagnostic_line(
@@ -1416,6 +1443,13 @@ pub(super) fn apply_startup_runs_when_ready(
                 .insert(scene_entity.name.clone(), model_resource.resource.clone());
         }
     }
+    runtime_assets.root_entity_declarations.retain(|_, value| value.entity_identity()
+        .is_some_and(|v| object_pools.shared_entities.contains(&v.runtime_name)));
+    for name in &object_pools.root_entity_names {
+        if let Some(reference) = object_pools.entity_values.2.get(name) {
+            runtime_assets.root_entity_declarations.entry(name.clone()).or_insert_with(|| reference.clone());
+        }
+    }
     runtime_assets.gltf_handles_by_name = gltfs_by_name.clone();
     runtime_assets.gltf_animation_names_by_name = gltf_animation_names_by_name;
     runtime_assets.model_resources_by_name = model_resources_by_name;
@@ -1492,7 +1526,8 @@ fn collect_audio_names_before_first_wait(
                     sounds.insert(sound.clone());
                 }
             }
-            Statement::Async { actions }
+            Statement::ScopedBlock { actions }
+            | Statement::Async { actions }
             | Statement::Repeat { actions, .. }
             | Statement::Guarded { actions, .. } => {
                 collect_audio_names_before_first_wait(

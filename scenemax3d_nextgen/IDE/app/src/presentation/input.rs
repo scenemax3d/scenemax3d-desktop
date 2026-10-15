@@ -128,6 +128,7 @@ pub(crate) struct InputFields<'w, 's> {
     inventory: Option<Res<'w, super::inventory::State>>,
     font_generator: Option<Res<'w, super::font_generator::State>>,
     physics: Option<Res<'w, super::physics::State>>,
+    multiplayer: Option<Res<'w, crate::application::multiplayer::State>>,
     git: Option<Res<'w, crate::application::git::State>>,
     fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
     properties: PropertyInputs<'w, 's>,
@@ -141,7 +142,8 @@ pub(crate) fn collect_actions(
     mut queue: ResMut<CommandQueue>,
     session: Res<Session>,
 ) {
-    if input_fields.physics.as_ref().is_some_and(|g| g.open)
+    if input_fields.multiplayer.as_ref().is_some_and(|g| g.open)
+        || input_fields.physics.as_ref().is_some_and(|g| g.open)
         || input_fields.git.as_ref().is_some_and(|g| g.open)
         || input_fields.chrome.as_ref().is_some_and(|m| m.about_open())
         || input_fields.imports.as_ref().is_some_and(|m| m.is_open())

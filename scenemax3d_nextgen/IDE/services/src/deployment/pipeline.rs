@@ -264,6 +264,7 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
     let entry = canonical_entry
         .strip_prefix(&project)
         .map_err(io::Error::other)?;
+    crate::multiplayer::embed_settings(&project, &snapshot.join(entry)).map_err(io::Error::other)?;
     let entry = entry
         .to_str()
         .ok_or_else(|| io::Error::other("Entry point must be Unicode."))?
