@@ -12,6 +12,9 @@ use tracing_subscriber::{EnvFilter, fmt};
 #[command(name = "scenemax-projector-nextgen")]
 #[command(about = "Bevy-based SceneMax3D NextGen runtime projector")]
 struct Cli {
+    /// Enable runtime diagnostics and the runtime log file (off by default).
+    #[arg(long, global = true)]
+    runtime_log: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -98,12 +101,13 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+    let cli = Cli::parse();
+    scenemax_runtime::set_runtime_logging(cli.runtime_log);
     fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(if cli.runtime_log { EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")) } else { EnvFilter::new("off") })
         .without_time()
         .init();
 
-    let cli = Cli::parse();
     let packaged_project_root = packaged_project_root();
     match cli.command.unwrap_or(Command::Run {
         script: None,

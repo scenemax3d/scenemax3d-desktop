@@ -122,6 +122,7 @@ fn resolve_gltf_source_path(
 }
 
 pub(super) fn initialize_runtime_logger(project_root: Option<&Path>, script_root: Option<&Path>) {
+    if !runtime_logging_enabled() { return; }
     let base = project_root
         .or(script_root)
         .map(Path::to_path_buf)
@@ -163,6 +164,7 @@ fn write_nextgen_launch_diagnostics() {
 }
 
 pub(super) fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
+    if !runtime_logging_enabled() { return; }
     let Some(path) = SCENEMAX_RUNTIME_LOG_FILE
         .lock()
         .ok()
@@ -177,6 +179,7 @@ pub(super) fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
 }
 
 pub(super) fn runtime_verbose_logging() -> bool {
+    if !runtime_logging_enabled() { return false; }
     static VERBOSE: OnceLock<bool> = OnceLock::new();
     *VERBOSE.get_or_init(|| {
         env::var("SCENEMAX_RUNTIME_VERBOSE_LOG")
@@ -191,6 +194,7 @@ pub(super) fn runtime_verbose_logging() -> bool {
 }
 
 pub(super) fn write_runtime_log_line(level: LoggerLevel, message: &str) {
+    if !runtime_logging_enabled() { return; }
     let level_text = match level {
         LoggerLevel::Info => "INFO",
         LoggerLevel::Debug => "DEBUG",

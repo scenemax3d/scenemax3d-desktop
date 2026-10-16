@@ -1614,7 +1614,7 @@ pub(super) fn update_fighting_camera(
 
     let status = format!("name={:?} selected={selected:?} cinematic={cinematic} target_a={:?} entity_a={resolved_a:?} target_b={:?} entity_b={resolved_b:?}",
         camera_settings.name, camera_settings.target_a, camera_settings.target_b);
-    let report = audit.0 != status || time.elapsed_secs() >= audit.1;
+    let report = runtime_logging_enabled() && (audit.0 != status || time.elapsed_secs() >= audit.1);
     if report {
         write_runtime_diagnostic_line(format!("CAMERA:TARGETS {status} position_a={:?} position_b={:?}",
             target_a.map(|t| t.translation), target_b.map(|t| t.translation)));
@@ -1732,7 +1732,7 @@ pub(super) fn update_third_person_camera(
 
     let resolved = entities.iter().find(|(entity, _)| camera_target_matches(&camera_settings.target, entity, &vars));
     let status = format!("name={selected:?} target={:?} entity={:?}", camera_settings.target, resolved.map(|(e, _)| &e.name));
-    let report = audit.0 != status || time.elapsed_secs() >= audit.1;
+    let report = runtime_logging_enabled() && (audit.0 != status || time.elapsed_secs() >= audit.1);
     if report {
         write_runtime_diagnostic_line(format!("CAMERA:THIRD_PERSON {status} position={:?}", resolved.map(|(_, t)| t.translation)));
         *audit = (status, time.elapsed_secs() + 5.);

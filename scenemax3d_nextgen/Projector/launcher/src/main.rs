@@ -110,6 +110,7 @@ fn restore_aliases(root: &Path, mut total: u64) -> io::Result<()> {
     Ok(())
 }
 fn run() -> io::Result<i32> {
+    let runtime_log = runtime_log_requested(std::env::args_os().skip(1));
     let temporary = tempfile::Builder::new()
         .prefix("scenemax-game-")
         .tempdir()?;
@@ -137,6 +138,7 @@ fn run() -> io::Result<i32> {
         .arg(temporary.path())
         .arg("--script")
         .arg(temporary.path().join(script));
+    if runtime_log { command.arg("--runtime-log"); }
     // User data must survive disposable extraction; runtime extensions may consume this location.
     command.env("SCENEMAX_DISTRIBUTION_EXE", std::env::current_exe()?);
     command.env_remove("SCENEMAX_BUILTIN_RESOURCES");
@@ -165,11 +167,14 @@ fn run() -> io::Result<i32> {
     let status = command.status()?;
     // Keep diagnostics after the private extraction directory is removed.
     let executable = std::env::current_exe()?;
-    if let Err(error) = preserve_runtime_log(temporary.path(), &executable) {
+    if runtime_log && let Err(error) = preserve_runtime_log(temporary.path(), &executable) {
         eprintln!("Could not preserve game runtime log: {error}");
     }
     // The private extraction directory is owned until the game exits, then removed.
     Ok(status.code().unwrap_or(1))
+}
+fn runtime_log_requested(args: impl IntoIterator<Item = std::ffi::OsString>) -> bool {
+    args.into_iter().any(|arg| arg == "--runtime-log")
 }
 fn preserve_runtime_log(root: &Path, executable: &Path) -> io::Result<()> {
     let source = root.join("scenemax-nextgen-runtime.log");
@@ -185,11 +190,11 @@ fn main() {
         Ok(code) => std::process::exit(code),
         Err(error) => {
             let path = std::env::temp_dir().join("scenemax-launch-error.txt");
-            let _ = fs::write(
+            if runtime_log_requested(std::env::args_os().skip(1)) { let _ = fs::write(
                 &path,
                 format!("SceneMax could not launch this package: {error}\n"),
-            );
-            eprintln!("{error}; details: {}", path.display());
+            ); }
+            eprintln!("{error}");
             std::process::exit(1);
         }
     }
@@ -197,6 +202,12 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn runtime_logging_is_explicitly_opt_in() {
+        assert!(!super::runtime_log_requested([]));
+        assert!(!super::runtime_log_requested(["--other".into()]));
+        assert!(super::runtime_log_requested(["--runtime-log".into()]));
+    }
     #[test]
     fn runtime_log_survives_extraction_cleanup() {
         let extraction = tempfile::tempdir().unwrap();
