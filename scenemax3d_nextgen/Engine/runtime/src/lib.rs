@@ -1190,6 +1190,7 @@ struct SceneMaxUiSpriteSheet {
 
 #[derive(Debug, Clone, Component)]
 struct SceneMaxUiEase {
+    completion_target: Option<UiTargetPath>,
     start: Vec2,
     elapsed_seconds: f32,
     duration_seconds: f32,
@@ -3711,6 +3712,7 @@ mod tests {
             widget_path: vec!["panel".to_owned()],
         };
         let blocking = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target_reference: None,
             target: target.clone(),
             easing: "EaseInBack".to_owned(),
             direction: UiEaseDirection::Down,
@@ -3718,6 +3720,7 @@ mod tests {
             async_run: false,
         });
         let async_ease = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target_reference: None,
             target,
             easing: "EaseInBack".to_owned(),
             direction: UiEaseDirection::Down,

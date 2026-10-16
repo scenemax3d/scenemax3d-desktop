@@ -873,7 +873,7 @@ mod tests {
         let world = app.world_mut();
         let mut net = Multiplayer::default();
         let name = key(PATH, "visible");
-        let value = json!([1, 8, "quad", "left", 20.0]);
+        let value = json!([1, 8, "EaseInQuad", "left", 20.0]);
         receive(&mut net.widgets, name.clone(), value.clone());
         let origin = std::time::Instant::now() - std::time::Duration::from_secs(10);
         net.widgets.received.get_mut(&name).unwrap().received_at = origin;
@@ -895,7 +895,7 @@ mod tests {
             // Resume the original quadratic curve, not a new shortened curve.
             assert_eq!(
                 world.get::<UiTransform>(entity).unwrap().translation,
-                Val2::percent(-115. * (1. - t * t), 0.)
+                Val2::percent(100. * (1. - t * t), 0.)
             );
         }
         assert!(net.widgets.pending.is_empty());
@@ -921,6 +921,7 @@ mod tests {
         // Simulate time between dispatch and entity creation without sleeping.
         *received_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(3));
         world.entity_mut(entity).insert(SceneMaxUiEase {
+            completion_target: None,
             start: Vec2::new(115., 0.),
             elapsed_seconds: 0.,
             duration_seconds: 10.,
@@ -976,7 +977,7 @@ mod tests {
         );
         assert_eq!(
             world.get::<UiTransform>(entity).unwrap().translation,
-            Val2::percent(115., 0.)
+            Val2::percent(-100., 0.)
         );
     }
 
@@ -1033,6 +1034,131 @@ mod tests {
             });
         apply(world);
         assert!(world.resource::<Multiplayer>().widgets.pending.is_empty());
+    }
+
+    #[test]
+    fn ease_out_exits_hides_and_publishes_final_state_while_remote_completion_does_not_echo() {
+        for remote in [false, true] {
+            let mut app = app();
+            let world = app.world_mut();
+            let entity = widget(world, true);
+            let (_server, _, client) = super::super::joins::tests::connection();
+            world.insert_resource(Multiplayer { client: Some(client), ..default() });
+            let action = SceneMaxUiAction::Ease { target: target(), easing: "EaseOutQuad".into(),
+                direction: UiEaseDirection::Up, duration_seconds: 2., received_at: None };
+            let mut queue = world.resource_mut::<SceneMaxUiActionQueue>();
+            if remote { queue.remote_actions.push(action); } else { queue.actions.push(action); }
+            apply(world);
+            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::ZERO);
+            world.resource_mut::<Multiplayer>().widgets.pending.clear();
+            world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs(1));
+            world.run_system_once(crate::ui::update_scenemax_ui_eases).unwrap();
+            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::percent(0., -75.));
+            world.run_system_once(crate::ui::update_scenemax_ui_eases).unwrap();
+            assert_eq!(*world.get::<Visibility>(entity).unwrap(), Visibility::Hidden);
+            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::ZERO);
+            assert!(world.get::<SceneMaxUiEase>(entity).is_none());
+            let pending = &world.resource::<Multiplayer>().widgets.pending;
+            if remote { assert!(pending.is_empty()); } else { assert_eq!(pending[&key(PATH, "visible")], json!(false)); }
+        }
+    }
+
+    #[test]
+    fn instant_and_expired_exits_hide_and_entrances_restore_visibility() {
+        let mut app = app();
+        let world = app.world_mut();
+        let entity = widget(world, true);
+        for (name, duration, elapsed, visible) in [("EaseOutBounce", 0., 0, false), ("EaseOutBounce", 2., 3, false), ("EaseInBounce", 2., 3, true)] {
+            world.resource_mut::<SceneMaxUiActionQueue>().remote_actions.push(SceneMaxUiAction::Ease {
+                target: target(), easing: name.into(), direction: UiEaseDirection::Right, duration_seconds: duration,
+                received_at: Some(std::time::Instant::now() - std::time::Duration::from_secs(elapsed)),
+            });
+            apply(world);
+            assert_eq!(*world.get::<Visibility>(entity).unwrap(), if visible { Visibility::Inherited } else { Visibility::Hidden });
+            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::ZERO);
+            assert!(world.get::<SceneMaxUiEase>(entity).is_none());
+        }
+        world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::Ease {
+            target: target(), easing: "EaseInQuad".into(), direction: UiEaseDirection::Right, duration_seconds: 2., received_at: None,
+        });
+        apply(world);
+        assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::percent(-100., 0.));
+        world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::ShowHide { target: target(), visible: false });
+        apply(world);
+        assert!(world.get::<SceneMaxUiEase>(entity).is_none());
+        assert_eq!(*world.get::<Visibility>(entity).unwrap(), Visibility::Hidden);
+    }
+
+    #[test]
+    fn array_referenced_history_wraps_and_replays_text_visibility_and_ease_without_echo() {
+        fn history(world: &mut World) -> Vec<Entity> {
+            let mut entities = vec![];
+            for index in 0..5 {
+                let entity = world.spawn((Text::new("initial"), TextColor::default(), UiTransform::default(), Visibility::Hidden)).id();
+                entities.push(entity);
+                let mut runtime = world.resource_mut::<SceneMaxUiRuntime>();
+                runtime.active_ui_name = Some("fixture".into());
+                for (suffix, kind) in [("", "PANEL"), (".caption", "TEXT_VIEW")] {
+                    runtime.loaded.entry("fixture".into()).or_default().targets.insert(
+                        format!("fixture.layer1.entry{index}{suffix}"),
+                        SceneMaxUiTarget { entity, text_entity: Some(entity), multiplayer: true, widget_type: kind.into(), ui_scale: 1. },
+                    );
+                }
+            }
+            entities
+        }
+        let mut sender = app();
+        let world = sender.world_mut();
+        let local = history(world);
+        let (_server, _, client) = super::super::joins::tests::connection();
+        world.insert_resource(Multiplayer { client: Some(client), ..default() });
+        let entries = (0..5).flat_map(|i| [format!("UI.layer1.entry{i}"), format!("UI.layer1.entry{i}.caption")]).collect::<Vec<_>>().join(",");
+        let calls = (1..=7).map(|i| format!("run record({i})\nwait 0.1 seconds\n")).collect::<String>();
+        let source = format!(r#"
+var entries = [{entries}]
+var cursor = 0
+var descriptions = ["A", "B", "C", "D", "E", "F", "G"]
+display(action) = {{
+ var panel = entries[cursor*2]
+ var caption = entries[cursor*2+1]
+ panel.Show
+ caption.text = descriptions[action-1]
+ panel.ease("EaseOutBounce", Left, 2) async
+}}
+record(action) = {{
+ run display(action) async
+ if (cursor == 4) {{
+  cursor = 0
+ }} else {{
+  cursor = cursor+1
+ }}
+}}
+{calls}
+"#);
+        crate::value_calls::tests::run_in(world, &source);
+        while !world.resource::<DelayedActionQueue>().actions.is_empty() {
+            crate::value_calls::tests::resume_next(world);
+            apply(world);
+        }
+        let expected = ["E", "F", "G", "C", "D"];
+        for (entity, text) in local.iter().zip(expected) {
+            assert_eq!(world.get::<Text>(*entity).unwrap().0, text);
+            assert_eq!(*world.get::<Visibility>(*entity).unwrap(), Visibility::Inherited);
+            assert!(world.get::<SceneMaxUiEase>(*entity).is_some());
+        }
+        let values = world.resource::<Multiplayer>().widgets.pending.clone();
+        assert_eq!(values.len(), 10);
+        let mut receiver = app();
+        let remote = history(receiver.world_mut());
+        let mut net = Multiplayer::default();
+        for (name, value) in values { receive(&mut net.widgets, name, value); }
+        replay(receiver.world_mut(), &mut net);
+        for (entity, text) in remote.iter().zip(expected) {
+            assert_eq!(receiver.world().get::<Text>(*entity).unwrap().0, text);
+            assert_eq!(*receiver.world().get::<Visibility>(*entity).unwrap(), Visibility::Inherited);
+            assert!(receiver.world().get::<SceneMaxUiEase>(*entity).is_some());
+        }
+        assert!(net.widgets.pending.is_empty(), "remote replay must not echo updates");
     }
 
     #[test]

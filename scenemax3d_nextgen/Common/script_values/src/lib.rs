@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock};
 #[derive(Debug, Clone)]
 pub struct Reference(Arc<RwLock<Node>>);
 #[derive(Debug)]
-enum Node { Scalar(Value), Entity(EntityIdentity), Pool(EntityIdentity), Controller(EntityIdentity), Array(Vec<Reference>), Object(HashMap<String, Reference>) }
+enum Node { Scalar(Value), Entity(EntityIdentity), Pool(EntityIdentity), Controller(EntityIdentity), Ui(String), Array(Vec<Reference>), Object(HashMap<String, Reference>) }
 
 /// Engine-independent identity. Runtime names are lookup addresses, not identity:
 /// redeclaring the same name must produce a different key.
@@ -49,7 +49,13 @@ impl Reference {
     pub fn pool_identity(&self) -> Option<EntityIdentity> {
         match &*self.0.read().ok()? { Node::Pool(value) => Some(value.clone()), _ => None }
     }
-    pub fn opaque(&self) -> bool { self.entity_identity().is_some() || self.pool_identity().is_some() || self.controller_identity().is_some() }
+    /// A script UI address, retained through arrays and lexical bindings rather
+    /// than serialized as user text or a network value.
+    pub fn ui(path: impl Into<String>) -> Self { Self(Arc::new(RwLock::new(Node::Ui(path.into())))) }
+    pub fn ui_path(&self) -> Option<String> {
+        match &*self.0.read().ok()? { Node::Ui(path) => Some(path.clone()), _ => None }
+    }
+    pub fn opaque(&self) -> bool { self.entity_identity().is_some() || self.pool_identity().is_some() || self.controller_identity().is_some() || self.ui_path().is_some() }
     pub fn entity_identity(&self) -> Option<EntityIdentity> {
         match &*self.0.read().ok()? { Node::Entity(value) => Some(value.clone()), _ => None }
     }
@@ -69,7 +75,7 @@ impl Reference {
         if depth > 128 { return None; }
         Some(match &*self.0.read().ok()? {
             Node::Scalar(value) => value.clone(),
-            Node::Entity(_) | Node::Pool(_) | Node::Controller(_) => { if depth == 0 { return None; } Value::Null },
+            Node::Entity(_) | Node::Pool(_) | Node::Controller(_) | Node::Ui(_) => { if depth == 0 { return None; } Value::Null },
             Node::Array(values) => Value::Array(values.iter().map(|v| v.snapshot_at(depth+1)).collect::<Option<_>>()?),
             Node::Object(values) => Value::Object(values.iter().map(|(k,v)| Some((k.clone(),v.snapshot_at(depth+1)?))).collect::<Option<_>>()?),
         })

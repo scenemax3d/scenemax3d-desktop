@@ -286,6 +286,7 @@ pub(super) fn action_contains(action: &Statement) -> bool {
 // Textual resource/widget operands are resolved when executed. Expressions keep
 // their variable bindings, and nested bodies are not frozen before they run.
 pub(super) fn resolve_text_operands(action: &Statement, vars: &SceneMaxVars, scope: Option<&SceneMaxScopeFrame>) -> Option<Statement> {
+    if let Some(action) = resolve_ui_reference(action, vars, scope) { return Some(action); }
     let scope = scope?;
     let bindings = scope.parameters.iter().filter_map(|name| {
         scenemax_runtime_vm_core::typed::lookup(name, vars, Some(scope))?.as_str().map(|v| (name.clone(), v.to_owned()))
@@ -303,6 +304,42 @@ pub(super) fn resolve_text_operands(action: &Statement, vars: &SceneMaxVars, sco
         _ => return None,
     }
     Some(action)
+}
+
+/// Resolve widget aliases before dispatch so local and multiplayer edits use
+/// exactly the same UI action queue as explicit UI paths.
+fn resolve_ui_reference(action: &Statement, vars: &SceneMaxVars, scope: Option<&SceneMaxScopeFrame>) -> Option<Statement> {
+    use scenemax_parser::{UiShowHideStatement, UiSetPropertyStatement, UiPropertyValue, parse_ui_target_path};
+    let target = |name: &str| {
+        let value = scenemax_parser::parse_assignment_value(name).ok()??;
+        let reference = scenemax_runtime_vm_core::references::evaluate(
+            &value, vars, scope, &HashMap::new(), &scenemax_runtime_vm_core::NoSceneMaxVmSpatial)?;
+        parse_ui_target_path(&reference.ui_path()?)
+    };
+    match action {
+        Statement::Visibility { target: name, visible } => Some(Statement::UiShowHide(UiShowHideStatement {
+            target: target(name)?, visible: *visible,
+        })),
+        Statement::LabelText { target: name, value } => Some(Statement::UiSetProperty(UiSetPropertyStatement {
+            target: target(name)?, property: "text".into(), value: UiPropertyValue::Expression(value.clone()),
+        })),
+        Statement::Assignment(assignment) => {
+            let (name, property) = assignment.name.rsplit_once('.')?;
+            Some(Statement::UiSetProperty(UiSetPropertyStatement {
+                target: target(name)?, property: property.into(), value: UiPropertyValue::Expression(assignment.value.clone()),
+            }))
+        }
+        Statement::UiEase(ease) if ease.target_reference.is_some() => {
+            let mut ease = ease.clone();
+            let name = ease.target_reference.take()?;
+            let Some(resolved) = target(&name) else {
+                return Some(Statement::Unsupported { text: format!("UI ease target '{name}' is not a UI reference") });
+            };
+            ease.target = resolved;
+            Some(Statement::UiEase(ease))
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -347,6 +384,7 @@ pub(crate) mod tests {
         mut delayed: ResMut<DelayedActionQueue>,
         mut bounds: ResMut<SceneMaxColliderBounds>,
         mut cameras: Option<ResMut<SceneMaxCameraSystem>>,
+        mut ui_queue: Option<ResMut<SceneMaxUiActionQueue>>,
         mut entities: ParamSet<(
             Query<(
                 Entity,
@@ -386,7 +424,7 @@ pub(crate) mod tests {
             &SceneMaxAnimationDurations::default(),
             &mut bounds,
             Some(&mut delayed),
-            None,
+            ui_queue.as_deref_mut(),
             None,
             scope.as_mut(),
             continuous.as_ref().map(|value| value.0),
@@ -418,6 +456,53 @@ pub(crate) mod tests {
         world.remove_resource::<ResumeScope>();
         if let Some(scope) = pending.scope { world.insert_resource(ResumeScope(scope)); }
         world.run_system_once(execute).unwrap();
+    }
+    #[test]
+    fn ui_references_survive_arrays_function_arguments_and_async_locals() {
+        let mut world = World::new();
+        world.init_resource::<SceneMaxUiActionQueue>();
+        run_in(&mut world, r#"
+var widgets = [UI.hud.layer1.panel, UI.hud.layer1.panel.caption]
+var descriptions = ["First", "Second"]
+display(items, action) = {
+ var panel = items[0]
+ var caption = items[1]
+ panel.Show
+ caption.text = descriptions[action-1]
+ panel.ease("EaseOutBounce", Right, 2) async
+}
+run display(widgets, 2) async
+"#);
+        resume_next(&mut world);
+        let actions = &world.resource::<SceneMaxUiActionQueue>().actions;
+        assert_eq!(actions.len(), 3, "{actions:?}");
+        assert!(matches!(&actions[0], SceneMaxUiAction::ShowHide { target, visible: true }
+            if target.ui_name.as_deref() == Some("hud") && target.widget_path == ["panel"]));
+        assert!(matches!(&actions[1], SceneMaxUiAction::SetProperty { target, property, value }
+            if target.widget_path == ["panel", "caption"] && property == "text" && value == "Second"));
+        assert!(matches!(&actions[2], SceneMaxUiAction::Ease { target, easing, direction: scenemax_parser::UiEaseDirection::Right, duration_seconds: 2., .. }
+            if target.widget_path == ["panel"] && easing == "EaseOutBounce"));
+        assert_eq!(world.resource::<SceneMaxVars>().2["widgets"].elements().unwrap()[0].ui_path().as_deref(), Some("UI.hud.layer1.panel"));
+    }
+
+    #[test]
+    fn ui_aliases_support_global_visibility_and_properties_without_redirecting_labels() {
+        let mut world = World::new();
+        world.init_resource::<SceneMaxUiActionQueue>();
+        run_in(&mut world, r#"
+var widget = UI.layer1.panel
+widget.Hide
+widget.fontSize = 24
+"#);
+        let actions = &world.resource::<SceneMaxUiActionQueue>().actions;
+        assert_eq!(actions.len(), 2, "{actions:?}");
+        assert!(matches!(&actions[0], SceneMaxUiAction::ShowHide { visible: false, .. }));
+        assert!(matches!(&actions[1], SceneMaxUiAction::SetProperty { property, value, .. } if property == "fontSize" && value == "24"));
+        let ordinary = Statement::LabelText { target: "world_label".into(), value: scenemax_parser::parse_assignment_value("\"Unchanged\"").unwrap().unwrap() };
+        assert!(resolve_ui_reference(&ordinary, world.resource::<SceneMaxVars>(), None).is_none());
+        run_in(&mut world, "var layer1 = UI.layer1.panel\nUI.layer1.ease(\"EaseOutBounce\", Left, 1) async");
+        assert!(matches!(world.resource::<SceneMaxUiActionQueue>().actions.last(), Some(SceneMaxUiAction::Ease { target, .. })
+            if target.layer == "layer1" && target.widget_path.is_empty()));
     }
     #[test]
     fn for_loops_return_without_increment_or_running_the_tail() {
