@@ -2367,11 +2367,20 @@ pub(super) fn missing_character_stage_support_samples(
         .collect()
 }
 
+#[cfg(test)]
 pub(super) fn snap_character_transform_to_floor(
     transform: &mut Transform,
     surfaces: &[SceneMaxExplicitSupportSurface],
 ) -> bool {
     let dimensions = character_dimensions_for_transform(transform);
+    snap_character_transform_to_floor_with_dimensions(transform, surfaces, dimensions)
+}
+
+fn snap_character_transform_to_floor_with_dimensions(
+    transform: &mut Transform,
+    surfaces: &[SceneMaxExplicitSupportSurface],
+    dimensions: SceneMaxCharacterDimensions,
+) -> bool {
     let Some(support_y) = nearest_explicit_static_support_y(transform, dimensions, surfaces) else {
         return false;
     };
@@ -2659,6 +2668,22 @@ pub(super) fn character_dimensions_for_transform(
     }
 }
 
+fn character_dimensions_with_visual_offset(
+    transform: &Transform,
+    visual_offset: Option<&SceneMaxGltfVisualOffset>,
+) -> SceneMaxCharacterDimensions {
+    let mut dimensions = character_dimensions_for_transform(transform);
+    // A lowered model root also lowers its contact plane. Keep the small
+    // ground clearance, but measure it from that plane instead of the entity
+    // origin. Models without a downward correction retain their dimensions.
+    let offset_y = visual_offset.map_or(0., |offset| offset.offset.y * transform.scale.y);
+    if offset_y.is_finite() && offset_y < 0. {
+        dimensions.capsule_center_y += offset_y;
+        dimensions.float_height -= offset_y;
+    }
+    dimensions
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct SceneMaxCharacterLocalColliderShape {
     pub(super) capsule_radius: f32,
@@ -2697,10 +2722,10 @@ pub(super) fn insert_tnua_character_controller(
     entity: Entity,
     character_mode: &CharacterModeStatement,
     transform: Transform,
+    dimensions: SceneMaxCharacterDimensions,
     character_configs: &mut ResMut<Assets<SceneMaxControlSchemeConfig>>,
 ) {
     let gravity = character_mode.gravity.unwrap_or(DEFAULT_CHARACTER_GRAVITY);
-    let dimensions = character_dimensions_for_transform(&transform);
     let radius = dimensions.capsule_radius;
     let height = dimensions.capsule_height;
     let float_height = dimensions.float_height;
@@ -2802,7 +2827,7 @@ pub(super) fn apply_pending_character_modes(
     mut scene_queries: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
         Query<(&SceneMaxStageSupport, &Transform)>,
-        Query<(Entity, &mut Transform, &PendingCharacterMode)>,
+        Query<(Entity, &mut Transform, &PendingCharacterMode, Option<&SceneMaxGltfVisualOffset>)>,
     )>,
 ) {
     let transforms_by_name = scene_queries
@@ -2837,11 +2862,11 @@ pub(super) fn apply_pending_character_modes(
     support_surfaces.extend(explicit_surfaces.iter().copied());
     support_surfaces.extend(existing_support_surfaces.iter().copied());
     let mut support_samples = Vec::new();
-    for (_, transform, pending_mode) in scene_queries.p2().iter_mut() {
+    for (_, transform, pending_mode, visual_offset) in scene_queries.p2().iter_mut() {
         support_samples.push((
             pending_mode.0.target.clone(),
             *transform,
-            character_dimensions_for_transform(&transform),
+            character_dimensions_with_visual_offset(&transform, visual_offset),
         ));
     }
     if support_samples.is_empty() {
@@ -2865,9 +2890,10 @@ pub(super) fn apply_pending_character_modes(
         spawn_character_stage_support(&mut commands, &fallback_samples);
     }
 
-    for (entity, mut transform, pending_mode) in scene_queries.p2().iter_mut() {
+    for (entity, mut transform, pending_mode, visual_offset) in scene_queries.p2().iter_mut() {
         let before_y = transform.translation.y;
-        let snapped = snap_character_transform_to_floor(&mut transform, &support_surfaces);
+        let dimensions = character_dimensions_with_visual_offset(&transform, visual_offset);
+        let snapped = snap_character_transform_to_floor_with_dimensions(&mut transform, &support_surfaces, dimensions);
         write_runtime_diagnostic_line(format!(
             "CHARACTER:PENDING_APPLY target={} gravity={} snapped={} y_before={} y_after={} pos=({},{},{})",
             pending_mode.0.target,
@@ -2888,6 +2914,7 @@ pub(super) fn apply_pending_character_modes(
             entity,
             &pending_mode.0,
             *transform,
+            dimensions,
             &mut character_configs,
         );
         commands.entity(entity).try_remove::<PendingCharacterMode>();
@@ -4461,7 +4488,7 @@ pub(super) fn evaluate_position_expr(
 
 // Resolve the object identity before looking up its pose. Function parameters
 // and pooled/returned entities need not have a cached authored-name transform.
-fn lookup_scoped_subject_transform(
+pub(super) fn lookup_scoped_subject_transform(
     subject: &str,
     vars: &SceneMaxVars,
     scope: Option<&SceneMaxScopeFrame>,
@@ -4755,6 +4782,24 @@ pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
 #[cfg(test)]
 mod static_mesh_collider_tests {
     use super::*;
+
+    #[test]
+    fn character_ground_clearance_follows_lowered_visual_origin() {
+        for scale in [0.5, 1., 3.] {
+            let transform = Transform::from_scale(Vec3::splat(scale));
+            let offset = SceneMaxGltfVisualOffset { offset: Vec3::Y * -0.2, applied: true };
+            let dimensions = character_dimensions_with_visual_offset(&transform, Some(&offset));
+            let visual_y = dimensions.float_height + offset.offset.y * scale;
+            let collider_bottom = dimensions.float_height + dimensions.capsule_center_y
+                - character_capsule_half_height(dimensions.capsule_radius, dimensions.capsule_height);
+            assert!((visual_y - DEFAULT_CHARACTER_FLOAT_HEIGHT).abs() < 0.0001);
+            assert!((collider_bottom - DEFAULT_CHARACTER_FLOAT_HEIGHT).abs() < 0.0001);
+            let local = character_local_collider_shape_for_transform(&transform, dimensions);
+            assert!((local.capsule_center_y * scale - dimensions.capsule_center_y).abs() < 0.0001);
+            assert_eq!(character_dimensions_with_visual_offset(&transform, None).float_height,
+                DEFAULT_CHARACTER_FLOAT_HEIGHT);
+        }
+    }
 
     #[test]
     fn plain_static_imported_model_uses_surface_collider() {

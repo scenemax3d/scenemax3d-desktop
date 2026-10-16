@@ -2,6 +2,50 @@
 use super::*;
 use bevy::ecs::system::RunSystemOnce;
 
+#[test]
+fn recurring_entity_parameters_drive_spatial_queries_and_animation() {
+    let source = r#"
+var measured = -1
+act(a,b) = {
+ measured = distance(a,b)
+ b.look at (a)
+ b.strike
+ finishes = finishes + 1
+}
+run act(first,second) every 0.5 seconds
+"#;
+    let mut world = world(source);
+    crate::value_calls::tests::run_in(&mut world, "var measured = -1");
+    world.init_resource::<RecurringRunTimers>();
+    for (name, x) in [("first", 0.), ("second", 12.)] {
+        let reference = scenemax_runtime_vm_core::references::Reference::entity(name);
+        scenemax_runtime_vm_core::references::assign(name, reference.clone(),
+            &mut world.resource_mut::<SceneMaxVars>(), None, false).unwrap();
+        world.resource_mut::<SceneMaxObjectPools>().entity_values.2.insert(name.into(), reference);
+        world.spawn((SceneMaxEntity { name: name.into(), runtime_name: format!("{name}@1") },
+            Transform::from_xyz(x, 0., 0.), SceneMaxGltf { gltf: Handle::default(), animation_names: vec!["strike".into()] }));
+    }
+    delta(&mut world, 0.5);
+    world.run_system_once(update_recurring_runs).unwrap();
+    assert_eq!(world.resource::<SceneMaxVars>().0["measured"], 12.);
+    assert_eq!(world.query::<&AnimationToPlay>().iter(&world).count(), 1);
+    let queue = world.resource::<DelayedActionQueue>();
+    assert_eq!(queue.actions[0].animation_wait.as_ref().unwrap().target, "second");
+    let entity = world.query::<(Entity, &SceneMaxEntity)>().iter(&world)
+        .find(|(_, entity)| entity.name == "second").unwrap().0;
+    assert!(horizontal_forward(world.get::<Transform>(entity).unwrap()).dot(Vec3::NEG_X) > 0.999);
+    world.entity_mut(entity).insert(CurrentAnimation {
+        rewind: None, identity: None, controller_owner: None, network_lifetime: None,
+        playback_graphs: Vec::new(), clip: "strike".into(), looped: false,
+        speed: 1., elapsed_seconds: 0.1, duration_seconds: 0.2,
+    });
+    resume(&mut world, 0.1);
+    assert_eq!(world.resource::<SceneMaxVars>().0["finishes"], 0.);
+    world.get_mut::<CurrentAnimation>(entity).unwrap().elapsed_seconds = 0.2;
+    resume(&mut world, 0.1);
+    assert_eq!(world.resource::<SceneMaxVars>().0["finishes"], 1.);
+}
+
 pub(super) fn world(source: &str) -> World {
     let mut world = World::new();
     crate::value_calls::tests::run_in(&mut world, "var starts = 0\nvar finishes = 0\nvar other = 0");

@@ -295,7 +295,7 @@ pub(super) fn apply_startup_action_sequence(
                 if animation.blocking {
                     if enqueue_delayed_animation_completion(
                         Some(delayed_actions),
-                        &animation.target,
+                        &resolve_object_alias(&animation.target, object_pools, None),
                         &animation.playback_name(),
                         actions[index + 1..].to_vec(),
                         None,
@@ -4363,7 +4363,7 @@ pub(super) fn apply_action_sequence(
                     let remaining = actions[index + 1..].to_vec();
                     if enqueue_delayed_animation_completion(
                         delayed_actions.as_deref_mut(),
-                        &animation.target,
+                        &resolve_object_alias(&animation.target, object_pools, scope.as_deref()),
                         &animation.playback_name(),
                         remaining,
                         owner.clone(),
@@ -7918,7 +7918,7 @@ pub(super) fn apply_key_action(
                 ) =>
             {
                 if let Some(subject_transform) =
-                    lookup_subject_transform(subject, transforms_by_name)
+                    lookup_scoped_subject_transform(subject, vars, scope.as_deref(), transforms_by_name)
                 {
                     look_at_scenemax_forward(&mut transform, subject_transform.translation);
                     sync_live_transform(
