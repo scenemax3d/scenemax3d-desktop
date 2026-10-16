@@ -652,6 +652,7 @@ pub(super) fn collect_unsupported_statements(
             Statement::Guarded { actions, .. }
             | Statement::Repeat { actions, .. }
             | Statement::DoWhile { actions, .. }
+            | Statement::ForEachModel { actions, .. }
             | Statement::LoopContinue { actions, .. }
             | Statement::ScopedBlock { actions }
             | Statement::Async { actions } => collect_unsupported_statements(actions, unsupported),
@@ -709,6 +710,7 @@ pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
         Statement::Guarded { actions, .. }
         | Statement::Repeat { actions, .. }
         | Statement::DoWhile { actions, .. }
+            | Statement::ForEachModel { actions, .. }
         | Statement::LoopContinue { actions, .. }
         | Statement::ScopedBlock { actions }
         | Statement::Async { actions } => actions.iter().any(statement_has_ui_runtime_content),

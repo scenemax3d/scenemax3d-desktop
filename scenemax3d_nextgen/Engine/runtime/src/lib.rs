@@ -250,7 +250,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .add_systems(Update, (labels::prepare, labels::layout).chain())
         .add_systems(PostUpdate, labels::billboard.before(bevy::transform::TransformSystems::Propagate))
         .add_systems(Update, (ui::lists::select, ui::lists::render).chain().after(ui::apply_scenemax_ui_actions))
-        .add_systems(Update, (ui::edits::input, ui::edits::render).chain().after(ui::apply_scenemax_ui_actions).before(actions::apply_key_events))
+        .add_systems(Update, (ui::edits::input, ui::edits::publish_values, ui::edits::render).chain().after(ui::apply_scenemax_ui_actions).before(actions::apply_key_events))
         .add_systems(PostUpdate, ui::edits::geometry::refresh.after(bevy::ui::UiSystems::Layout))
         .add_systems(Last, attachments::audit)
         .add_systems(

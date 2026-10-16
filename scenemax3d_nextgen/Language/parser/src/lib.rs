@@ -114,6 +114,10 @@ pub enum Statement {
         condition: Condition,
         actions: Vec<Statement>,
     },
+    ForEachModel {
+        variable: String,
+        actions: Vec<Statement>,
+    },
     LoopContinue {
         condition: Condition,
         actions: Vec<Statement>,
@@ -2025,6 +2029,19 @@ fn parse_for_block(lines: &[String], index: usize) -> Result<Option<(Vec<Stateme
     let Some(rest) = line.get(..3).filter(|s| s.eq_ignore_ascii_case("for")).map(|_| &line[3..]) else { return Ok(None); };
     if !rest.starts_with(|c: char| c.is_whitespace() || c == '(') { return Ok(None); }
     let invalid = || ParseError::InvalidFor(line.to_owned());
+    if rest.trim().to_ascii_lowercase().starts_with("each ") {
+        let header = rest.trim();
+        let open = header.find('(').ok_or_else(invalid)?;
+        let close = header.rfind(')').ok_or_else(invalid)?;
+        if !header[..open].trim().eq_ignore_ascii_case("each model") || close <= open
+            || !header[close + 1..].trim().eq_ignore_ascii_case("do") { return Err(invalid()); }
+        let variable = header[open + 1..close].trim();
+        if !variable.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            || !variable.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') { return Err(invalid()); }
+        let (actions, next, stop) = parse_action_block_with_stop(lines, index + 1, false)?;
+        if stop != ActionBlockStop::Closed { return Err(invalid()); }
+        return Ok(Some((vec![Statement::ForEachModel { variable: variable.into(), actions }], next)));
+    }
     let header = rest.trim().strip_suffix('{').ok_or_else(invalid)?.trim();
     let header = header.strip_prefix('(').and_then(|s| s.strip_suffix(')')).ok_or_else(invalid)?;
     let (init, rest) = split_once_case_insensitive_outside_quotes(header, ";").ok_or_else(invalid)?;
@@ -11363,5 +11380,14 @@ mod for_loop_tests {
         for source in ["for (var i=0;i<2) {\n}\n", "for (var i=0;i<2;i=i+1) {\n"] {
             assert!(matches!(parse_program(source), Err(ParseError::InvalidFor(_))));
         }
+    }
+
+    #[test]
+    fn for_each_model_preserves_nested_body_and_following_actions() {
+        let program = parse_program("collect = {\nvar matches=[]\nfor each model (m) do\nif (m.network.id > 0 && m.data.slot == 0) {\nmatches.push(m)\n}\nend do\nvar count=matches.length\n}").unwrap();
+        let Statement::FunctionDef(function) = &program.statements[0] else { panic!() };
+        assert!(matches!(&function.actions[1], Statement::ForEachModel { variable, actions } if variable == "m" && matches!(actions[0], Statement::If(_))));
+        assert_eq!(function.actions.len(), 3);
+        assert!(parse_program("for each model (m) do\nvar x=1").is_err());
     }
 }

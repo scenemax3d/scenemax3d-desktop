@@ -98,7 +98,7 @@ pub(super) fn apply_startup_action_sequence(
     for (index, action) in actions.iter().enumerate() {
         if existing_shared_declaration(action, vars, None) { continue; }
         if matches!(action, Statement::ObjectPool(_) | Statement::RunFunction { .. } | Statement::If(_) | Statement::Repeat { .. }
-            | Statement::DoWhile { .. } | Statement::Async { .. } | Statement::ScopedBlock { .. }) {
+            | Statement::DoWhile { .. } | Statement::ForEachModel { .. } | Statement::Async { .. } | Statement::ScopedBlock { .. }) {
             enqueue_delayed_actions(Some(delayed_actions), 0., actions[index..].to_vec(), None, None);
             return ActionSequenceResult::Suspended;
         }
@@ -415,7 +415,7 @@ pub(super) fn apply_startup_leaf_action(
 ) -> ActionSequenceResult {
     if existing_shared_declaration(action, vars, None) { return ActionSequenceResult::Completed; }
     debug_assert!(!matches!(action, Statement::RunFunction { .. } | Statement::Async { .. }
-        | Statement::If(_) | Statement::Guarded { .. } | Statement::Repeat { .. } | Statement::DoWhile { .. }),
+        | Statement::If(_) | Statement::Guarded { .. } | Statement::Repeat { .. } | Statement::DoWhile { .. } | Statement::ForEachModel { .. }),
         "startup control flow must use the sequence executor");
     let evaluated_effect;
     let action = if let Statement::EffekseerPlay(play) = action {
@@ -2453,6 +2453,7 @@ pub(super) fn collect_transient_collision_assignments(
             Statement::Guarded { actions, .. }
             | Statement::Repeat { actions, .. }
             | Statement::DoWhile { actions, .. }
+            | Statement::ForEachModel { actions, .. }
             | Statement::LoopContinue { actions, .. }
             | Statement::ScopedBlock { actions }
             | Statement::Async { actions } => {
@@ -3962,6 +3963,30 @@ pub(super) fn apply_action_sequence(
                     return result;
                 }
                 return ActionSequenceResult::Completed;
+            }
+            Statement::ForEachModel { variable, actions: body } => {
+                // Snapshot live model identities once. Values retained by arrays keep
+                // their entity identity after the iteration's local scope ends.
+                let mut names = scene_entities.p1().iter()
+                    .filter(|(_, _, _, gltf, _, _, _, _)| gltf.is_some())
+                    .map(|(_, model, ..)| model.name.clone()).collect::<Vec<_>>();
+                names.sort();
+                let mut expanded = Vec::new();
+                for name in names {
+                    let value = object_pools.entity_values.2.get(&name).cloned()
+                        .or_else(|| vars.2.get(&name).cloned())
+                        .unwrap_or_else(|| scenemax_runtime_vm_core::references::Reference::entity(&name));
+                    let mut iteration = vec![Statement::LocalAssignment(scenemax_parser::AssignmentStatement {
+                        name: variable.clone(), value: AssignmentValue::RuntimeValue(value),
+                    })];
+                    iteration.extend(body.clone());
+                    expanded.push(Statement::ScopedBlock { actions: iteration });
+                }
+                expanded.extend_from_slice(parent_action_tail(actions, index));
+                return apply_action_sequence(&expanded, transforms_by_name, vars, object_pools,
+                    camera_system.as_deref_mut(), functions_by_name, guards_by_name, queued_animations,
+                    runtime_assets, animation_durations, collider_bounds, delayed_actions.as_deref_mut(), ui_queue.as_deref_mut(),
+                    owner.clone(), scope.as_deref_mut(), continuous_delta_seconds, commands, scene_entities);
             }
             Statement::DoWhile {
                 condition,
@@ -8608,6 +8633,7 @@ fn collect_bone_alias_targets_from_statements(
             Statement::Guarded { actions, .. }
             | Statement::Repeat { actions, .. }
             | Statement::DoWhile { actions, .. }
+            | Statement::ForEachModel { actions, .. }
             | Statement::LoopContinue { actions, .. }
             | Statement::ScopedBlock { actions }
             | Statement::Async { actions } => {

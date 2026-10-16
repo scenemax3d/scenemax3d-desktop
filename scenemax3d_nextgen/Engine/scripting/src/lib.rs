@@ -186,6 +186,7 @@ fn wrap_actions_with_rechecked_guard(
                 | Statement::Guarded { actions, .. }
                 | Statement::Repeat { actions, .. }
                 | Statement::DoWhile { actions, .. }
+            | Statement::ForEachModel { actions, .. }
                 | Statement::LoopContinue { actions, .. } => {
                     *actions = wrap_actions_with_rechecked_guard(
                         std::mem::take(actions),
@@ -526,6 +527,11 @@ pub fn substitute_statement(
         Statement::DoWhile { condition, actions } => Statement::DoWhile {
             condition: substitute_condition(condition, bindings),
             actions: substitute_statements(actions, bindings),
+        },
+        Statement::ForEachModel { variable, actions } => {
+            let mut inner = bindings.clone();
+            inner.remove(variable);
+            Statement::ForEachModel { variable: variable.clone(), actions: substitute_statements(actions, &inner) }
         },
         Statement::WaitValue { value } => Statement::WaitValue {
             value: substitute_assignment_value(value, bindings),

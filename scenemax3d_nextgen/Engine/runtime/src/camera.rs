@@ -451,6 +451,7 @@ fn collect_cinematic_rig_ids(statements: &[Statement], wanted: &mut HashSet<Stri
             Statement::Guarded { actions, .. }
             | Statement::Repeat { actions, .. }
             | Statement::DoWhile { actions, .. }
+            | Statement::ForEachModel { actions, .. }
             | Statement::LoopContinue { actions, .. }
             | Statement::ScopedBlock { actions }
             | Statement::Async { actions } => collect_cinematic_rig_ids(actions, wanted),

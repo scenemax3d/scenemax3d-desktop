@@ -315,6 +315,27 @@ pub(crate) mod tests {
     struct ResumeScope(SceneMaxScopeFrame);
     #[derive(Resource)]
     pub(crate) struct ContinuousDelta(pub(crate) f32);
+    #[test]
+    fn for_each_model_keeps_entity_references_and_resumes_after_waits() {
+        let mut world = World::new();
+        world.init_resource::<SceneMaxVars>();
+        for (name, model, id) in [("alpha", true, 17), ("beta", true, 18), ("shape", false, 19)] {
+            let mut entity = world.spawn((SceneMaxEntity { name: name.into(), runtime_name: name.into() }, Transform::default()));
+            if model { entity.insert(SceneMaxGltf { gltf: Handle::default(), animation_names: vec![] }); }
+            scenemax_runtime_vm_core::typed::store(&mut world.resource_mut::<SceneMaxVars>(), &format!("{name}.network.id"), serde_json::json!(id));
+        }
+        run_in(&mut world, "var matches=[]\nvar visited=0\nfor each model (m) do\nif (m.network.id > 0) {\nmatches.push(m)\n}\nwait 0.1 seconds\nvisited=visited+1\nend do\nvar chosen=matches[0]\nvar result=chosen.network.id\nvar complete=1");
+        while !world.resource::<DelayedActionQueue>().actions.is_empty() { resume_next(&mut world); }
+        let vars = world.resource::<SceneMaxVars>();
+        assert_eq!(vars.0["visited"], 2.);
+        assert_eq!(vars.0["result"], 17.);
+        assert_eq!(vars.0["complete"], 1.);
+        assert!(!vars.2.contains_key("m"));
+        assert_eq!(scenemax_runtime_vm_core::typed::lookup("matches.length", vars, None), Some(serde_json::json!(2)));
+        let empty = run("var visited=0\nfor each model (m) do\nvisited=visited+1\nend do\nvar complete=1");
+        assert_eq!(empty.resource::<SceneMaxVars>().0["visited"], 0.);
+        assert_eq!(empty.resource::<SceneMaxVars>().0["complete"], 1.);
+    }
     fn execute(
         mut commands: Commands,
         batch: Res<Batch>,
