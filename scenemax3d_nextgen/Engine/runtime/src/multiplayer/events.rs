@@ -316,6 +316,7 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                 } else {
                     0
                 };
+                write_runtime_diagnostic_line(format!("NETWORK:EVENT_SEND name={event:?} target={target}"));
                 Some(Outgoing::Event {
                     target,
                     name: event,
@@ -513,6 +514,7 @@ pub(super) fn receive(world: &mut World, net: &mut Multiplayer, message: Incomin
             }
         }
         Incoming::Event { name, message } => {
+            write_runtime_diagnostic_line(format!("NETWORK:EVENT_RECEIVE name={name:?} handlers={}", net.events.handlers.get(name.trim()).map_or(0, Vec::len)));
             if let Some(handlers) = net.events.handlers.get(name.trim()) {
                 let text = message.unwrap_or_default();
                 let value = text.trim().parse::<f64>().ok().filter(|n| n.is_finite())

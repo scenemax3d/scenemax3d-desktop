@@ -9,6 +9,7 @@ use std::{
     thread,
 };
 mod build;
+pub mod local_server;
 pub(crate) mod launch;
 
 /// A configuration snapshot used for optimistic conflict detection.

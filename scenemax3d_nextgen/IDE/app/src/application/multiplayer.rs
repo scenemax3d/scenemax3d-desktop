@@ -12,6 +12,8 @@ pub(crate) enum Action {
     Close,
     Save,
     Build,
+    RunLocal,
+    StopLocal,
     Cancel,
     OpenFolder,
     UseEnvironment,
@@ -31,6 +33,9 @@ pub(crate) struct State {
     snapshot: Option<Snapshot>,
     root: PathBuf,
     worker: Worker,
+    local: scenemax_ide_services::multiplayer::local_server::LocalServer,
+    run_after_build: bool,
+    pub local_status: String,
 }
 impl State {
     fn start(&mut self, operation: Operation) {
@@ -40,7 +45,7 @@ impl State {
                 self.busy = true;
                 self.status = if building { "Building multiplayer server…" } else { "Working…" }.into();
             }
-            Err(e) => { self.pending_password = None; self.status = e; },
+            Err(e) => { self.run_after_build = false; self.pending_password = None; self.status = e; },
         }
     }
     fn edited(&self) -> Result<Snapshot, String> {
@@ -62,10 +67,14 @@ impl State {
 }
 pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut commands: ResMut<CommandQueue>, mut services: ResMut<super::EditorServices>) {
     if state.root != session.workspace.project().root() {
+        state.local.stop();
+        state.local_status.clear();
+        state.run_after_build = false;
         state.password = None;
         if !state.root.as_os_str().is_empty() { state.open = false; }
         services.projector.set_password(session.workspace.project().root(), None);
     }
+    if let Some(status) = state.local.poll() { state.local_status = status; }
     if state.busy && state.root != session.workspace.project().root() {
         state.worker.cancel();
     }
@@ -77,8 +86,15 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
                     if state.root == session.workspace.project().root() { services.projector.set_password(&state.root, password); }
                 }
                 if let Some(server) = report.server {
+                    if state.run_after_build {
+                        match state.local.start(&server, report.snapshot.settings.port) {
+                            Ok(()) => state.local_status = format!("UDP starting · port {}", report.snapshot.settings.port),
+                            Err(error) => state.local_status = error,
+                        }
+                    }
                     state.server = Some(server);
                 }
+                state.run_after_build = false;
                 if state.snapshot.is_none() {
                     let s = &report.snapshot.settings;
                     state.fields = BTreeMap::from([
@@ -94,7 +110,7 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
                 state.snapshot = Some(report.snapshot);
                 state.status = report.message;
             }
-            Err(error) => { state.pending_password = None; state.status = error; },
+            Err(error) => { state.run_after_build = false; state.pending_password = None; state.status = error; },
         }
     }
     while let Some(action) = state.actions.pop_front() {
@@ -118,8 +134,14 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
                 state.revision += 1;
                 state.status = "Environment password selected. Save or Build Server to apply.".into();
             }
-            Action::Close => { state.worker.cancel(); state.open = false; },
+            Action::Close => { state.run_after_build = false; state.worker.cancel(); state.open = false; },
+            Action::StopLocal => {
+                state.run_after_build = false;
+                state.local.stop();
+                state.local_status = "UDP stopped".into();
+            }
             Action::Cancel if state.busy => {
+                state.run_after_build = false;
                 state.worker.cancel();
                 state.status = "Cancelling multiplayer operation…".into();
             }
@@ -130,7 +152,7 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
                     state.status = "Build a server first to open its folder.".into();
                 }
             }
-            Action::Save | Action::Build if !state.busy => {
+            Action::Save | Action::Build | Action::RunLocal if !state.busy => {
                 if state.root != session.workspace.project().root() {
                     state.status =
                         "The selected project changed; close and reopen Project Settings.".into();
@@ -138,6 +160,22 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
                 }
                 match state.edited() {
                     Ok(snapshot) => {
+                        if matches!(action, Action::RunLocal) {
+                            if state.local.active() {
+                                state.status = "The local server is already running. Stop it before changing its settings.".into();
+                                continue;
+                            }
+                            let native = if cfg!(target_os = "windows") { "windows-x64" } else if cfg!(target_os = "macos") { "macos-x64" } else { "linux-x64" };
+                            if snapshot.settings.platform != native {
+                                state.status = format!("Select {native} to run the server on this computer.");
+                                continue;
+                            }
+                            if !matches!(snapshot.settings.server.trim(), "127.0.0.1" | "localhost") {
+                                state.status = "Set Server IP / hostname to 127.0.0.1 to run and connect locally.".into();
+                                continue;
+                            }
+                            state.run_after_build = true;
+                        }
                         state.pending_password = Some(state.password.clone());
                         let operation = if matches!(action, Action::Save) { Operation::Save(snapshot) }
                             else if let Some(password) = state.password.clone() { Operation::BuildWithPassword(snapshot, password) }

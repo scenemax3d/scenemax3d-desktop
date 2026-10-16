@@ -23,6 +23,8 @@ mod replication;
 mod replay;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod registration_tests;
 
 #[derive(Resource, Default)]
 pub(super) struct Multiplayer {
@@ -72,6 +74,7 @@ pub(super) fn initialize(app: &mut App, project: Option<&Path>, script: Option<&
     let mut network = Multiplayer::default();
     match settings(project, script) {
         Ok(Some((host, port, login))) => {
+            write_runtime_diagnostic_line(format!("NETWORK:CONNECT server={host:?} port={port}"));
             network.player = login.player.clone();
             let result = (host.as_str(), port)
                 .to_socket_addrs()
@@ -87,7 +90,10 @@ pub(super) fn initialize(app: &mut App, project: Option<&Path>, script: Option<&
                     network.client = Some(client);
                     tracing::info!("SceneMax multiplayer connecting");
                 }
-                Err(error) => tracing::error!(%error, "SceneMax multiplayer connection failed"),
+                Err(error) => {
+                    write_runtime_diagnostic_line(format!("NETWORK:CONNECT_FAILED error={error}"));
+                    tracing::error!(%error, "SceneMax multiplayer connection failed");
+                }
             }
         }
         Ok(None) => {}
@@ -236,8 +242,11 @@ pub(super) fn declaration_with_source(
     }
     let (name, resource, options) = (name.to_owned(), resource.to_owned(), options.clone());
     commands.queue(move |world: &mut World| {
+        let pending_key = format!("{name}.network.registrationPending");
+        let mut pending = false;
         if let Some(mut net) = world.get_resource_mut::<Multiplayer>() {
             if net.client.is_some() && net.declarations.len() < 2048 {
+                pending = true;
                 net.rejected_declarations.remove(&name);
                 if let Some(source_name) = source_name {
                     net.local_sources.insert(name.clone(), source_name);
@@ -247,7 +256,30 @@ pub(super) fn declaration_with_source(
                 net.declarations.insert(name, (resource, options));
             }
         }
+        if let Some(mut vars) = world.get_resource_mut::<SceneMaxVars>() {
+            scenemax_runtime_vm_core::typed::store(&mut vars, &pending_key, serde_json::json!(if pending { 1 } else { 0 }));
+        }
     });
+}
+
+/// Resume the declaring script only after its local network identity is usable.
+/// The condition is published after deferred creation and released on failure.
+pub(super) fn registration_continuation(
+    action: &Statement, tail: &[Statement], vars: &SceneMaxVars,
+    pools: &SceneMaxObjectPools, scope: Option<&SceneMaxScopeFrame>,
+) -> Vec<Statement> {
+    let mut continuation = Vec::new();
+    if let Statement::ModelDecl { name, options, .. } = action {
+        if options.multiplayer {
+            let target = scenemax_runtime_vm_core::references::entity_name_with_aliases(name, vars, scope, &pools.aliases);
+            write_runtime_diagnostic_line(format!("NETWORK:REGISTRATION_WAIT target={target:?} continuation_actions={}", tail.len()));
+            continuation.push(Statement::WaitUntil { condition: Condition::EqualsNumber {
+                name: format!("{target}.network.registrationPending"), value: 0.,
+            }});
+        }
+    }
+    continuation.extend_from_slice(tail);
+    continuation
 }
 
 pub(super) fn scene_changed(commands: &mut Commands, scene: &str) {
@@ -678,6 +710,7 @@ fn update_connected(world: &mut World, net: &mut Multiplayer) {
     let events = match client.poll() {
         Ok(events) => events,
         Err(error) => {
+            write_runtime_diagnostic_line(format!("NETWORK:TRANSPORT_ERROR state={:?} closing={} error={error}", client.state(), !error.is_retryable()));
             tracing::error!(%error,"multiplayer transport failed");
             if !error.is_retryable() { client.close(); }
             if let Some(mut vars) = world.get_resource_mut::<SceneMaxVars>() {
@@ -692,7 +725,10 @@ fn update_connected(world: &mut World, net: &mut Multiplayer) {
             Incoming::Accepted {
                 client, session, ..
             } => tracing::info!(client, session, "SceneMax multiplayer joined"),
-            Incoming::Rejected => tracing::error!("SceneMax multiplayer login rejected"),
+            Incoming::Rejected => {
+                write_runtime_diagnostic_line("NETWORK:REJECTED server rejected login".to_owned());
+                tracing::error!("SceneMax multiplayer login rejected");
+            }
             Incoming::RemoteCreated { entity, spawn } => {
                 remote_spawn(world, net, entity, spawn);
                 if let Some(name) = net.remotes.get(&entity) {
@@ -1189,6 +1225,16 @@ fn publish_state(world: &mut World, net: &Multiplayer) {
                     &format!("{name}.network.id"),
                     serde_json::json!(id),
                 );
+                let pending = id == 0 && !net.rejected_declarations.contains(name)
+                    && !matches!(client.state(), State::Closed | State::Rejected);
+                let key = format!("{name}.network.registrationPending");
+                let previous = vars.0.get(&key).copied();
+                if previous != Some(if pending { 1. } else { 0. }) {
+                    write_runtime_diagnostic_line(format!("NETWORK:REGISTRATION target={name:?} id={id} pending={pending} rejected={} state={:?}",
+                        net.rejected_declarations.contains(name), client.state()));
+                }
+                scenemax_runtime_vm_core::typed::store(&mut vars,
+                    &format!("{name}.network.registrationPending"), serde_json::json!(if pending { 1 } else { 0 }));
             }
             for (id, name) in &net.remotes {
                 scenemax_runtime_vm_core::typed::store(

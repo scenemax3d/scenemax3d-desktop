@@ -3230,6 +3230,10 @@ fn strip_suffix_case_insensitive<'a>(text: &'a str, suffix: &str) -> Option<&'a 
         .then(|| &text[..text.len() - suffix.len()])
 }
 
+fn is_camera_target(value: &str) -> bool {
+    is_variable_path(value) || value.parse::<u32>().is_ok()
+}
+
 fn parse_fighting_camera(line: &str) -> Result<Option<FightingCameraStatement>, ParseError> {
     let Some((name, rest)) = line.split_once('=') else {
         return Ok(None);
@@ -3247,7 +3251,7 @@ fn parse_fighting_camera(line: &str) -> Result<Option<FightingCameraStatement>, 
     let (Some(target_a), Some(target_b)) = (args.first(), args.get(1)) else {
         return Ok(None);
     };
-    if !is_variable_name(name.trim()) || !is_variable_name(target_a) || !is_variable_name(target_b)
+    if !is_variable_name(name.trim()) || !is_camera_target(target_a) || !is_camera_target(target_b)
     {
         return Ok(None);
     }
@@ -3289,7 +3293,7 @@ fn parse_third_person_camera(line: &str) -> Result<Option<ThirdPersonCameraState
     let Some(target) = args.first() else {
         return Ok(None);
     };
-    if !is_variable_name(name.trim()) || !is_variable_name(target) {
+    if !is_variable_name(name.trim()) || !is_camera_target(target) {
         return Ok(None);
     }
 

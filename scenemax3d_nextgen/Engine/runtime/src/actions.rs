@@ -64,8 +64,6 @@ pub(super) fn is_startup_action(statement: &Statement) -> bool {
             | Statement::KeyEvent(_)
             | Statement::WhenEvent(_)
             | Statement::GuardDef { .. }
-            | Statement::FightingCamera(_)
-            | Statement::ThirdPersonCamera(_)
             | Statement::FunctionDef(_)
             | Statement::RunEvery { .. }
             | Statement::WaitForKey { .. }
@@ -385,6 +383,12 @@ pub(super) fn apply_startup_action_sequence(
                 );
                 if result.should_stop_parent() {
                     return result;
+                }
+                if matches!(action, Statement::ModelDecl { options, .. } if options.multiplayer)
+                    && index + 1 < actions.len()
+                    && enqueue_delayed_actions(Some(delayed_actions), 0.,
+                        multiplayer::registration_continuation(action, &actions[index + 1..], vars, object_pools, None), None, None) {
+                    return ActionSequenceResult::Suspended;
                 }
             }
         }
@@ -713,6 +717,10 @@ pub(super) fn apply_startup_leaf_action(
                     multiplayer::assignment_result(commands, &assignment.name, vars, None);
                 }
             }
+            ActionSequenceResult::Completed
+        }
+        Statement::FightingCamera(_) | Statement::ThirdPersonCamera(_) => {
+            register_camera_system(action, vars, object_pools, None, camera_system);
             ActionSequenceResult::Completed
         }
         Statement::CameraSystemSelect { name } => {
@@ -4369,7 +4377,7 @@ pub(super) fn apply_action_sequence(
                 if (pool_acquired || expression_acquired_pool_member || pool_lifecycle::needs_flush(action)) && index + 1 < actions.len()
                     && !scope.as_deref().is_some_and(|s| s.value_call_depth > 0)
                     && enqueue_delayed_actions(delayed_actions.as_deref_mut(), 0.,
-                        actions[index + 1..].to_vec(), owner.clone(), scope.as_deref().cloned()) {
+                        multiplayer::registration_continuation(action, &actions[index + 1..], vars, object_pools, scope.as_deref()), owner.clone(), scope.as_deref().cloned()) {
                     return ActionSequenceResult::Suspended;
                 }
             }
@@ -7389,6 +7397,12 @@ pub(super) fn apply_key_action(
             if !matches!(action, Statement::LocalAssignment(_)) {
                 multiplayer::assignment_result(commands, &assignment.name, vars, scope.as_deref());
             }
+        }
+        return ActionSequenceResult::Completed;
+    }
+    if matches!(action, Statement::FightingCamera(_) | Statement::ThirdPersonCamera(_)) {
+        if let Some(camera_system) = camera_system {
+            register_camera_system(action, vars, object_pools, scope.as_deref(), camera_system);
         }
         return ActionSequenceResult::Completed;
     }

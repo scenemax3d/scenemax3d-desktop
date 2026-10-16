@@ -135,6 +135,11 @@ pub(super) fn initialize_runtime_logger(project_root: Option<&Path>, script_root
         *log_file = Some(path);
     }
     write_runtime_diagnostic_line("initialized SceneMax NextGen runtime log");
+    let executable = std::env::current_exe().unwrap_or_default();
+    let modified = fs::metadata(&executable).and_then(|m| m.modified()).ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|time| time.as_secs());
+    write_runtime_diagnostic_line(format!("RUNTIME:BUILD camera_diagnostics=1 pid={} executable={} modified_unix={modified:?}",
+        std::process::id(), executable.display()));
     write_nextgen_launch_diagnostics();
 }
 

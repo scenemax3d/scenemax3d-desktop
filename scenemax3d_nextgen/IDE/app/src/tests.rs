@@ -524,6 +524,25 @@ fn save_copy_preserves_external_original_and_dirty_tab_can_be_discarded() {
 fn project_field_and_hidden_search_shortcut_are_connected() {
     use crate::presentation::{chrome::Panel, components::Field};
     let (mut app, _dir, _) = app();
+    edit(&mut app, "print café");
+    app.update();
+    {
+        let world = app.world_mut();
+        let editor = world
+            .query_filtered::<Entity, With<Editor>>()
+            .single(world)
+            .unwrap();
+        world.insert_resource(bevy::input_focus::InputFocus::from_entity(editor));
+        let mut fonts = bevy::text::FontCx::default();
+        let mut layouts = bevy::text::LayoutCx::default();
+        world
+            .query_filtered::<&mut EditableText, With<Editor>>()
+            .single_mut(world)
+            .unwrap()
+            .editor_mut()
+            .driver(&mut fonts.context, &mut layouts.0)
+            .select_byte_range(11, 6);
+    }
     let world = app.world_mut();
     let project = world
         .query::<(&Field, &EditableText)>()
@@ -553,6 +572,21 @@ fn project_field_and_hidden_search_shortcut_are_connected() {
         .unwrap()
         .1;
     assert_eq!(node.display, Display::Flex);
+    let (find, _, input, _) = world
+        .query::<(
+            Entity,
+            &Field,
+            &EditableText,
+            &bevy::input_focus::tab_navigation::TabIndex,
+        )>()
+        .iter(world)
+        .find(|(_, field, _, _)| **field == Field::Find)
+        .unwrap();
+    assert_eq!(input.value(), "café");
+    assert_eq!(
+        world.resource::<bevy::input_focus::InputFocus>().get(),
+        Some(find)
+    );
     let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
     keys.reset_all();
     keys.press(KeyCode::Escape);
@@ -563,6 +597,24 @@ fn project_field_and_hidden_search_shortcut_are_connected() {
             .query::<(&Panel, &Node)>()
             .iter(world)
             .all(|(_, node)| node.display == Display::None)
+    );
+    let mut fonts = bevy::text::FontCx::default();
+    let mut layouts = bevy::text::LayoutCx::default();
+    world
+        .query_filtered::<&mut EditableText, With<Editor>>()
+        .single_mut(world)
+        .unwrap()
+        .editor_mut()
+        .driver(&mut fonts.context, &mut layouts.0)
+        .select_byte_range(0, 0);
+    let mut keys = world.resource_mut::<ButtonInput<KeyCode>>();
+    keys.reset_all();
+    keys.press(KeyCode::ControlLeft);
+    keys.press(KeyCode::KeyF);
+    app.update();
+    assert_eq!(
+        app.world().get::<EditableText>(find).unwrap().value(),
+        "café"
     );
 }
 

@@ -6,6 +6,8 @@ use scenemax_ide_ui::{label, property, theme::*};
 pub(crate) struct Field(String);
 #[derive(Component)]
 pub(crate) struct Status;
+#[derive(Component)]
+pub(crate) struct LocalStatus;
 #[derive(Default, Resource)]
 pub(crate) struct View {
     root: Option<Entity>,
@@ -77,7 +79,8 @@ pub(crate) fn refresh(
     mut c: Commands,
     state: Res<State>,
     mut view: ResMut<View>,
-    mut status: Query<&mut Text, With<Status>>,
+    mut status: Query<&mut Text, (With<Status>, Without<LocalStatus>)>,
+    mut local_status: Query<&mut Text, (With<LocalStatus>, Without<Status>)>,
 ) {
     if !state.open {
         if let Some(root) = view.root.take() {
@@ -176,6 +179,14 @@ pub(crate) fn refresh(
         let environment = scenemax_ide_ui::button(&mut c, password_actions, "Use environment password", Name::new("Use environment password"));
         c.entity(environment).observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| state.actions.push_back(Action::UseEnvironment));
         text(&mut c, panel, "Save applies the password to future runs. Build Server uses the same password.\nPasswords are never saved to project files. Clear the field for no password.");
+        let local_row = node(&mut c, panel, Node { column_gap: px(8.), ..default() });
+        for (caption, action) in [("Run Server Locally", Action::RunLocal), ("Stop Local Server", Action::StopLocal)] {
+            let e = scenemax_ide_ui::button(&mut c, local_row, caption, Name::new(caption));
+            c.entity(e).observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| s.actions.push_back(action));
+        }
+        text(&mut c, panel, "Run saves these settings and builds a local-only server. The server stops when the IDE closes or you change projects.");
+        let local = text(&mut c, panel, &state.local_status);
+        c.entity(local).insert(LocalStatus);
         let row = node(
             &mut c,
             panel,
@@ -206,6 +217,10 @@ pub(crate) fn refresh(
         if text.0 != state.status {
             text.0 = state.status.clone();
         }
+    }
+    for mut text in &mut local_status {
+        let value = if state.local_status.is_empty() { "UDP local server stopped" } else { &state.local_status };
+        if text.0 != value { text.0 = value.to_owned(); }
     }
 }
 

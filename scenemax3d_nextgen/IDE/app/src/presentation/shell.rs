@@ -573,6 +573,7 @@ fn field(
     commands.spawn((label(caption, 12.), ChildOf(host)));
     commands.spawn((
         kind,
+        bevy::input_focus::tab_navigation::TabIndex(0),
         EditableText::new(value),
         Node {
             width: px(width),

@@ -130,7 +130,7 @@ pub(crate) struct InputFields<'w, 's> {
     physics: Option<Res<'w, super::physics::State>>,
     multiplayer: Option<Res<'w, crate::application::multiplayer::State>>,
     git: Option<Res<'w, crate::application::git::State>>,
-    fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
+    fields: Query<'w, 's, (Entity, &'static Field, &'static mut EditableText)>,
     properties: PropertyInputs<'w, 's>,
 }
 pub(crate) fn collect_actions(
@@ -156,12 +156,28 @@ pub(crate) fn collect_actions(
     }
     let InputFields {
         imports: _,
-        fields,
+        mut fields,
         properties,
         mut zoom,
         editors,
         ..
     } = input_fields;
+    if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
+        && keys.just_pressed(KeyCode::KeyF)
+        && !session.composing
+        && let Some(document) = session
+            .workspace
+            .active_id()
+            .and_then(|id| session.workspace.document(id).ok())
+    {
+        let selected = &document.text()[document.selection().range()];
+        if !selected.is_empty()
+            && let Some((_, _, mut input)) =
+                fields.iter_mut().find(|(_, kind, _)| **kind == Field::Find)
+        {
+            input.editor_mut().set_text(selected);
+        }
+    }
     let values = fields
         .iter()
         .map(|(entity, kind, input)| (entity, *kind, input.value().to_string()))
