@@ -414,6 +414,8 @@ pub(super) fn apply_startup_leaf_action(
     _depth: usize,
 ) -> ActionSequenceResult {
     if existing_shared_declaration(action, vars, None) { return ActionSequenceResult::Completed; }
+    let named_action = crate::value_calls::resolve_text_operands(action, vars, None);
+    let action = named_action.as_ref().unwrap_or(action);
     debug_assert!(!matches!(action, Statement::RunFunction { .. } | Statement::Async { .. }
         | Statement::If(_) | Statement::Guarded { .. } | Statement::Repeat { .. } | Statement::DoWhile { .. } | Statement::ForEachModel { .. }),
         "startup control flow must use the sequence executor");

@@ -935,6 +935,8 @@ pub struct UiMessageStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiEaseStatement {
     pub target: UiTargetPath,
+    /// A variable holding a UI reference; explicit UI paths leave this unset.
+    pub target_reference: Option<String>,
     pub easing: String,
     pub direction: UiEaseDirection,
     pub duration_seconds: f32,
@@ -2638,7 +2640,11 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
 fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
     let line = line.trim();
     let lower = line.to_ascii_lowercase();
-    if !lower.starts_with("ui.") {
+    let alias_ease = lower.find(".ease(").is_some_and(|end| {
+        let name = line[..end].trim();
+        !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+    });
+    if !lower.starts_with("ui.") && !alias_ease {
         return Ok(None);
     }
 
@@ -2697,9 +2703,10 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
 
     if let Some(open_index) = lower.find(".ease(") {
         let path_text = &line[..open_index];
-        let Some(target) = parse_ui_target_path(path_text) else {
-            return Ok(None);
-        };
+        let target_reference = (!path_text.to_ascii_lowercase().starts_with("ui.")).then(|| path_text.trim().to_owned());
+        let target = parse_ui_target_path(path_text).unwrap_or_else(|| UiTargetPath {
+            ui_name: None, layer: path_text.trim().to_owned(), widget_path: vec![],
+        });
         let args = parse_call_args(&line[open_index + ".ease".len()..]);
         let Some(easing) = args.first().cloned() else {
             return Ok(None);
@@ -2716,6 +2723,7 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
         let async_run = contains_keyword_after_matching_call(line, call_open_index, "async");
         return Ok(Some(Statement::UiEase(UiEaseStatement {
             target,
+            target_reference,
             easing,
             direction,
             duration_seconds,
@@ -2745,7 +2753,7 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
     Ok(None)
 }
 
-fn parse_ui_target_path(text: &str) -> Option<UiTargetPath> {
+pub fn parse_ui_target_path(text: &str) -> Option<UiTargetPath> {
     let text = text.trim();
     if !starts_with_case_insensitive(text, "UI.") {
         return None;
@@ -10609,6 +10617,15 @@ run tick(score+10) every tick_time+0.25 seconds
             Statement::UiShowHide(show_hide)
                 if show_hide.target.widget_path == vec!["footerPanel"] && !show_hide.visible
         ));
+    }
+
+    #[test]
+    fn parses_ui_ease_alias_without_consuming_method_names_inside_text() {
+        let program = parse_program("panel.ease(\"EaseOutBounce\", Right, 2) async\nvar text = \"panel.ease(hello)\"").unwrap();
+        assert!(matches!(&program.statements[0], Statement::UiEase(ease)
+            if ease.target_reference.as_deref() == Some("panel") && ease.async_run));
+        assert!(matches!(&program.statements[1], Statement::Assignment(value)
+            if value.value == AssignmentValue::Literal(serde_json::json!("panel.ease(hello)"))));
     }
 
     #[test]

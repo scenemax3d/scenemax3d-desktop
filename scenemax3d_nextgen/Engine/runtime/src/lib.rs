@@ -522,6 +522,7 @@ static PERF_BONE_TARGET_RESOLVES: AtomicU64 = AtomicU64::new(0);
 static PERF_BONE_ALIASES_INSERTED: AtomicU64 = AtomicU64::new(0);
 
 fn update_scenemax_perf_debug(time: Res<Time>, mut perf: ResMut<SceneMaxPerfDebug>) {
+    if !runtime_logging_enabled() { return; }
     perf.elapsed_seconds += time.delta_secs();
     perf.frames += 1;
     if perf.elapsed_seconds < 1.0 {
@@ -1190,6 +1191,7 @@ struct SceneMaxUiSpriteSheet {
 
 #[derive(Debug, Clone, Component)]
 struct SceneMaxUiEase {
+    completion_target: Option<UiTargetPath>,
     start: Vec2,
     elapsed_seconds: f32,
     duration_seconds: f32,
@@ -1883,6 +1885,10 @@ const PHYSICS_LAYER_CHARACTER: u32 = 1 << 1;
 const PHYSICS_LAYER_HITBOX: u32 = 1 << 2;
 const PHYSICS_LAYER_WEAPON: u32 = 1 << 3;
 static SCENEMAX_RUNTIME_LOG_FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+static RUNTIME_LOGGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Enable diagnostic output before starting the projector. Disabled by default.
+pub fn set_runtime_logging(enabled: bool) { RUNTIME_LOGGING.store(enabled, Ordering::Relaxed); }
+fn runtime_logging_enabled() -> bool { RUNTIME_LOGGING.load(Ordering::Relaxed) }
 
 fn setup_placeholder_model(
     mut commands: Commands,
@@ -2177,6 +2183,9 @@ mod tests {
         let _ = fs::remove_dir_all(&log_dir);
         fs::create_dir_all(&log_dir).unwrap();
         initialize_runtime_logger(Some(&log_dir), None);
+        assert!(!log_dir.join("scenemax-nextgen-runtime.log").exists());
+        set_runtime_logging(true);
+        initialize_runtime_logger(Some(&log_dir), None);
         let vars = SceneMaxVars::from(HashMap::from([("counter".to_owned(), 7.0)]));
         let guards = HashMap::new();
 
@@ -2207,6 +2216,9 @@ mod tests {
         let log = fs::read_to_string(log_path).unwrap();
         assert!(log.contains("[INFO] flow-start"));
         assert!(log.contains("[DEBUG] 7"));
+        set_runtime_logging(false);
+        write_runtime_diagnostic_line("disabled probe");
+        assert!(!fs::read_to_string(log_dir.join("scenemax-nextgen-runtime.log")).unwrap().contains("disabled probe"));
         let _ = fs::remove_dir_all(log_dir);
     }
 
@@ -3711,6 +3723,7 @@ mod tests {
             widget_path: vec!["panel".to_owned()],
         };
         let blocking = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target_reference: None,
             target: target.clone(),
             easing: "EaseInBack".to_owned(),
             direction: UiEaseDirection::Down,
@@ -3718,6 +3731,7 @@ mod tests {
             async_run: false,
         });
         let async_ease = Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target_reference: None,
             target,
             easing: "EaseInBack".to_owned(),
             direction: UiEaseDirection::Down,

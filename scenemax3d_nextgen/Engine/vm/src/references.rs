@@ -102,7 +102,9 @@ pub fn lookup(name: &str, vars: &SceneMaxVars, scope: Option<&SceneMaxScopeFrame
 pub fn evaluate(value: &AssignmentValue, vars: &SceneMaxVars, scope: Option<&SceneMaxScopeFrame>, guards: &HashMap<String, Condition>, spatial: &impl SceneMaxVmSpatial) -> Option<Reference> {
     match value {
         AssignmentValue::RuntimeValue(value) => Some(value.clone()),
-        AssignmentValue::Symbol(name) => lookup(name, vars, scope).or_else(|| typed::evaluate(value,vars,scope,guards,spatial).map(Reference::new)),
+        AssignmentValue::Symbol(name) => lookup(name, vars, scope)
+            .or_else(|| scenemax_parser::parse_ui_target_path(name).map(|_| Reference::ui(name)))
+            .or_else(|| typed::evaluate(value,vars,scope,guards,spatial).map(Reference::new)),
         AssignmentValue::Array(values) => values.iter().map(|v| evaluate(v,vars,scope,guards,spatial)).collect::<Option<Vec<_>>>().map(Reference::array),
         AssignmentValue::Access { value, index } => evaluate(value,vars,scope,guards,spatial)?.field(&typed::evaluate(index,vars,scope,guards,spatial)?),
         AssignmentValue::ArrayEdit { source, operation } => {
@@ -123,6 +125,11 @@ pub fn evaluate(value: &AssignmentValue, vars: &SceneMaxVars, scope: Option<&Sce
 pub fn equal(left: &Reference, right: &Reference) -> bool {
     fn at(left: &Reference, right: &Reference, depth: usize) -> bool {
         if depth > 128 { return false; }
+        match (left.ui_path(), right.ui_path()) {
+            (Some(a), Some(b)) => return a == b,
+            (Some(_), _) | (_, Some(_)) => return false,
+            _ => {}
+        }
         match (left.entity_identity(), right.entity_identity()) {
             (Some(a), Some(b)) => return a.key == b.key,
             (Some(_), _) | (_, Some(_)) => return false,
@@ -212,6 +219,19 @@ mod tests {
         let mut vars=SceneMaxVars::default();
         apply_initial_assignments(&scenemax_parser::parse_program(source).unwrap(), &mut vars);
         vars
+    }
+    #[test]
+    fn ui_references_keep_their_paths_and_do_not_serialize_as_text() {
+        let mut vars = run("var targets = [UI.layer1.panel, UI.layer1.panel.caption]\nvar selected = targets[1]");
+        let selected = lookup("selected", &vars, None).unwrap();
+        assert_eq!(selected.ui_path().as_deref(), Some("UI.layer1.panel.caption"));
+        assert!(selected.snapshot().is_none());
+        assert!(equal(&selected, &Reference::ui("UI.layer1.panel.caption")));
+        assert!(!equal(&selected, &Reference::ui("UI.layer1.panel")));
+        assert_eq!(lookup("targets", &vars, None).unwrap().snapshot(), Some(serde_json::json!([null, null])));
+        typed::store(&mut vars, "UI.layer1.entry.text", serde_json::json!("typed text"));
+        let value = evaluate(&AssignmentValue::Symbol("UI.layer1.entry.text".into()), &vars, None, &HashMap::new(), &NoSceneMaxVmSpatial).unwrap();
+        assert_eq!(value.snapshot(), Some(serde_json::json!("typed text")));
     }
     #[test]
     fn entity_properties_ignore_stale_authored_name_fields() {

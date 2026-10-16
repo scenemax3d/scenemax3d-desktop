@@ -498,6 +498,7 @@ pub fn substitute_statement(
             })
         }
         Statement::UiEase(ease) => Statement::UiEase(scenemax_parser::UiEaseStatement {
+            target_reference: ease.target_reference.as_ref().map(|name| substitute_reference(name, bindings)),
             target: substitute_ui_target_path(&ease.target, bindings),
             easing: ease.easing.clone(),
             direction: ease.direction,

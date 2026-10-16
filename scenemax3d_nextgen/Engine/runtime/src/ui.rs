@@ -234,6 +234,11 @@ pub(super) fn apply_scenemax_ui_actions(
             }
             SceneMaxUiAction::ShowHide { target, visible } => {
                 if let Some(target) = resolve_ui_target(&ui_runtime, &target) {
+                    commands.entity(target.entity).try_remove::<SceneMaxUiEase>();
+                    let entity = target.entity;
+                    commands.queue(move |world: &mut World| {
+                        if let Some(mut transform) = world.get_mut::<UiTransform>(entity) { transform.translation = Val2::ZERO; }
+                    });
                     if let Ok(mut visibility_component) = visibility_query.get_mut(target.entity) {
                         *visibility_component = if visible {
                             Visibility::Inherited
@@ -356,22 +361,25 @@ pub(super) fn apply_scenemax_ui_actions(
                 duration_seconds,
                 received_at,
             } => {
+                let completion_target = (!remote).then(|| target.clone());
                 if let Some(target_path) = resolve_ui_target_path(&ui_runtime, &target)
                     && let Some(target) = resolve_ui_target(&ui_runtime, &target)
                 {
                     let start = ui_ease_start_offset(direction);
-                    let duration_seconds = duration_seconds.max(0.001);
+                    let duration_seconds = duration_seconds.max(0.0);
                     let elapsed_seconds = received_at.map_or(0.0, |origin| {
                         origin.elapsed().as_secs_f32().min(duration_seconds)
                     });
-                    let progress = ui_ease_progress(elapsed_seconds / duration_seconds, &easing);
-                    let offset = start * (1.0 - progress);
+                    let finished = elapsed_seconds >= duration_seconds;
+                    let progress = if finished { 1.0 } else { ui_ease_progress(elapsed_seconds / duration_seconds, &easing) };
+                    let offset = if finished { Vec2::ZERO } else { ui_ease_offset(start, progress, &easing) };
                     commands.entity(target.entity).insert((
-                        Visibility::Inherited,
+                        if finished && ui_ease_hides(&easing) { Visibility::Hidden } else { Visibility::Inherited },
                         UiTransform::from_translation(Val2::percent(offset.x, offset.y)),
                     ));
                     if elapsed_seconds < duration_seconds {
                         commands.entity(target.entity).insert(SceneMaxUiEase {
+                            completion_target,
                             start,
                             elapsed_seconds,
                             duration_seconds,
@@ -379,6 +387,9 @@ pub(super) fn apply_scenemax_ui_actions(
                         });
                     } else {
                         commands.entity(target.entity).try_remove::<SceneMaxUiEase>();
+                        if let Some(target) = completion_target {
+                            multiplayer::widgets::capture(&mut commands, &ui_runtime, &SceneMaxUiAction::ShowHide { target, visible: !ui_ease_hides(&easing) });
+                        }
                     }
                     tracing::debug!(target = target_path, "started SceneMax UI ease");
                 }
@@ -844,6 +855,7 @@ pub(super) fn draw_node(
 
 pub(super) fn update_scenemax_ui_eases(
     time: Res<Time>,
+    ui_runtime: Res<SceneMaxUiRuntime>,
     mut commands: Commands,
     mut query: Query<(Entity, &mut UiTransform, &mut SceneMaxUiEase)>,
 ) {
@@ -851,10 +863,14 @@ pub(super) fn update_scenemax_ui_eases(
         ease.elapsed_seconds += time.delta_secs();
         let t = (ease.elapsed_seconds / ease.duration_seconds).clamp(0.0, 1.0);
         let eased = ui_ease_progress(t, &ease.easing);
-        let offset = ease.start * (1.0 - eased);
+        let offset = ui_ease_offset(ease.start, eased, &ease.easing);
         transform.translation = Val2::percent(offset.x, offset.y);
         if t >= 1.0 {
             transform.translation = Val2::ZERO;
+            commands.entity(entity).insert(if ui_ease_hides(&ease.easing) { Visibility::Hidden } else { Visibility::Inherited });
+            if let Some(target) = ease.completion_target.clone() {
+                multiplayer::widgets::capture(&mut commands, &ui_runtime, &SceneMaxUiAction::ShowHide { target, visible: !ui_ease_hides(&ease.easing) });
+            }
             commands.entity(entity).try_remove::<SceneMaxUiEase>();
         }
     }
@@ -1524,31 +1540,21 @@ pub(super) fn resolve_ui_target_path(
 
 pub(super) fn ui_ease_start_offset(direction: UiEaseDirection) -> Vec2 {
     match direction {
-        UiEaseDirection::Up => Vec2::new(0.0, 115.0),
-        UiEaseDirection::Down => Vec2::new(0.0, -115.0),
-        UiEaseDirection::Left => Vec2::new(-115.0, 0.0),
-        UiEaseDirection::Right => Vec2::new(115.0, 0.0),
+        UiEaseDirection::Up => Vec2::new(0.0, -100.0),
+        UiEaseDirection::Down => Vec2::new(0.0, 100.0),
+        UiEaseDirection::Left => Vec2::new(-100.0, 0.0),
+        UiEaseDirection::Right => Vec2::new(100.0, 0.0),
     }
 }
 
 pub(super) fn ui_ease_progress(t: f32, easing: &str) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    let lower = easing.to_ascii_lowercase();
-    if lower.contains("bounce") {
-        return ease_out_bounce(t);
-    }
-    if lower.contains("back") {
-        let c1 = 1.70158;
-        let c3 = c1 + 1.0;
-        return c3 * t * t * t - c1 * t * t;
-    }
-    if lower.contains("cubic") {
-        return t * t * t;
-    }
-    if lower.contains("quad") {
-        return t * t;
-    }
-    t
+    easing::progress(t, easing)
+}
+
+mod easing;
+fn ui_ease_hides(name: &str) -> bool { easing::normalized(name).starts_with("easeout") }
+fn ui_ease_offset(travel: Vec2, progress: f32, name: &str) -> Vec2 {
+    travel * if ui_ease_hides(name) { progress } else { -(1.0 - progress) }
 }
 
 pub(super) fn ease_out_bounce(t: f32) -> f32 {
