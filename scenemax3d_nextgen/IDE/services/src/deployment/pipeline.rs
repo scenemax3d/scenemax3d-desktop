@@ -156,13 +156,12 @@ fn cargo(
     }
     let binary = out.join("release").join(format!("{package}{suffix}"));
     if package != "scenemax_game_launcher"
-        && !request.settings.rebuild_runtime
+        && may_reuse_installed_runtime(&request.workspace, request.settings.rebuild_runtime)
         && binary.is_file()
         && (!effects || release_has_effects(&out.join("release"), package))
     {
         files::native_binary(&binary, platform.target)?;
-        // Release binaries are installed engine tools, independent of game scripts.
-        // Source changes are picked up only by the explicit rebuild option.
+        // Only installations without source may bypass Cargo's freshness checks.
         context.log(format!(
             "Reusing release {package} for {}. Engine rebuild skipped.\n",
             platform.triple
@@ -170,6 +169,9 @@ fn cargo(
         return Ok(binary);
     }
     let mut command = Command::new("cargo");
+    if package != "scenemax_game_launcher" {
+        context.log("Checking engine source and dependencies with Cargo; unchanged builds are reused.\n");
+    }
     command
         .current_dir(&request.workspace)
         .args(["build", "--locked", "--release", "-p", package]);
@@ -191,6 +193,23 @@ fn cargo(
     process::run(&mut command, context, log)?;
     files::native_binary(&binary, platform.target)?;
     Ok(binary)
+}
+fn may_reuse_installed_runtime(workspace: &Path, force: bool) -> bool {
+    !force && !workspace.join("Cargo.toml").is_file()
+}
+
+#[cfg(test)]
+mod runtime_freshness_tests {
+    use super::*;
+    #[test]
+    fn source_installations_always_check_cargo_freshness() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(may_reuse_installed_runtime(root.path(), false));
+        assert!(!may_reuse_installed_runtime(root.path(), true));
+        fs::write(root.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+        assert!(!may_reuse_installed_runtime(root.path(), false));
+        assert!(!may_reuse_installed_runtime(root.path(), true));
+    }
 }
 fn release_has_effects(release: &Path, package: &str) -> bool {
     // Cargo's most recently completed package fingerprint describes the installed
@@ -264,6 +283,7 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
     let entry = canonical_entry
         .strip_prefix(&project)
         .map_err(io::Error::other)?;
+    crate::multiplayer::embed_settings(&project, &snapshot.join(entry)).map_err(io::Error::other)?;
     let entry = entry
         .to_str()
         .ok_or_else(|| io::Error::other("Entry point must be Unicode."))?

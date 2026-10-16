@@ -14,6 +14,10 @@ pub struct Visual {
     pub root: PathBuf,
     /// Canonical image file.
     pub path: PathBuf,
+    /// Atlas page paths and per-glyph page identities.
+    pub pages: HashMap<u32,PathBuf>,
+    /// Page identity for every glyph quad.
+    pub glyph_pages: Vec<u32>,
     /// Atlas source rectangles paired with local destination rectangles.
     pub quads: Vec<([f32; 4], [f32; 4])>,
     /// True when quads represent text glyphs.
@@ -158,6 +162,7 @@ pub fn load(project: &Path, source: &str) -> Result<ScenePreview, String> {
                 w.visual = Some(Visual {
                     root: r,
                     path: p,
+                    pages: HashMap::new(), glyph_pages: Vec::new(),
                     quads,
                     text: false,
                     font: None,
@@ -193,6 +198,8 @@ pub fn load(project: &Path, source: &str) -> Result<ScenePreview, String> {
                         w.visual = Some(Visual {
                             root: r.clone(),
                             path: page,
+                            pages: font.pages.iter().filter_map(|(id,file)| p.parent().and_then(|parent|parent.join(file).canonicalize().ok()).filter(|p|p.starts_with(r)&&p.is_file()).map(|p|(*id,p))).collect(),
+                            glyph_pages: scenemax_runtime_ui_core::bitmap::layout_paged(font,&w.text,w.font_size,w.rect[2],w.rect[3],&w.alignment).into_iter().map(|g|g.page).collect(),
                             quads: scenemax_runtime_ui_core::bitmap::layout(
                                 font,
                                 &w.text,
@@ -254,6 +261,7 @@ pub fn refresh_cached(
         if let Some(visual) = &mut w.visual
             && let Some(font) = &visual.font
         {
+            visual.glyph_pages = scenemax_runtime_ui_core::bitmap::layout_paged(font,&w.text,w.font_size,w.rect[2],w.rect[3],&w.alignment).into_iter().map(|g|g.page).collect();
             visual.quads = scenemax_runtime_ui_core::bitmap::layout(
                 font,
                 &w.text,
@@ -305,11 +313,24 @@ mod tests {
         assert!(locate(&root, "../../outside.png").is_none());
     }
     #[test]
+    fn multi_page_preview_retains_page_mapping_and_kerned_cached_edits() {
+        let dir=tempfile::tempdir().unwrap();let root=dir.path().join("resources");fs::create_dir_all(root.join("fonts")).unwrap();
+        fs::write(root.join("fonts/one.png"),b"page one").unwrap();fs::write(root.join("fonts/two.png"),b"page two").unwrap();
+        fs::write(root.join("fonts/fonts.json"),r#"{"fonts":[{"name":"split","path":"fonts/split.fnt"}]}"#).unwrap();
+        fs::write(root.join("fonts/split.fnt"),"info size=16\ncommon lineHeight=16\npage id=0 file=\"one.png\"\npage id=2 file=\"two.png\"\nchar id=65 width=8 height=12 xadvance=10 page=0\nchar id=86 width=8 height=12 xadvance=10 page=2\nkerning first=65 second=86 amount=-3").unwrap();
+        let source=r#"{"name":"hud","layers":[{"name":"overlay","widgets":[{"name":"text","type":"TEXT_VIEW","fontName":"split","fontSize":16,"text":"AV","textAlignment":"left"}]}]}"#;
+        let scene=load(dir.path(),source).unwrap();let visual=scene.widgets[0].visual.as_ref().unwrap();
+        assert_eq!(visual.glyph_pages,vec![0,2]);assert!(visual.pages[&2].ends_with("two.png"));assert_eq!(visual.quads[1].1[0],7.);
+        let cached=refresh_cached(&source.replace("\"AV\"","\"AVA\""),&scene).unwrap().unwrap();let visual=cached.widgets[0].visual.as_ref().unwrap();
+        assert_eq!(visual.glyph_pages,vec![0,2,0]);assert_eq!(visual.quads[2].1[0],17.);
+    }
+    #[test]
     fn cached_font_relayouts_text_without_reading_assets() {
         let source = r#"{"name":"ui","layers":[{"name":"hud","widgets":[{"name":"title","type":"TEXT_VIEW","text":"A","fontName":"caption"}]}]}"#;
         let mut previous = preview(source).unwrap();
         let font=scenemax_runtime_ui_core::bitmap::parse("info size=20\ncommon lineHeight=20\npage id=0 file=\"missing.png\"\nchar id=65 x=0 y=0 width=10 height=12 xadvance=12").unwrap();
         previous.widgets[0].visual = Some(Visual {
+            pages: HashMap::new(), glyph_pages: Vec::new(),
             font: Some(std::sync::Arc::new(font)),
             root: "unavailable".into(),
             path: "unavailable/missing.png".into(),

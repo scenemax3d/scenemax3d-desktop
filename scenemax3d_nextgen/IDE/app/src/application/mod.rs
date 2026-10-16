@@ -27,3 +27,4 @@ pub(crate) mod animation_analyzer;
 pub(crate) mod git;
 
 pub(crate) mod mcp;
+pub(crate) mod multiplayer;

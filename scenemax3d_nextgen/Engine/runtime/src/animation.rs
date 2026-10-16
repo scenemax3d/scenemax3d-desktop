@@ -59,7 +59,7 @@ pub(super) fn estimated_animation_seconds(
     animation: &AnimationStatement,
     animation_durations: &SceneMaxAnimationDurations,
 ) -> f32 {
-    if let Some(duration) = animation_durations.lookup(&animation.target, &animation.clip) {
+    if let Some(duration) = animation_durations.lookup(&animation.target, &animation.playback_name()) {
         return (duration / animation.speed.max(0.1)).clamp(0.08, 3.5);
     }
     if is_jump_animation_clip(&animation.clip) {
@@ -142,7 +142,7 @@ pub(super) fn play_pending_animations(
     mut commands: Commands,
     children: Query<&Children>,
     root_entities: Query<(&SceneMaxEntity, Option<&AnimationRecordModel>)>,
-    mut animations_to_play: Query<(Entity, &mut AnimationToPlay)>,
+    mut animations_to_play: Query<(Entity, &mut AnimationToPlay, Option<&NetworkAnimationResume>)>,
     asset_server: Res<AssetServer>,
     gltfs: Res<Assets<Gltf>>,
     gltf_nodes: Res<Assets<GltfNode>>,
@@ -169,7 +169,13 @@ pub(super) fn play_pending_animations(
         Option<&Name>,
     )>,
 ) {
-    for (root, mut animation_to_play) in &mut animations_to_play {
+    for (root, mut animation_to_play, resume) in &mut animations_to_play {
+        let resume = resume.filter(|resume| animation_to_play.controller_owner.as_ref() == Some(&resume.owner));
+        if resume.is_some_and(|resume| resume.received_at.elapsed().as_secs_f64() >= resume.remaining_seconds) {
+            commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
+            tracing::debug!(?root, "expired remote animation during asset loading");
+            continue;
+        }
         let target_name = root_entities
             .get(root)
             .map(|(entity, _)| entity.name.as_str())
@@ -275,26 +281,36 @@ pub(super) fn play_pending_animations(
                         animation_clip_duration_seconds(&animation_clips, &handle);
                     animation_durations.insert(
                         target_name,
-                        &animation_to_play.runtime_clip,
-                        &baked.clip,
+                        &animation_to_play.playback_name(),
+                        &animation_to_play.playback_name(),
                         duration_seconds,
                     );
-                    play_animation_clip_on_players(
+                    let (seek_seconds,rewind)=if let Some(spec)=&animation_to_play.rewind {animation_rewind::resume(spec,duration_seconds,animation_to_play.speed,resume)} else {(resume.map_or(0.,|r|if animation_to_play.looped { r.loop_seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) } else { r.seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) }),None)};
+                    if resume.is_some() && rewind.is_none() && seek_seconds >= duration_seconds {
+                        commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
+                        tracing::debug!(target = target_name, "expired remote animation during asset loading");
+                        continue;
+                    }
+                    let playback_graphs = play_animation_clip_on_players(
                         &mut commands,
                         handle,
                         vec![destination_player],
                         animation_to_play.speed,
                         animation_to_play.looped,
+                        seek_seconds,
                         transition_duration,
                         &mut graphs,
                         &mut players,
                     );
-                    commands.entity(root).try_remove::<AnimationToPlay>();
-                    commands.entity(root).insert(CurrentAnimation {
-                        clip: animation_to_play.runtime_clip.clone(),
+                    commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
+                    commands.entity(root).insert(CurrentAnimation { rewind, identity: animation_to_play.network_lifetime.as_ref().map(std::sync::Arc::downgrade),
+                        controller_owner: animation_to_play.controller_owner.clone(),
+                        network_lifetime: animation_to_play.network_lifetime.clone(),
+                        playback_graphs,
+                        clip: animation_to_play.playback_name(),
                         looped: animation_to_play.looped,
                         speed: animation_to_play.speed.max(0.001),
-                        elapsed_seconds: 0.0,
+                        elapsed_seconds: seek_seconds,
                         duration_seconds,
                     });
                     if runtime_verbose_logging() {
@@ -324,7 +340,10 @@ pub(super) fn play_pending_animations(
         let mut interval = None;
         let mut source_index = None;
         let mut source_name = animation_to_play.clip.clone();
-        if !animation_to_play.external_source {
+        if !animation_to_play.external_source
+            && ((animation_to_play.frame_range_name.is_none() && animation_to_play.frame_range.is_none())
+                || find_model_animation_clip(gltf, &animation_to_play.animation_names, &source_name).is_none())
+        {
             if let (Some(resource), Some(root_path)) =
                 (record_model.as_ref(), runtime_assets.asset_root.clone())
             {
@@ -394,6 +413,29 @@ pub(super) fn play_pending_animations(
         };
         let resolved_clip_name = resolved_clip.name;
         let clip = resolved_clip.clip;
+        let requested_range = if let Some(name) = animation_to_play.frame_range_name.as_deref() {
+            match crate::animation_range::named_range(record_model.as_deref(), name, &mut runtime_assets) {
+                Ok(range) => Some(range),
+                Err(error) => {
+                    write_runtime_diagnostic_line(format!("ANIM_RANGE_ERROR target={target_name} reason={error}"));
+                    commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
+                    continue;
+                }
+            }
+        } else { animation_to_play.frame_range };
+        if let Some(range) = requested_range {
+            let Some(source) = animation_clips.get(clip) else { continue; };
+            let index = gltf.animations.iter().position(|candidate| candidate == clip).unwrap_or(0);
+            match crate::animation_range::timeline(&animation_to_play, index, &asset_server, &mut runtime_assets) {
+                Ok(times) => interval = Some(crate::animation_range::interval(range, source.duration(), times.as_deref(), interval)),
+                Err(error) => {
+                    tracing::warn!(target = target_name, %error, "Animation frame range could not resolve its source timeline");
+                    commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
+                    continue;
+                }
+            }
+        }
+
 
         let retargeted_clip = animation_clips.get(clip).and_then(|source_clip| {
             retarget_clip_to_visible_animation_player(
@@ -459,30 +501,50 @@ pub(super) fn play_pending_animations(
         };
 
         let duration_seconds = animation_clip_duration_seconds(&animation_clips, &clip_to_play);
+        let playback_name = animation_to_play.playback_name();
         animation_durations.insert(
             target_name,
-            &animation_to_play.runtime_clip,
-            resolved_clip_name,
+            &animation_to_play.playback_name(),
+            if requested_range.is_some() { &playback_name } else { resolved_clip_name },
             duration_seconds,
         );
 
-        play_animation_clip_on_players(
+        let (seek_seconds,rewind)=if let Some(spec)=&animation_to_play.rewind {animation_rewind::resume(spec,duration_seconds,animation_to_play.speed,resume)} else {(resume.map_or(0.,|r|if animation_to_play.looped { r.loop_seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) } else { r.seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) }),None)};
+        if resume.is_some() && rewind.is_none() && seek_seconds >= duration_seconds {
+            commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
+            tracing::debug!(target = target_name, "expired remote animation during asset loading");
+            continue;
+        }
+        if resume.is_some() { tracing::debug!(target = target_name, seek_seconds, "resumed numbered remote animation"); }
+        if requested_range.is_some() && runtime_verbose_logging() {
+            let (start, end) = interval.unwrap_or((0., duration_seconds));
+            write_runtime_diagnostic_line(format!("ANIM_RANGE_PLAY target={} start={} end={} duration={} seek={} speed={}", target_name, start, end, duration_seconds, seek_seconds, animation_to_play.speed));
+        }
+        if animation_to_play.looped && runtime_verbose_logging() {
+            write_runtime_diagnostic_line(format!("ANIM_LOOP_PLAY target={} duration={} seek={} speed={}", target_name, duration_seconds, seek_seconds, animation_to_play.speed));
+        }
+        if let Some(rewind)=&rewind { if runtime_verbose_logging() {write_runtime_diagnostic_line(format!("ANIM_REWIND_PLAY target={} start={} target_time={} duration={} elapsed={} seek={} speed={}",target_name,rewind.spec.start,rewind.spec.target,rewind.spec.duration,rewind.elapsed,seek_seconds,animation_to_play.speed));} }
+        let playback_graphs = play_animation_clip_on_players(
             &mut commands,
             clip_to_play.clone(),
             playback_players,
-            animation_to_play.speed,
+            if rewind.is_some() {0.} else {animation_to_play.speed},
             animation_to_play.looped,
+            seek_seconds,
             transition_duration,
             &mut graphs,
             &mut players,
         );
 
-        commands.entity(root).try_remove::<AnimationToPlay>();
-        commands.entity(root).insert(CurrentAnimation {
-            clip: animation_to_play.runtime_clip.clone(),
+        commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
+        commands.entity(root).insert(CurrentAnimation { rewind, identity: animation_to_play.network_lifetime.as_ref().map(std::sync::Arc::downgrade),
+            controller_owner: animation_to_play.controller_owner.clone(),
+            network_lifetime: animation_to_play.network_lifetime.clone(),
+            playback_graphs,
+            clip: animation_to_play.playback_name(),
             looped: animation_to_play.looped,
             speed: animation_to_play.speed.max(0.001),
-            elapsed_seconds: 0.0,
+            elapsed_seconds: seek_seconds,
             duration_seconds,
         });
     }
@@ -494,6 +556,7 @@ fn play_animation_clip_on_players(
     playback_players: Vec<Entity>,
     speed: f32,
     looped: bool,
+    seek_seconds: f32,
     transition_duration: Duration,
     graphs: &mut Assets<AnimationGraph>,
     players: &mut Query<(
@@ -502,7 +565,8 @@ fn play_animation_clip_on_players(
         Option<&mut AnimationTransitions>,
         Option<&Name>,
     )>,
-) {
+) -> Vec<(Entity, Handle<AnimationGraph>)> {
+    let mut playback_graphs = Vec::new();
     for child in playback_players {
         if let Ok((mut player, mut graph_component, mut transitions, _name)) =
             players.get_mut(child)
@@ -526,6 +590,7 @@ fn play_animation_clip_on_players(
                     (graph, index, None)
                 };
             let graph_handle = graphs.add(graph);
+            playback_graphs.push((child, graph_handle.clone()));
             if let Some(graph_component) = graph_component.as_mut() {
                 graph_component.0 = graph_handle.clone();
             } else {
@@ -545,6 +610,7 @@ fn play_animation_clip_on_players(
                     .set_repeat(from_state.repeat);
                 let active = new_transitions
                     .play(&mut player, index, transition_duration)
+                    .set_seek_time(seek_seconds)
                     .set_speed(speed)
                     .set_weight(1.0);
                 if looped {
@@ -558,6 +624,7 @@ fn play_animation_clip_on_players(
             } else if let Some(transitions) = transitions.as_mut() {
                 let active = transitions
                     .play(&mut player, index, transition_duration)
+                    .set_seek_time(seek_seconds)
                     .set_speed(speed)
                     .set_weight(1.0);
                 if looped {
@@ -568,7 +635,8 @@ fn play_animation_clip_on_players(
                 {
                     let active = new_transitions
                         .play(&mut player, index, transition_duration)
-                        .set_speed(speed)
+                        .set_seek_time(seek_seconds)
+                    .set_speed(speed)
                         .set_weight(1.0);
                     if looped {
                         active.repeat();
@@ -578,6 +646,7 @@ fn play_animation_clip_on_players(
             }
         }
     }
+    playback_graphs
 }
 
 fn visual_transform_preroll_needed(
@@ -1355,6 +1424,7 @@ fn use_external_animation_source(
     animation: &RuntimeExternalAnimation,
 ) {
     if let Some(baked) = target_model_resource
+        .filter(|_| animation_to_play.frame_range.is_none() && animation_to_play.frame_range_name.is_none() && animation_to_play.rewind.is_none())
         .and_then(|model| matching_baked_retarget(&animation.baked_retargets, model))
         .cloned()
     {
@@ -2801,6 +2871,7 @@ pub(super) fn preferred_animation_match<'a>(
 }
 
 pub(super) fn update_current_animation_vars(
+    mut players: Query<(&AnimationGraphHandle, &mut AnimationPlayer)>,
     time: Res<Time>,
     mut vars: ResMut<SceneMaxVars>,
     mut animations: Query<(
@@ -2816,18 +2887,32 @@ pub(super) fn update_current_animation_vars(
             .map(|override_speed| override_speed.speed)
             .unwrap_or(animation.speed)
             .max(0.001);
-        animation.elapsed_seconds += delta * effective_speed;
+        if let Some(mut rewind)=animation.rewind.take() {
+            rewind.elapsed+=delta; animation.elapsed_seconds=rewind.position(duration,animation.speed);
+            let finished=rewind.elapsed>=rewind.spec.duration;
+            for (entity, owned_graph) in &animation.playback_graphs {
+                if let Ok((graph, mut player))=players.get_mut(*entity) {
+                    if graph.0 != *owned_graph { continue; }
+                    for (_,active) in player.playing_animations_mut() {active.seek_to(animation.elapsed_seconds).set_speed(if finished {animation.speed} else {0.});}
+                }
+            }
+            if finished && runtime_verbose_logging() { write_runtime_diagnostic_line(format!("ANIM_REWIND_END target={} seek={} speed={}",entity.name,animation.elapsed_seconds,animation.speed)); }
+            if !finished {animation.rewind=Some(rewind);}
+        } else {animation.elapsed_seconds+=delta*effective_speed;}
         let elapsed = if animation.looped {
             animation.elapsed_seconds % duration
         } else {
             animation.elapsed_seconds.min(duration)
         };
+        if animation.rewind.is_none() && !animation.looped && animation.elapsed_seconds >= duration {
+            animation.network_lifetime = None;
+        }
         let percent = animation_percent_from_elapsed(elapsed, duration);
         vars.0
             .insert(format!("{}.anim_percent", entity.name), percent);
         vars.0.insert(
             format!("{}.anim_finished", entity.name),
-            (!animation.looped && animation.elapsed_seconds >= duration) as u8 as f32,
+            (animation.rewind.is_none() && !animation.looped && animation.elapsed_seconds >= duration) as u8 as f32,
         );
     }
 }
@@ -2882,22 +2967,28 @@ pub(super) fn animation_speed_override_resolved(
 pub(super) fn apply_animation_speed_overrides(
     time: Res<Time>,
     mut commands: Commands,
-    children: Query<&Children>,
     mut roots: Query<
         (
             Entity,
             &mut AnimationSpeedOverride,
-            Option<&CurrentAnimation>,
+            Option<&mut CurrentAnimation>,
+            Option<&mut AnimationToPlay>,
         ),
         With<SceneMaxEntity>,
     >,
-    mut players: Query<&mut AnimationPlayer>,
+    mut players: Query<(&AnimationGraphHandle, &mut AnimationPlayer)>,
 ) {
-    for (root, mut speed_override, current_animation) in &mut roots {
-        let player_entities = children.iter_descendants(root).collect::<Vec<_>>();
+    for (root, mut speed_override, current_animation, queued) in &mut roots {
+        // Preserve a permanent command across asynchronous asset loading.
+        if speed_override.remaining_seconds.is_none() {
+            if let Some(mut queued) = queued { queued.speed = speed_override.speed; }
+        }
+        if current_animation.as_ref().is_some_and(|a| a.rewind.is_some()) { continue; }
+        let player_entities = current_animation.as_ref().map(|a| a.playback_graphs.clone()).unwrap_or_default();
         let mut active_animation_count = 0;
-        for player_entity in &player_entities {
-            if let Ok(mut player) = players.get_mut(*player_entity) {
+        for (player_entity, owned_graph) in &player_entities {
+            if let Ok((graph, mut player)) = players.get_mut(*player_entity) {
+                if graph.0 != *owned_graph { continue; }
                 active_animation_count +=
                     set_active_animation_speeds(&mut player, speed_override.speed);
             }
@@ -2907,6 +2998,7 @@ pub(super) fn apply_animation_speed_overrides(
         }
 
         let Some(remaining_seconds) = speed_override.remaining_seconds.as_mut() else {
+            if let Some(mut animation) = current_animation { animation.speed = speed_override.speed; }
             commands.entity(root).try_remove::<AnimationSpeedOverride>();
             continue;
         };
@@ -2916,8 +3008,9 @@ pub(super) fn apply_animation_speed_overrides(
                 .map(|animation| animation.speed)
                 .unwrap_or(1.0)
                 .max(0.001);
-            for player_entity in &player_entities {
-                if let Ok(mut player) = players.get_mut(*player_entity) {
+            for (player_entity, owned_graph) in &player_entities {
+                if let Ok((graph, mut player)) = players.get_mut(*player_entity) {
+                    if graph.0 != *owned_graph { continue; }
                     set_active_animation_speeds(&mut player, restore_speed);
                 }
             }
@@ -2982,3 +3075,7 @@ mod tests {
 #[cfg(test)]
 #[path = "animation_analyzer_tests.rs"]
 mod analyzer_tests;
+
+#[cfg(test)]
+#[path = "animation_ownership_tests.rs"]
+mod ownership_tests;

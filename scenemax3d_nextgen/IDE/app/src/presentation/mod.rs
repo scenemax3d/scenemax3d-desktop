@@ -57,3 +57,4 @@ pub(crate) mod git;
 pub(crate) mod mcp;
 
 pub(crate) mod physics;
+pub(crate) mod multiplayer;

@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+scenemax_script_values = { path = "../../Common/script_values" }
 bevy_ecs = "0.19.0"
+serde_json.workspace = true
 scenemax_parser = { path = "../../Language/parser" }
 scenemax_runtime_script_core = { path = "../scripting" }

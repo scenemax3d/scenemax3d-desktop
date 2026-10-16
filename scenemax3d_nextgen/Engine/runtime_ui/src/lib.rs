@@ -39,6 +39,8 @@ pub struct SceneMaxUiLayerDef {
 #[serde(rename_all = "camelCase")]
 pub struct SceneMaxUiWidgetDef {
     pub name: String,
+    #[serde(default)]
+    pub multiplayer: bool,
     #[serde(rename = "type")]
     pub widget_type: String,
     #[serde(default = "default_ui_size_mode")]
@@ -100,6 +102,8 @@ pub struct SceneMaxUiWidgetDef {
     #[serde(default)]
     pub image_path: Option<String>,
     #[serde(default)]
+    pub background_image: Option<String>,
+    #[serde(default)]
     pub sprite_name: Option<String>,
     #[serde(default)]
     pub sprite_frame: usize,
@@ -107,6 +111,28 @@ pub struct SceneMaxUiWidgetDef {
     pub image_scale_mode: String,
     #[serde(default)]
     pub list_headers: Vec<String>,
+    #[serde(default)]
+    pub edit_text_placeholder: String,
+    #[serde(default)]
+    pub edit_text_multiline: bool,
+    #[serde(default = "default_edit_background")]
+    pub edit_text_background_color: String,
+    #[serde(default = "default_edit_focused")]
+    pub edit_text_focused_color: String,
+    #[serde(default = "default_text_color")]
+    pub edit_text_cursor_color: String,
+    #[serde(default = "default_edit_selection")]
+    pub edit_text_selection_color: String,
+    #[serde(default = "default_list_columns")]
+    pub list_column_count: usize,
+    #[serde(default)]
+    pub list_column_widths: Vec<f32>,
+    #[serde(default)]
+    pub list_view_style: String,
+    #[serde(default)]
+    pub list_view_transparency: f32,
+    #[serde(default = "default_no_selection")]
+    pub list_selected_row_index: i32,
     #[serde(default)]
     pub list_rows: Vec<Vec<String>>,
     #[serde(default)]
@@ -819,3 +845,10 @@ mod tests {
         assert_eq!(frame.scale, 1.0);
     }
 }
+
+fn default_list_columns() -> usize { 3 }
+fn default_no_selection() -> i32 { -1 }
+
+fn default_edit_background()->String { "#20242AFF".into() }
+fn default_edit_focused()->String { "#2A303AFF".into() }
+fn default_edit_selection()->String { "#4A90E280".into() }

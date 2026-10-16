@@ -102,7 +102,7 @@ pub(super) fn inspector_fields(
     field("visible", "Visible", json!(true), &[]);
     field(
         "multiplayer",
-        "Sync text (runtime scripts)",
+        "Sync widget (multiplayer)",
         json!(false),
         &[],
     );

@@ -163,8 +163,22 @@ fn run() -> io::Result<i32> {
         command.creation_flags(0x08000000);
     }
     let status = command.status()?;
+    // Keep diagnostics after the private extraction directory is removed.
+    let executable = std::env::current_exe()?;
+    if let Err(error) = preserve_runtime_log(temporary.path(), &executable) {
+        eprintln!("Could not preserve game runtime log: {error}");
+    }
     // The private extraction directory is owned until the game exits, then removed.
     Ok(status.code().unwrap_or(1))
+}
+fn preserve_runtime_log(root: &Path, executable: &Path) -> io::Result<()> {
+    let source = root.join("scenemax-nextgen-runtime.log");
+    if !source.is_file() { return Ok(()); }
+    let destination = executable.with_extension("runtime.log");
+    if fs::copy(&source, &destination).is_ok() { return Ok(()); }
+    let fallback = std::env::temp_dir().join(destination.file_name().ok_or_else(|| io::Error::other("Missing executable filename"))?);
+    fs::copy(source, fallback)?;
+    Ok(())
 }
 fn main() {
     match run() {
@@ -183,6 +197,15 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn runtime_log_survives_extraction_cleanup() {
+        let extraction = tempfile::tempdir().unwrap();
+        let destination = tempfile::tempdir().unwrap();
+        std::fs::write(extraction.path().join("scenemax-nextgen-runtime.log"), "camera diagnostic").unwrap();
+        super::preserve_runtime_log(extraction.path(), &destination.path().join("game.exe")).unwrap();
+        extraction.close().unwrap();
+        assert_eq!(std::fs::read_to_string(destination.path().join("game.runtime.log")).unwrap(), "camera diagnostic");
+    }
     use super::*;
     use std::io::Write;
     #[test]

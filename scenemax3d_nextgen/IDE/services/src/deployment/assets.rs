@@ -222,7 +222,7 @@ fn script_closure(
             use scenemax_parser::Statement;
             match statement {
                 Statement::SetMaterial(material) => {
-                    if let scenemax_parser::AssignmentValue::Symbol(name) = &material.material {
+                    if let scenemax_parser::AssignmentValue::Literal(serde_json::Value::String(name)) = &material.material {
                         if !name.trim().is_empty() {
                             material_requests.insert(name.trim().to_lowercase());
                         }
@@ -295,13 +295,16 @@ fn script_closure(
                 }
                 Statement::KeyEvent(event) => statements.extend(&event.actions),
                 Statement::WhenEvent(event) => statements.extend(&event.actions),
+                Statement::Network(scenemax_parser::network::NetworkStatement::On { actions, .. }) => statements.extend(actions),
                 Statement::FunctionDef(function) => statements.extend(&function.actions),
                 Statement::AnimationControllerEvent(event) => statements.extend(&event.actions),
                 Statement::ThrowMotionEvent(event) => statements.extend(&event.actions),
                 Statement::Guarded { actions, .. }
                 | Statement::Repeat { actions, .. }
                 | Statement::DoWhile { actions, .. }
+            | Statement::ForEachModel { actions, .. }
                 | Statement::LoopContinue { actions, .. }
+                | Statement::ScopedBlock { actions }
                 | Statement::Async { actions } => statements.extend(actions),
                 _ => {}
             }
@@ -957,4 +960,33 @@ fn snapshot_inner(
     context.log(format!("Dependencies: {} scripts/documents, {} resource files; {:.1} MiB included, {:.1} MiB excluded. See package-size.json.\n", scripts.len(), report.len(), included as f64 / 1048576., available.saturating_sub(included) as f64 / 1048576.));
     fs::create_dir_all(destination.join("resources"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod foreach_tests {
+    use super::*;
+    fn context() -> Context {
+        Context { report: std::sync::Arc::new(std::sync::Mutex::new(super::super::Report::default())), cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)) }
+    }
+    #[test]
+    fn for_each_model_dependencies_are_packaged() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("scripts")).unwrap();
+        let entry = root.path().join("scripts/main");
+        fs::write(&entry, "for each model (m) do\nswitch to \"next\"\nend do").unwrap();
+        fs::create_dir(root.path().join("scripts/next")).unwrap();
+        let dependency = root.path().join("scripts/next/main");
+        fs::write(&dependency, "var included=1").unwrap();
+        let (scripts, _, _) = script_closure(root.path(), &entry, &context()).unwrap();
+        assert!(scripts.contains(&dependency));
+    }
+    #[test]
+    #[ignore = "requires SCENEMAX_DEPLOYMENT_TEST_PROJECT pointing to a local project"]
+    fn configured_project_script_graph_compiles() {
+        let root = PathBuf::from(std::env::var_os("SCENEMAX_DEPLOYMENT_TEST_PROJECT").expect("project path"));
+        let context = context();
+        let entry = root_entry(&root, &context).unwrap();
+        let (scripts, _, _) = script_closure(&root, &entry, &context).unwrap();
+        println!("Compiled {} reachable project documents from {}", scripts.len(), entry.display());
+    }
 }

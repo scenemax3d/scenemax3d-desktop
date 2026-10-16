@@ -128,8 +128,9 @@ pub(crate) struct InputFields<'w, 's> {
     inventory: Option<Res<'w, super::inventory::State>>,
     font_generator: Option<Res<'w, super::font_generator::State>>,
     physics: Option<Res<'w, super::physics::State>>,
+    multiplayer: Option<Res<'w, crate::application::multiplayer::State>>,
     git: Option<Res<'w, crate::application::git::State>>,
-    fields: Query<'w, 's, (Entity, &'static Field, &'static EditableText)>,
+    fields: Query<'w, 's, (Entity, &'static Field, &'static mut EditableText)>,
     properties: PropertyInputs<'w, 's>,
 }
 pub(crate) fn collect_actions(
@@ -141,7 +142,8 @@ pub(crate) fn collect_actions(
     mut queue: ResMut<CommandQueue>,
     session: Res<Session>,
 ) {
-    if input_fields.physics.as_ref().is_some_and(|g| g.open)
+    if input_fields.multiplayer.as_ref().is_some_and(|g| g.open)
+        || input_fields.physics.as_ref().is_some_and(|g| g.open)
         || input_fields.git.as_ref().is_some_and(|g| g.open)
         || input_fields.chrome.as_ref().is_some_and(|m| m.about_open())
         || input_fields.imports.as_ref().is_some_and(|m| m.is_open())
@@ -154,12 +156,28 @@ pub(crate) fn collect_actions(
     }
     let InputFields {
         imports: _,
-        fields,
+        mut fields,
         properties,
         mut zoom,
         editors,
         ..
     } = input_fields;
+    if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight])
+        && keys.just_pressed(KeyCode::KeyF)
+        && !session.composing
+        && let Some(document) = session
+            .workspace
+            .active_id()
+            .and_then(|id| session.workspace.document(id).ok())
+    {
+        let selected = &document.text()[document.selection().range()];
+        if !selected.is_empty()
+            && let Some((_, _, mut input)) =
+                fields.iter_mut().find(|(_, kind, _)| **kind == Field::Find)
+        {
+            input.editor_mut().set_text(selected);
+        }
+    }
     let values = fields
         .iter()
         .map(|(entity, kind, input)| (entity, *kind, input.value().to_string()))

@@ -1,0 +1,10 @@
+[package]
+name = "scenemax_ik"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["bevy_animation", "bevy_mesh"] }
+bevy_mod_inverse_kinematics = { path = "../../third_party/bevy_mod_inverse_kinematics" }
+serde_json.workspace = true

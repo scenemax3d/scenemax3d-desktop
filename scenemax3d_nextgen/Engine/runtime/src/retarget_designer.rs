@@ -742,7 +742,11 @@ fn replay_retarget_preview(
     } else {
         None
     };
-    commands.entity(root).insert(AnimationToPlay {
+    commands.entity(root).insert(AnimationToPlay { rewind: None,
+        frame_range: None,
+        frame_range_name: None,
+        controller_owner: None,
+        network_lifetime: None,
         clip: state.source_clip.clone(),
         runtime_clip: state.animation_name.clone(),
         looped: true,

@@ -341,9 +341,10 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         c,
         scroll,
         Rebuild,
-        "Rebuild engine from source (slower)",
+        "Require source build instead of installed runtime",
         settings.rebuild_runtime,
     );
+    text(c, scroll, "Source installations always check for engine updates. Unchanged builds are reused.", 12., INK);
     property::checkbox(
         c,
         scroll,

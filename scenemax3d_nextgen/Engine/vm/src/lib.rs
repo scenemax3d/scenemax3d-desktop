@@ -13,12 +13,57 @@ use scenemax_parser::{
 static SCENEMAX_RANDOM_STATE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Resource, Default, Clone, PartialEq)]
-pub struct SceneMaxVars(pub HashMap<String, f32>);
+pub struct SceneMaxVars(
+    pub HashMap<String, f32>,
+    pub HashMap<String, serde_json::Value>,
+    pub HashMap<String, references::Reference>,
+);
+pub mod typed;
+pub mod references;
+impl From<HashMap<String, f32>> for SceneMaxVars {
+    fn from(values: HashMap<String, f32>) -> Self {
+        Self(values, HashMap::new(), HashMap::new())
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneMaxScopeFrame {
+    pub activation_id: u64,
+    /// Declarations owned by this activation, distinct from inherited bindings.
+    pub entity_declarations: HashMap<String, references::Reference>,
+    pub entity_templates: HashMap<String, (String, scenemax_parser::EntityOptions)>,
+    /// Typed result and bounded synchronous value-call execution state.
+    pub return_value: Option<serde_json::Value>,
+    pub return_reference: Option<references::Reference>,
+    /// Saved caller for ordinary function continuations, including delayed work.
+    pub caller: Option<Box<SceneMaxScopeFrame>>,
+    pub parameters: std::collections::HashSet<String>,
+    pub value_call_depth: u8,
+    pub value_call_steps: usize,
+    pub value_call_failed: bool,
+    pub references: HashMap<String, references::Reference>,
+    pub bindings: HashMap<String, references::Binding>,
+    pub typed: HashMap<String, serde_json::Value>,
     pub vars: HashMap<String, f32>,
     pub aliases: HashMap<String, String>,
+    /// Remote collision participant inherited by nested and delayed actions.
+    pub network_event_target: Option<String>,
+}
+
+impl SceneMaxScopeFrame {
+    pub fn inherit_execution_result(&mut self, child: &Self, returned: bool) {
+        self.value_call_steps = self.value_call_steps.max(child.value_call_steps);
+        self.value_call_failed |= child.value_call_failed;
+        if returned {
+            self.return_value = child.return_value.clone();
+            self.return_reference = child.return_reference.clone();
+        }
+    }
+    pub fn begin_activation(&mut self) {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        self.activation_id = NEXT.fetch_add(1, Ordering::Relaxed);
+        self.entity_declarations.clear();
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,7 +110,10 @@ pub fn apply_initial_assignments(program: &Program, vars: &mut SceneMaxVars) {
                     false,
                 );
             }
-            Statement::SharedAssignment(assignment) if !vars.0.contains_key(&assignment.name) => {
+            Statement::SharedAssignment(assignment)
+                if !vars.0.contains_key(&assignment.name)
+                    && !vars.1.contains_key(&assignment.name) =>
+            {
                 let _ = apply_assignment_with_spatial(
                     assignment,
                     vars,
@@ -106,20 +154,22 @@ pub fn apply_assignment_with_spatial(
     force_local: bool,
 ) -> Option<AssignmentResult> {
     let previous = resolve_symbol_value_scoped(&assignment.name, vars, scope.as_deref(), spatial);
-    let value = resolve_assignment_value_scoped_with_guards(
+    let reference = references::evaluate(
         &assignment.value,
         vars,
         scope.as_deref(),
         guards_by_name,
         spatial,
     )?;
-    assign_symbol_value(
+    let typed_value = reference.snapshot().or_else(|| reference.opaque().then_some(serde_json::Value::Null))?;
+    let value = typed::number(&typed_value).unwrap_or(0.) as f32;
+    references::assign(
         &assignment.name,
-        value,
+        reference,
         vars,
         scope.as_deref_mut(),
         force_local,
-    );
+    )?;
     Some(AssignmentResult { previous, value })
 }
 
@@ -130,19 +180,7 @@ pub fn assign_symbol_value(
     scope: Option<&mut SceneMaxScopeFrame>,
     force_local: bool,
 ) {
-    let Some(scope) = scope else {
-        vars.0.insert(name.to_owned(), value);
-        return;
-    };
-    if force_local {
-        scope.vars.insert(name.to_owned(), value);
-    } else if scope.vars.contains_key(name) {
-        scope.vars.insert(name.to_owned(), value);
-    } else if vars.0.contains_key(name) || is_runtime_field_path(name) {
-        vars.0.insert(name.to_owned(), value);
-    } else {
-        scope.vars.insert(name.to_owned(), value);
-    }
+    typed::assign(name, typed::numeric_value(value), vars, scope, force_local);
 }
 
 pub fn is_runtime_field_path(name: &str) -> bool {
@@ -171,9 +209,18 @@ pub fn resolve_assignment_value_scoped_with_guards(
     spatial: &impl SceneMaxVmSpatial,
 ) -> Option<f32> {
     match value {
+        AssignmentValue::RuntimeValue(value) => value.snapshot().and_then(|v| typed::number(&v)).map(|v| v as f32),
+        AssignmentValue::Literal(_) | AssignmentValue::Json(_)
+        | AssignmentValue::Array(_)
+        | AssignmentValue::ArrayEdit { .. }
+        | AssignmentValue::Access { .. } => {
+            typed::evaluate(value, vars, scope, guards_by_name, spatial)
+                .and_then(|v| typed::number(&v))
+                .map(|n| n as f32)
+        }
         AssignmentValue::Number(value) => Some(*value),
         AssignmentValue::Symbol(name) => resolve_symbol_value_scoped(name, vars, scope, spatial),
-        AssignmentValue::CameraModifier(_) => None,
+        AssignmentValue::Call { .. } | AssignmentValue::CameraModifier(_) => None,
         AssignmentValue::ThrowMotion(_) => None,
         AssignmentValue::AnimationController(_) => None,
         AssignmentValue::Condition(condition) => {
@@ -253,48 +300,38 @@ pub fn condition_matches_scoped(
     guards_by_name: &HashMap<String, Condition>,
     spatial: &impl SceneMaxVmSpatial,
 ) -> bool {
+    let eval_number = |v: &AssignmentValue| typed::evaluate(v, vars, scope, guards_by_name, spatial).and_then(|v| typed::number(&v));
     match condition {
         Condition::EqualsNumber { name, value } => {
-            (resolve_symbol_value_scoped(name, vars, scope, spatial).unwrap_or_default() - *value)
+            if references::lookup(name, vars, scope).is_some_and(|v| v.opaque()) { return false; }
+            (eval_number(&AssignmentValue::Symbol(name.clone())).unwrap_or_default() - f64::from(*value))
                 .abs()
-                <= f32::EPSILON
+                <= f64::from(f32::EPSILON)
         }
         Condition::NotEqualsNumber { name, value } => {
-            (resolve_symbol_value_scoped(name, vars, scope, spatial).unwrap_or_default() - *value)
+            if references::lookup(name, vars, scope).is_some_and(|v| v.opaque()) { return true; }
+            (eval_number(&AssignmentValue::Symbol(name.clone())).unwrap_or_default() - f64::from(*value))
                 .abs()
-                > f32::EPSILON
+                > f64::from(f32::EPSILON)
         }
-        Condition::EqualsSymbol { name, value } => {
-            let Some(value) = resolve_symbol_value_scoped(value, vars, scope, spatial) else {
+        Condition::EqualsSymbol { name, value } | Condition::NotEqualsSymbol { name, value } => {
+            let (Some(left), Some(right)) = (
+                references::evaluate(&AssignmentValue::Symbol(name.clone()), vars, scope, guards_by_name, spatial),
+                references::evaluate(&AssignmentValue::Symbol(value.clone()), vars, scope, guards_by_name, spatial),
+            ) else {
                 return false;
             };
-            (resolve_symbol_value_scoped(name, vars, scope, spatial).unwrap_or_default() - value)
-                .abs()
-                <= f32::EPSILON
-        }
-        Condition::NotEqualsSymbol { name, value } => {
-            let Some(value) = resolve_symbol_value_scoped(value, vars, scope, spatial) else {
-                return false;
-            };
-            (resolve_symbol_value_scoped(name, vars, scope, spatial).unwrap_or_default() - value)
-                .abs()
-                > f32::EPSILON
+            references::equal(&left, &right) != matches!(condition, Condition::NotEqualsSymbol { .. })
         }
         Condition::Compare {
             name,
             operator,
             value,
         } => {
-            let Some(right) = resolve_assignment_value_scoped_with_guards(
-                value,
-                vars,
-                scope,
-                guards_by_name,
-                spatial,
-            ) else {
+            let Some(right) = eval_number(value) else {
                 return false;
             };
-            let left = resolve_symbol_value_scoped(name, vars, scope, spatial).unwrap_or_default();
+            let left = eval_number(&AssignmentValue::Symbol(name.clone())).unwrap_or_default();
             compare_values(left, *operator, right)
         }
         Condition::CompareValue {
@@ -303,66 +340,21 @@ pub fn condition_matches_scoped(
             right,
         } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value_scoped_with_guards(
-                    left,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    spatial,
-                ),
-                resolve_assignment_value_scoped_with_guards(
-                    right,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    spatial,
-                ),
+                eval_number(left),
+                eval_number(right),
             ) else {
                 return false;
             };
             compare_values(left, *operator, right)
         }
-        Condition::EqualsValue { left, right } => {
+        Condition::EqualsValue { left, right } | Condition::NotEqualsValue { left, right } => {
             let (Some(left), Some(right)) = (
-                resolve_assignment_value_scoped_with_guards(
-                    left,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    spatial,
-                ),
-                resolve_assignment_value_scoped_with_guards(
-                    right,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    spatial,
-                ),
+                references::evaluate(left, vars, scope, guards_by_name, spatial),
+                references::evaluate(right, vars, scope, guards_by_name, spatial),
             ) else {
                 return false;
             };
-            (left - right).abs() <= f32::EPSILON
-        }
-        Condition::NotEqualsValue { left, right } => {
-            let (Some(left), Some(right)) = (
-                resolve_assignment_value_scoped_with_guards(
-                    left,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    spatial,
-                ),
-                resolve_assignment_value_scoped_with_guards(
-                    right,
-                    vars,
-                    scope,
-                    guards_by_name,
-                    spatial,
-                ),
-            ) else {
-                return false;
-            };
-            (left - right).abs() > f32::EPSILON
+            references::equal(&left, &right) != matches!(condition, Condition::NotEqualsValue { .. })
         }
         Condition::Truthy { name } => {
             resolve_symbol_value_scoped(name, vars, scope, spatial)
@@ -397,6 +389,11 @@ pub fn resolve_symbol_value_scoped(
     scope: Option<&SceneMaxScopeFrame>,
     spatial: &impl SceneMaxVmSpatial,
 ) -> Option<f32> {
+    let resolved = references::entity_path(name, vars, scope);
+    let name = resolved.as_str();
+    if let Some(value) = typed::lookup(name, vars, scope) {
+        return typed::number(&value).map(|n| n as f32);
+    }
     scope
         .and_then(|scope| scope.vars.get(name).copied())
         .or_else(|| {
@@ -407,7 +404,7 @@ pub fn resolve_symbol_value_scoped(
         })
 }
 
-fn compare_values(left: f32, operator: ComparisonOperator, right: f32) -> bool {
+fn compare_values(left: f64, operator: ComparisonOperator, right: f64) -> bool {
     match operator {
         ComparisonOperator::Greater => left > right,
         ComparisonOperator::GreaterOrEqual => left >= right,
@@ -523,7 +520,7 @@ mod tests {
     #[test]
     fn shared_initial_assignment_does_not_overwrite_existing_value() {
         let program = parse_program("shared var score = 0 [0..]\nvar life2 = 10").unwrap();
-        let mut vars = SceneMaxVars(HashMap::from([
+        let mut vars = SceneMaxVars::from(HashMap::from([
             ("score".to_owned(), 42.0),
             ("life2".to_owned(), 3.0),
         ]));
@@ -570,7 +567,7 @@ mod tests {
 
     #[test]
     fn scoped_expression_vm_keeps_function_locals_out_of_global_state() {
-        let mut vars = SceneMaxVars(HashMap::from([
+        let mut vars = SceneMaxVars::from(HashMap::from([
             ("op_action".to_owned(), 0.0),
             ("counter".to_owned(), 2.0),
         ]));
@@ -619,7 +616,7 @@ mod tests {
 
     #[test]
     fn expression_vm_evaluates_not_boolean_and_inequality() {
-        let mut vars = SceneMaxVars(HashMap::from([
+        let mut vars = SceneMaxVars::from(HashMap::from([
             ("flag".to_owned(), 0.0),
             ("enemy_ko".to_owned(), 0.0),
         ]));

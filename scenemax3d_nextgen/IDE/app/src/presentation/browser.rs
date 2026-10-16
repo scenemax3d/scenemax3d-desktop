@@ -57,6 +57,7 @@ fn companions(project: &Project) -> HashMap<PathBuf, PathBuf> {
 }
 
 fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> {
+    let scripts = project.root().join("scripts");
     let owners = companions(project);
     let mut children: HashMap<&PathBuf, Vec<&ProjectEntry>> = HashMap::new();
     for entry in project.entries() {
@@ -66,13 +67,14 @@ fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> 
     }
     let mut rows = Vec::new();
     for entry in project.entries() {
-        if owners.contains_key(&entry.path)
-            || !tree.expanded.contains(project.root())
+        if entry.path == scripts
+            || !entry.path.starts_with(&scripts)
+            || owners.contains_key(&entry.path)
             || !entry
                 .path
                 .ancestors()
                 .skip(1)
-                .take_while(|p| *p != project.root())
+                .take_while(|p| *p != scripts)
                 .all(|p| tree.expanded.contains(p))
         {
             continue;
@@ -166,26 +168,13 @@ pub(crate) fn update_tree(
     commands.entity(*host).despawn_children();
     let project = session.workspace.project();
     let owners = companions(project);
-    let root_name = project
-        .root()
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy();
-    let root_row = tree_row(
-        &mut commands,
-        *host,
-        project.root().to_owned(),
-        &root_name,
-        0,
-        true,
-        Some(state.expanded.contains(project.root())),
-    );
-    let mut focus_row = root_row;
+    let scripts = project.root().join("scripts");
+    let mut focus_row = None;
     for entry in visible(project, &state) {
         let depth = entry
             .path
-            .strip_prefix(project.root())
-            .map_or(1, |p| p.components().count())
+            .strip_prefix(&scripts)
+            .map_or(0, |p| p.components().count().saturating_sub(1))
             + usize::from(owners.contains_key(&entry.path));
         let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
         let row = tree_row(
@@ -199,10 +188,13 @@ pub(crate) fn update_tree(
                 .then(|| state.expanded.contains(&entry.path)),
         );
         if state.focus_path.as_ref() == Some(&entry.path) {
-            focus_row = row;
+            focus_row = Some(row);
         }
     }
-    if restore_focus && let Some(focus) = focus.as_mut() {
+    if restore_focus
+        && let Some(focus) = focus.as_mut()
+        && let Some(focus_row) = focus_row
+    {
         focus.set(focus_row, bevy::input_focus::FocusCause::Navigated);
     }
     if project.tree_truncated() {
@@ -402,11 +394,14 @@ pub(crate) fn keyboard(
     };
     let project = session.workspace.project();
     let owners = companions(project);
-    let paths = std::iter::once(project.root())
-        .chain(visible(project, &tree).iter().map(|e| e.path.as_path()))
+    let paths = visible(project, &tree)
+        .iter()
+        .map(|e| e.path.as_path())
         .map(|p| p.to_owned())
         .collect::<Vec<_>>();
-    let index = paths.iter().position(|p| *p == item.path).unwrap_or(0);
+    let Some(index) = paths.iter().position(|p| *p == item.path) else {
+        return;
+    };
     let mut next = None;
     if keys.just_pressed(KeyCode::ArrowDown) {
         next = paths.get((index + 1).min(paths.len() - 1)).cloned();
@@ -432,7 +427,7 @@ pub(crate) fn keyboard(
                 .get(&item.path)
                 .map(|p| p.as_path())
                 .or_else(|| item.path.parent())
-                .filter(|p| p.starts_with(project.root()))
+                .filter(|p| paths.iter().any(|path| path == p))
                 .map(|p| p.to_owned());
         }
     }
@@ -461,8 +456,8 @@ mod tests {
         use bevy::ecs::system::RunSystemOnce;
         use bevy::input_focus::{FocusCause, InputFocus};
         let root = PathBuf::from("project");
-        let designer = root.join("scene.smdesign");
-        let child = root.join("scene.code");
+        let designer = root.join("scripts/scene.smdesign");
+        let child = root.join("scripts/scene.code");
         let project = Project::new(root.clone(), vec![]).with_entries(
             vec![
                 ProjectEntry {
@@ -542,7 +537,7 @@ mod tests {
             names
                 .iter()
                 .map(|n| ProjectEntry {
-                    path: root.join(n),
+                    path: root.join("scripts").join(n),
                     is_directory: false,
                 })
                 .collect(),
@@ -567,7 +562,7 @@ mod tests {
                 "orphan_init.code"
             ]
         );
-        tree.expanded.insert(root.join("level.smdesign"));
+        tree.expanded.insert(root.join("scripts/level.smdesign"));
         assert_eq!(
             rows(&tree),
             [
@@ -582,11 +577,11 @@ mod tests {
                 "orphan_init.code"
             ]
         );
-        tree.expanded.insert(root.join("hud.smui"));
+        tree.expanded.insert(root.join("scripts/hud.smui"));
         assert_eq!(rows(&tree).len(), names.len());
         assert_eq!(
-            companions(&project)[&root.join("hud_ui.code")],
-            root.join("hud.smui")
+            companions(&project)[&root.join("scripts/hud_ui.code")],
+            root.join("scripts/hud.smui")
         );
     }
     #[test]
@@ -681,6 +676,14 @@ mod tests {
                     is_directory: false,
                 },
                 ProjectEntry {
+                    path: root.join("scripts/level"),
+                    is_directory: true,
+                },
+                ProjectEntry {
+                    path: root.join("scripts/level/main"),
+                    is_directory: false,
+                },
+                ProjectEntry {
                     path: root.join("resources"),
                     is_directory: true,
                 },
@@ -688,11 +691,26 @@ mod tests {
             false,
         );
         let mut tree = TreeState::default();
-        tree.expanded.insert(root.clone());
-        assert_eq!(visible(&project, &tree).len(), 2);
-        tree.expanded.insert(root.join("scripts"));
-        assert_eq!(visible(&project, &tree).len(), 3);
+        let paths = |tree: &TreeState| {
+            visible(&project, tree)
+                .iter()
+                .map(|e| e.path.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            paths(&tree),
+            vec![root.join("scripts/main"), root.join("scripts/level")]
+        );
+        tree.expanded.insert(root.join("scripts/level"));
+        assert_eq!(
+            paths(&tree),
+            vec![
+                root.join("scripts/main"),
+                root.join("scripts/level"),
+                root.join("scripts/level/main")
+            ]
+        );
         tree.expanded.clear();
-        assert!(visible(&project, &tree).is_empty());
+        assert_eq!(paths(&tree).len(), 2);
     }
 }

@@ -16,7 +16,7 @@ scenemax_materials = { path = "../../Engine/materials" }
 scenemax_effects = { path = "../effects" }
 anyhow.workspace = true
 avian3d.workspace = true
-bevy = { workspace = true, features = ["3d", "bevy_ui", "bevy_ui_render", "bevy_text", "default_font", "bevy_sprite", "bevy_audio", "bevy_gizmos_render", "mesh_picking", "sysinfo_plugin", "vorbis", "wav", "mp3", "jpeg", "png", "hdr", "ktx2", "zstd_rust"] }
+bevy = { workspace = true, features = ["3d", "bevy_ui", "bevy_ui_render", "bevy_text", "system_clipboard", "default_font", "bevy_sprite", "bevy_audio", "bevy_gizmos_render", "mesh_picking", "sysinfo_plugin", "vorbis", "wav", "mp3", "jpeg", "png", "hdr", "ktx2", "zstd_rust"] }
 bevy-tnua.workspace = true
 bevy-tnua-avian3d.workspace = true
 scenemax_assets = { path = "../../Common/assets" }
@@ -28,4 +28,8 @@ scenemax_runtime_ui_core = { path = "../runtime_ui" }
 scenemax_runtime_vm_core = { path = "../vm" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
