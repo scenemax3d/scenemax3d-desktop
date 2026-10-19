@@ -2,6 +2,13 @@
 
 Open **Tools → Package & Deploy…**. The retained Bevy form runs inside the IDE. Web Start is intentionally absent.
 
+Players can override a desktop game's packaged UDP endpoint by placing
+`network.json` beside the built executable, with `host` and numeric `port` fields.
+Optional project/room overrides and validation rules are described in
+[External multiplayer configuration](../Projector/README.md#external-multiplayer-configuration).
+Existing distributions must be rebuilt with the updated projector; custom
+prebuilt runtimes must also include this support.
+
 ## Platform capability
 
 | Platform | Artifact | Requirements |

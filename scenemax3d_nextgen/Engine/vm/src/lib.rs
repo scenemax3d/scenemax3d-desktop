@@ -250,7 +250,10 @@ pub fn resolve_assignment_value_scoped_with_guards(
             )?;
             Some(value.round())
         }
-        AssignmentValue::Distance { left, right } => spatial.distance(left, right),
+        AssignmentValue::Distance { left, right } => spatial.distance(
+            &references::entity_name(left, vars, scope),
+            &references::entity_name(right, vars, scope),
+        ),
         AssignmentValue::PoolAcquire { .. } => None,
         AssignmentValue::Binary {
             left,

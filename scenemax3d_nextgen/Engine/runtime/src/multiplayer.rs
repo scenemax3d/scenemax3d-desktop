@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 mod lifecycle;
+mod external_config;
 pub(super) mod collisions;
 mod controllers;
 mod local;
@@ -97,7 +98,10 @@ pub(super) fn initialize(app: &mut App, project: Option<&Path>, script: Option<&
             }
         }
         Ok(None) => {}
-        Err(error) => tracing::error!(%error, "invalid SceneMax multiplayer configuration"),
+        Err(error) => {
+            write_runtime_diagnostic_line(format!("NETWORK:CONFIG_ERROR {error}"));
+            tracing::error!(%error, "invalid SceneMax multiplayer configuration");
+        }
     }
     app.insert_resource(network).add_systems(Last, update);
 }
@@ -107,7 +111,12 @@ fn settings(
     script: Option<&Path>,
 ) -> Result<Option<(String, u16, Login)>, String> {
     let defaults = env::var("SCENEMAX_MULTIPLAYER_DEFAULTS").ok();
-    configured_settings(project, script, defaults.as_deref(), |name| env::var(name).ok())
+    let executable = env::var_os("SCENEMAX_DISTRIBUTION_EXE")
+        .map(PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(env::current_exe)
+        .map_err(|error| format!("Cannot locate executable for network.json: {error}"))?;
+    external_config::settings(project, script, defaults.as_deref(), &executable, |name| env::var(name).ok())
 }
 
 fn configured_settings(
