@@ -99,6 +99,36 @@ The builder must consume the snapshot, implement the target runtime bootstrap, i
 
 Structural output validation does not establish device/browser compatibility or verify signing. Inspect third-party recipes before configuring them: they execute build tools in the user's environment.
 
+## Windows build tool setup
+
+File → Settings → **Build Configuration** scans installed Rust/Cargo, Visual Studio
+MSVC x64 tools, Windows SDK libraries/headers and CMake. Discovery runs off the UI
+thread and checks PATH, Cargo home, user/machine environment settings and Visual
+Studio's installation catalog. It does not download or install during a scan.
+
+**Install / repair Rust** uses the official rustup bootstrapper (verified against
+its published SHA-256) and installs the IDE's pinned MSVC toolchain, rustfmt and
+Clippy without changing an existing default toolchain. **Install C++ / SDK /
+CMake** uses the signed Microsoft Visual Studio 2022 Build Tools installer with
+the C++ workload, recommended SDK and CMake components. Existing Build Tools
+installations are modified; full Visual Studio editions are kept intact. Windows
+may ask for administrator permission. Setup never requests an automatic reboot;
+restart-required results are shown in the dialog.
+
+The dialog shows installed/missing components and paths, download progress,
+indeterminate installation activity, and bounded console output. Microsoft Setup
+also provides its own progress window and `%TEMP%/dd_*` diagnostic logs. Closing
+the dialog leaves the worker running; keep the IDE running until setup finishes.
+Refresh detection after an external installation or reboot. Automatic setup is
+currently for Windows x64; cross-compilation prerequisites remain separate.
+
+Successful scans atomically save `%LOCALAPPDATA%/SceneMax/build-tools.json`.
+Export Cargo processes use the discovered executable and compiler/SDK environment
+without changing the IDE's global environment or requiring an IDE restart. A new
+scan replaces stale installation paths. No Zig SDK is installed by this feature.
+Read-only dialog smoke capture: `SCENEMAX_SMOKE_SETTINGS=1` with `--smoke-frames`
+and `--smoke-screenshot`; the hook never starts an installation.
+
 ## Boundaries and verification
 
 Domain validation lives in `IDE/core/deployment.rs`. The owned worker, filesystem, SDK adapters and Butler live in `IDE/services/deployment/`. `IDE/app/application/deployment.rs` owns orchestration and saving. `IDE/app/presentation/deployment.rs` owns retained widgets. `Projector/launcher` is an independent executable built through Cargo, never linked into the IDE.

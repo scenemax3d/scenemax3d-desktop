@@ -92,8 +92,8 @@ pub(super) fn check(request: &Request, context: &Context) -> io::Result<()> {
     for platform in request.settings.platforms.iter().filter(|p| p.selected) {
         context.check()?;
         let result = if platform.target.desktop() {
-            if !available(Path::new("cargo")) {
-                Err(io::Error::other("Install Rust/Cargo or add it to PATH."))
+            if !available(&crate::build_configuration::cargo_path()) {
+                Err(io::Error::other("Open File > Settings > Build Configuration to detect or install Rust/Cargo."))
             } else if !platform.runtime.is_empty() {
                 files::native_binary(Path::new(&platform.runtime), platform.target)
             } else if request.settings.native_effects && platform.target != Target::Windows {
@@ -168,7 +168,8 @@ fn cargo(
         ));
         return Ok(binary);
     }
-    let mut command = Command::new("cargo");
+    let mut command = Command::new(crate::build_configuration::cargo_path());
+    crate::build_configuration::prepare(&mut command);
     if package != "scenemax_game_launcher" {
         context.log("Checking engine source and dependencies with Cargo; unchanged builds are reused.\n");
     }

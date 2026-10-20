@@ -169,6 +169,11 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "settings" {
+            let row = super::build_configuration::menu_item(commands, host, entry.name);
+            finish_item(commands, row, "");
+            continue;
+        }
         if entry.command == "font_generator" {
             let row = super::font_generator::menu_item(commands, host, entry.name);
             finish_item(commands, row, "");
