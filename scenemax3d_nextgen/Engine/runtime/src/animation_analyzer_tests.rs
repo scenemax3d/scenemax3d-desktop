@@ -128,7 +128,7 @@ fn authored_alias_record_uses_source_index_interval_speed_and_repeat() {
         {
             app.world_mut().entity_mut(root).insert(NetworkAnimationResume {
                 owner: owner.clone(), remaining_seconds: if looped { f64::from(u32::MAX - 1234) / 1000. } else if expired { 0. } else { 0.8 },
-                received_at: std::time::Instant::now(),
+                received_at: web_time::Instant::now(),
             });
         }
         if expired {

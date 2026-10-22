@@ -8,6 +8,23 @@ rust-version.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+web-time = "1.1"
+
+[features]
+web-gateway = ["dep:tungstenite"]
+
+[[bin]]
+name = "scenemax_web_gateway"
+path = "src/bin/web_gateway.rs"
+required-features = ["web-gateway"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tungstenite = { version = "0.28", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.108"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["WebSocket", "BinaryType", "MessageEvent", "Event"] }
 
 [dev-dependencies]
 tempfile.workspace = true

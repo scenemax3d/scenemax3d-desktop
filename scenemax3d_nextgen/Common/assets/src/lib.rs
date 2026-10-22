@@ -1,7 +1,8 @@
+pub mod filesystem;
 pub mod animation_ranges;
 
+use crate::filesystem as fs;
 use std::{
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -230,7 +231,7 @@ pub fn audit_project(project_root: &Path) -> Result<AssetAuditReport> {
         ..Default::default()
     };
 
-    if !index_path.is_file() {
+    if !crate::filesystem::is_file(&index_path) {
         return Ok(report);
     }
 
@@ -242,7 +243,7 @@ pub fn audit_project(project_root: &Path) -> Result<AssetAuditReport> {
             path: resources.join(model.path.replace('/', std::path::MAIN_SEPARATOR_STR)),
         };
         let lower = asset.path.to_string_lossy().to_ascii_lowercase();
-        if !asset.path.is_file() {
+        if !crate::filesystem::is_file(&asset.path) {
             report.missing_models.push(asset);
         } else if lower.ends_with(".glb") || lower.ends_with(".gltf") {
             report.gltf_models.push(asset);
@@ -325,7 +326,7 @@ fn resolve_model_resource_from_indexes(
     model_name: &str,
     asset_source: Option<&str>,
 ) -> Result<ModelResource, AssetLookupError> {
-    for index_path in index_paths.iter().filter(|path| path.is_file()) {
+    for index_path in index_paths.iter().filter(|path| crate::filesystem::is_file(&path)) {
         let Ok(index) = read_models_index(index_path) else {
             continue;
         };
@@ -401,7 +402,7 @@ fn resolve_animation_resource_from_indexes(
     animation_name: &str,
     asset_source: Option<&str>,
 ) -> Result<AnimationResource, AssetLookupError> {
-    for index_path in index_paths.iter().filter(|path| path.is_file()) {
+    for index_path in index_paths.iter().filter(|path| crate::filesystem::is_file(&path)) {
         let Ok(index) = read_animations_index(index_path) else {
             continue;
         };
@@ -561,7 +562,7 @@ fn zip_vec3(x: Option<f32>, y: Option<f32>, z: Option<f32>) -> Option<[f32; 3]> 
 fn find_models_index_path(resources_root: &Path) -> PathBuf {
     project_models_index_paths(resources_root)
         .into_iter()
-        .find(|path| path.is_file())
+        .find(|path| crate::filesystem::is_file(&path))
         .unwrap_or_else(|| resources_root.join("models").join("models-ext.json"))
 }
 
@@ -702,7 +703,7 @@ impl AssetAuditReport {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use crate::filesystem as fs;
 
     use super::*;
 
@@ -1058,7 +1059,7 @@ pub fn model_animation_records(
     }
     for (base, paths) in locations {
         for path in paths {
-            if !path.is_file() {
+            if !crate::filesystem::is_file(&path) {
                 continue;
             }
             let index = read_models_index(&path).map_err(|e| e.to_string())?;
@@ -1109,7 +1110,7 @@ pub fn model_animation_frame_bounds(root: &Path, builtin: Option<&Path>, model: 
     if let Some(builtin) = builtin { locations.push(builtin_models_index_paths(builtin)); }
     for paths in locations {
         for path in paths {
-            if !path.is_file() { continue; }
+            if !crate::filesystem::is_file(&path) { continue; }
             let index = read_models_index(&path).map_err(|e| e.to_string())?;
             let Some(entry) = index.models.iter().find(|e| e.name.eq_ignore_ascii_case(model)) else { continue; };
             return animation_ranges::frame_bounds(&serde_json::Value::Object(entry.animation_metadata.clone()), selector)

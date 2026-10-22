@@ -6,6 +6,11 @@ pub(super) fn find_builtin_resources_root(
     script_root: Option<&Path>,
     active_asset_root: Option<&Path>,
 ) -> Option<PathBuf> {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(root) = project_root {
+        let builtin=root.join("builtin/resources");
+        if fs::is_dir(&builtin) { return Some(builtin); }
+    }
     let active_asset_root = active_asset_root.and_then(canonicalize_existing);
     let mut candidates = Vec::new();
 
@@ -38,7 +43,7 @@ pub(super) fn find_builtin_resources_root(
         if active_asset_root.as_ref() == Some(&canonical) {
             return false;
         }
-        canonical.join("Models").is_dir() || canonical.join("models").is_dir()
+        scenemax_assets::filesystem::is_dir(&canonical.join("Models")) || scenemax_assets::filesystem::is_dir(&canonical.join("models"))
     })
 }
 
@@ -49,7 +54,7 @@ pub(super) fn add_resources_ancestor_candidates(base: &Path, candidates: &mut Ve
 }
 
 pub(super) fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {
-    path.as_ref().canonicalize().ok()
+    scenemax_assets::filesystem::canonicalize(&path.as_ref()).ok()
 }
 
 pub(super) fn load_gltf_animation_names(
@@ -723,11 +728,11 @@ pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
 }
 
 pub(super) fn normalize_script_path(path: &Path) -> PathBuf {
-    if path.is_file() {
+    if scenemax_assets::filesystem::is_file(&path) {
         return path.to_path_buf();
     }
     let code_path = path.with_extension("code");
-    if code_path.is_file() {
+    if scenemax_assets::filesystem::is_file(&code_path) {
         return code_path;
     }
     path.to_path_buf()
@@ -749,7 +754,7 @@ pub(super) fn default_script_path(project_root: Option<&Path>) -> Option<PathBuf
         root.join("main.code"),
     ]
     .into_iter()
-    .find(|path| path.is_file());
+    .find(|path| scenemax_assets::filesystem::is_file(&path));
     direct.or_else(|| default_scripts_subdir_main(root))
 }
 
@@ -759,12 +764,12 @@ fn default_scripts_subdir_main(root: &Path) -> Option<PathBuf> {
     let mut candidates = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if !path.is_dir() {
+        if !scenemax_assets::filesystem::is_dir(&path) {
             continue;
         }
         for file_name in ["main", "main.code"] {
             let candidate = path.join(file_name);
-            if candidate.is_file() {
+            if scenemax_assets::filesystem::is_file(&candidate) {
                 candidates.push(candidate);
             }
         }

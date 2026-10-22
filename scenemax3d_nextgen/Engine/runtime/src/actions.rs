@@ -8507,7 +8507,7 @@ pub(super) fn build_action_transform_map(
     let mut transforms_by_name = HashMap::new();
     let scene_roots = collect_scene_transform_roots(&mut transforms_by_name, scene_entities);
     let targets = collect_bone_alias_targets(program);
-    let bone_start = std::time::Instant::now();
+    let bone_start = web_time::Instant::now();
     let alias_count = insert_bone_transform_aliases(
         &scene_roots,
         &targets,

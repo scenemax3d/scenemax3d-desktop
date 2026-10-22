@@ -190,7 +190,7 @@ impl Settings {
                     p.target.id()
                 ));
             }
-            if !p.target.desktop() && p.recipe.trim().is_empty() {
+            if !p.target.desktop() && p.target != Target::Web && p.recipe.trim().is_empty() {
                 return Err(format!(
                     "{} needs a platform build recipe. See IDE/DEPLOYMENT.md for the SDK builder contract.",
                     p.target.label()
@@ -254,6 +254,17 @@ mod tests {
         ] {
             assert!(normalize_itch_target(s).is_err());
         }
+    }
+    #[test]
+    fn web_uses_builtin_builder_without_a_recipe() {
+        let mut settings = Settings {
+            output: "out".into(),
+            ..Default::default()
+        };
+        for platform in &mut settings.platforms {
+            platform.selected = platform.target == Target::Web;
+        }
+        assert!(settings.validate().is_ok());
     }
     #[test]
     fn selection_and_recipes_are_required() {

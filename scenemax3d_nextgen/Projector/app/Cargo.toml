@@ -14,3 +14,9 @@ clap.workspace = true
 scenemax_runtime = { path = "../../Engine/runtime" }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.108"
+console_error_panic_hook = "0.1"
+scenemax_assets = { path = "../../Common/assets" }
+scenemax_multiplayer = { path = "../../Engine/multiplayer" }

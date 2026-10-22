@@ -18,9 +18,60 @@ prebuilt runtimes must also include this support.
 | macOS | `.zip` containing one executable game | Apple SDK, normally a Mac; editable architecture, ARM64 by default |
 | Android | `.apk` | Explicit SDK builder recipe and Android runtime host |
 | iOS | `.ipa` | Explicit SDK builder recipe, iOS runtime host and signing on a Mac |
-| Web | `.zip` with `index.html` and Wasm | Explicit browser-runtime builder recipe |
+| Web | `.zip` with `index.html`, JavaScript, Wasm and game files | Rust Wasm target and matching wasm-bindgen; built-in WebGPU projector |
 
-**Android, iOS and Web are builder integrations, not completed projector ports.** The current projector has no Android activity host, iOS app host or browser filesystem/bootstrap. This change does not emit placeholder applications or relabel raw Wasm as a working browser export. Without a recipe, these selections report their missing requirements before building. Implementing/testing those runtime hosts remains necessary for built-in one-click exports on all six platforms.
+**Android and iOS remain external builder integrations.** They require a platform recipe and runtime host. Web uses the built-in browser projector when its optional custom recipe is blank.
+
+## Browser exports
+
+Install **Web tools** in File → Settings → Build Configuration. This installs
+`wasm32-unknown-unknown` for the IDE's pinned Rust toolchain and a matching
+`wasm-bindgen-cli` in a versioned SceneMax tools folder, preserving other installed
+versions. The installer also installs Rust if needed; C++ build tools are needed
+on Windows to compile the binding generator.
+
+Select Web in Package & Deploy and leave the custom recipe blank. The worker
+compiles the shared runtime for Wasm, generates browser bindings, stages the
+selected scripts/assets and creates a static-site ZIP. Unchanged engine builds
+reuse Cargo's cache. Neither Java nor a separate game-specific runtime is used.
+
+After a Web artifact completes, **Run Web locally** in the right-hand build report
+extracts that ZIP into a private temporary folder, starts the IDE's loopback-only
+HTTP server on an available port, and opens the default browser. No Python or Node
+installation is needed. The report shows the URL and **Stop local server**; closing
+the report keeps the preview running, while stopping, rebuilding, or exiting the IDE
+releases it. This previews the completed artifact, so rebuild to test source edits.
+Opening Package and Deploy also discovers the newest completed Web ZIP for the saved
+game filename in its configured output folder, including exports from earlier IDE
+sessions. It can be run immediately without rebuilding or checking build SDKs.
+Multiplayer still requires the gateway configured in the exported network.json,
+with the preview's origin allowed by that gateway.
+
+For manual hosting, serve the extracted ZIP through HTTP on localhost or HTTPS in production.
+Opening `index.html` directly from disk is unsupported. A WebGPU-capable browser
+and graphics adapter are required. The loading page reports file failures and
+waits for a Start click before launching the game. Browser project files are
+mounted read-only before script execution; assets are also available through
+Bevy's HTTP asset loader. This first implementation preloads the complete
+selected snapshot into memory, so large games have higher startup/memory costs.
+Desktop authoring filesystem writes are not browser save-game persistence.
+
+Native Effekseer `.efkefc` payloads cannot be rendered by the browser projector.
+The built-in exporter rejects snapshots containing them rather than silently
+dropping effects. The desktop native-effects setting does not link DLLs into Wasm.
+Custom Rust additions must compile for `wasm32-unknown-unknown`.
+
+For multiplayer, configure the exported `network.json` with `websocket_url`.
+Browsers use binary WebSocket messages through the supplied
+`scenemax_web_gateway`, which forwards each connection through its own UDP socket
+to the existing Zig server without changing the game protocol. Build the gateway
+with `cargo build --release -p scenemax_multiplayer --features web-gateway --bin scenemax_web_gateway`.
+It takes three arguments: listening socket address, fixed UDP upstream socket
+address, and allowed browser Origin. Example:
+`scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080`.
+Use a TLS reverse proxy for public WSS, and specify the actual hosting/iframe
+origin. Static hosting cannot run the gateway. The ZIP includes these deployment
+instructions. Desktop clients continue to connect directly over UDP.
 
 Linux/macOS package assembly is implemented but not executed on those OSes in this Windows workspace. Cross compilation needs a compatible linker and SDK in addition to the Rust target. The existing automatic Effekseer build stages a Windows DLL. For other targets use a matching prebuilt projector and adjacent libraries, or disable native effects and test the resulting game behavior.
 
@@ -74,7 +125,7 @@ The game page must already exist. Publishing updates its channels immediately. F
 
 ## SDK builder contract
 
-Android/iOS/Web accept an explicit JSON recipe naming an existing builder and structured arguments:
+Android/iOS require an explicit JSON recipe; Web optionally accepts one to override the built-in builder:
 
 ```json
 {

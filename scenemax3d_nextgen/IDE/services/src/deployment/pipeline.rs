@@ -103,6 +103,8 @@ pub(super) fn check(request: &Request, context: &Context) -> io::Result<()> {
             } else {
                 Ok(())
             }
+        } else if platform.target == Target::Web && platform.recipe.trim().is_empty() {
+            super::web::check(request)
         } else {
             recipe(platform).and_then(|r| {
                 if available(&r.program) {
@@ -325,6 +327,8 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
                 context,
                 &log,
             )?
+        } else if platform.target == Target::Web && platform.recipe.trim().is_empty() {
+            super::web::build(request, &snapshot, staging.path(), &platform_dir, context, &log)?
         } else {
             sdk(
                 request,
@@ -336,7 +340,10 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
                 &log,
             )?
         };
-        context.edit(|r| r.artifacts.push(artifact.clone()));
+        context.edit(|r| {
+            r.artifacts.push(artifact.clone());
+            if platform.target == Target::Web { r.web_artifact = Some(artifact.clone()); }
+        });
         let summary = format!(
             "Artifact complete: {} ({:.1} MiB), elapsed {:.1}s\n",
             artifact.display(),

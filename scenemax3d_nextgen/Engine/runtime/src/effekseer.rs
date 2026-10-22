@@ -28,7 +28,7 @@ pub(crate) fn update_effekseer_playbacks(
                 && action.owner.as_ref() == Some(&resume.0.owner)) {
                 if !playback.looped && effect.one_shot_duration_seconds.is_finite() {
                     playback.elapsed_seconds = resume.0.seek_seconds(
-                        effect.one_shot_duration_seconds.max(0.1), playback.playback_speed, std::time::Instant::now());
+                        effect.one_shot_duration_seconds.max(0.1), playback.playback_speed, web_time::Instant::now());
                     tracing::debug!(?entity, elapsed = playback.elapsed_seconds, "resumed numbered remote effect");
                 }
                 commands.entity(entity).remove::<crate::NetworkEffectResume>();

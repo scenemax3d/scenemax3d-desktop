@@ -475,7 +475,7 @@ fn collect_smdesign_files_recursive(root: &Path, result: &mut Vec<PathBuf>, dept
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        if scenemax_assets::filesystem::is_dir(&path) {
             collect_smdesign_files_recursive(&path, result, depth + 1);
         } else if path
             .extension()

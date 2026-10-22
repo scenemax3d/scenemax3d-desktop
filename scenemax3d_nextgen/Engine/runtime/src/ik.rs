@@ -11,7 +11,7 @@ fn read(root: &Path, id: &str) -> Result<Value> {
     let mut matches = vec![];
     for folder in ["ik", "IK"] {
         let folder = root.join(folder);
-        if !folder.is_dir() {
+        if !scenemax_assets::filesystem::is_dir(&folder) {
             continue;
         }
         for entry in fs::read_dir(&folder)? {
@@ -43,7 +43,7 @@ fn read(root: &Path, id: &str) -> Result<Value> {
                 || file == format!("{}.smik", id.to_ascii_lowercase())
                 || file == format!("{}.ik.json", id.to_ascii_lowercase())
             {
-                let path = path.canonicalize()?;
+                let path = scenemax_assets::filesystem::canonicalize(&path)?;
                 if !matches.iter().any(|(p, _)| *p == path) {
                     matches.push((path, value));
                 }

@@ -150,13 +150,13 @@ fn sprite_asset_file_path(asset_path: &str, context: &SceneMaxLaunchContext) -> 
             .builtin_asset_root
             .as_ref()
             .map(|root| root.join(relative))
-            .filter(|path| path.is_file());
+            .filter(|path| scenemax_assets::filesystem::is_file(&path));
     }
     context
         .asset_root
         .as_ref()
         .map(|root| root.join(asset_path))
-        .filter(|path| path.is_file())
+        .filter(|path| scenemax_assets::filesystem::is_file(&path))
 }
 
 fn png_dimensions(path: &Path) -> Option<(u32, u32)> {

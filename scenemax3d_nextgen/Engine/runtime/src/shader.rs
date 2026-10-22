@@ -829,7 +829,7 @@ fn find_file_recursively(root: &Path, file_name: &str, limit: usize) -> Option<P
     }
     for entry in fs::read_dir(root).ok()?.filter_map(Result::ok) {
         let path = entry.path();
-        if path.is_file()
+        if scenemax_assets::filesystem::is_file(&path)
             && path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -837,7 +837,7 @@ fn find_file_recursively(root: &Path, file_name: &str, limit: usize) -> Option<P
         {
             return Some(path);
         }
-        if path.is_dir()
+        if scenemax_assets::filesystem::is_dir(&path)
             && let Some(found) = find_file_recursively(&path, file_name, limit - 1)
         {
             return Some(found);

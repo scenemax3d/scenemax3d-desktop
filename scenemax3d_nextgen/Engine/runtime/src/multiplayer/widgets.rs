@@ -30,7 +30,7 @@ pub(super) struct WidgetSync {
 struct Received {
     value: Value,
     applied: Option<Entity>,
-    received_at: std::time::Instant,
+    received_at: web_time::Instant,
 }
 
 fn key(path: &str, slot: &str) -> String {
@@ -159,7 +159,7 @@ pub(in crate::multiplayer) fn receive(state: &mut WidgetSync, name: String, valu
             Received {
                 value,
                 applied: None,
-                received_at: std::time::Instant::now(),
+                received_at: web_time::Instant::now(),
             },
         );
     }
@@ -367,7 +367,7 @@ pub(crate) fn capture(
                     Received {
                         value,
                         applied: Some(entity),
-                        received_at: std::time::Instant::now(),
+                        received_at: web_time::Instant::now(),
                     },
                 );
             }
@@ -423,7 +423,7 @@ fn publish_value(world: &mut World, entity: Entity, path: &str, slot: &str, valu
     net.widgets.pending.insert(name.clone(), value.clone());
     if net.widgets.received.len() < LIMIT || net.widgets.received.contains_key(&name) {
         net.widgets.received.insert(name, Received {
-            value, applied: Some(entity), received_at: std::time::Instant::now(),
+            value, applied: Some(entity), received_at: web_time::Instant::now(),
         });
     }
 }
@@ -576,7 +576,7 @@ mod tests {
 
     fn load_image(world: &mut World) -> (tempfile::TempDir, Entity) {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("fixture.smui"), json!({
+        scenemax_assets::filesystem::write(root.path().join("fixture.smui"), json!({
             "name":"fixture", "layers":[{"name":"overlay", "widgets":[{
                 "name":"panel", "type":"PANEL", "children":[{
                     "name":"caption", "type":"IMAGE", "multiplayer":true,
@@ -643,8 +643,8 @@ mod tests {
         let mut app = app();
         let world = app.world_mut();
         let (root, entity) = load_image(world);
-        std::fs::create_dir(root.path().join("scripts")).unwrap();
-        std::fs::write(root.path().join("scripts/tint.bvshader"), r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#).unwrap();
+        scenemax_assets::filesystem::create_dir(root.path().join("scripts")).unwrap();
+        scenemax_assets::filesystem::write(root.path().join("scripts/tint.bvshader"), r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#).unwrap();
         world.resource_mut::<SceneMaxLaunchContext>().asset_root = Some(root.path().join("resources"));
         world.init_resource::<Assets<crate::ui::shaders::SurfaceShader>>();
         let (_server, _, client) = super::super::joins::tests::connection();
@@ -665,8 +665,8 @@ mod tests {
         let mut app = app();
         let world = app.world_mut();
         let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir(root.path().join("scripts")).unwrap();
-        std::fs::write(root.path().join("scripts/tint.bvshader"), r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#).unwrap();
+        scenemax_assets::filesystem::create_dir(root.path().join("scripts")).unwrap();
+        scenemax_assets::filesystem::write(root.path().join("scripts/tint.bvshader"), r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#).unwrap();
         world.resource_mut::<SceneMaxLaunchContext>().asset_root = Some(root.path().join("resources"));
         let entity = shader_panel(world);
         let (_server, _, client) = super::super::joins::tests::connection();
@@ -875,7 +875,7 @@ mod tests {
         let name = key(PATH, "visible");
         let value = json!([1, 8, "EaseInQuad", "left", 20.0]);
         receive(&mut net.widgets, name.clone(), value.clone());
-        let origin = std::time::Instant::now() - std::time::Duration::from_secs(10);
+        let origin = web_time::Instant::now() - std::time::Duration::from_secs(10);
         net.widgets.received.get_mut(&name).unwrap().received_at = origin;
         flush(world, &mut net); // No UI loaded yet.
         receive(&mut net.widgets, name.clone(), value);
@@ -919,7 +919,7 @@ mod tests {
             panic!()
         };
         // Simulate time between dispatch and entity creation without sleeping.
-        *received_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(3));
+        *received_at = Some(web_time::Instant::now() - std::time::Duration::from_secs(3));
         world.entity_mut(entity).insert(SceneMaxUiEase {
             completion_target: None,
             start: Vec2::new(115., 0.),
@@ -952,7 +952,7 @@ mod tests {
             name.clone(),
             json!([1, 8, "quad", "left", 2.]),
         );
-        let old = std::time::Instant::now() - std::time::Duration::from_secs(3);
+        let old = web_time::Instant::now() - std::time::Duration::from_secs(3);
         net.widgets.received.get_mut(&name).unwrap().received_at = old;
         receive(
             &mut net.widgets,
@@ -1071,7 +1071,7 @@ mod tests {
         for (name, duration, elapsed, visible) in [("EaseOutBounce", 0., 0, false), ("EaseOutBounce", 2., 3, false), ("EaseInBounce", 2., 3, true)] {
             world.resource_mut::<SceneMaxUiActionQueue>().remote_actions.push(SceneMaxUiAction::Ease {
                 target: target(), easing: name.into(), direction: UiEaseDirection::Right, duration_seconds: duration,
-                received_at: Some(std::time::Instant::now() - std::time::Duration::from_secs(elapsed)),
+                received_at: Some(web_time::Instant::now() - std::time::Duration::from_secs(elapsed)),
             });
             apply(world);
             assert_eq!(*world.get::<Visibility>(entity).unwrap(), if visible { Visibility::Inherited } else { Visibility::Hidden });
@@ -1421,7 +1421,7 @@ record(action) = {{
     #[test]
     fn load_then_text_waits_for_spawned_entities() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(
+        scenemax_assets::filesystem::write(
             root.path().join("fixture.smui"),
             json!({
                 "name":"fixture", "layers":[{"name":"overlay", "widgets":[{

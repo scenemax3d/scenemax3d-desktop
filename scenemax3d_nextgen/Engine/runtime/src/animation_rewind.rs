@@ -218,7 +218,7 @@ mod tests {
             let resume_state = NetworkAnimationResume {
                 owner: owner.clone(),
                 remaining_seconds: f64::from(total - age),
-                received_at: std::time::Instant::now(),
+                received_at: web_time::Instant::now(),
             };
             let (seek, state) = resume(&s, 2., 0.5, Some(&resume_state));
             let expected = if age < 4. {

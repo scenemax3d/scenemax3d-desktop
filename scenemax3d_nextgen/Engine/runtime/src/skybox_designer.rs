@@ -839,11 +839,11 @@ fn collect_image_assets(asset_root: &Path) -> Vec<String> {
     let mut result = Vec::new();
     let mut pending = vec![asset_root.to_path_buf()];
     while let Some(path) = pending.pop() {
-        let Ok(metadata) = std::fs::metadata(&path) else {
+        let Ok(metadata) = scenemax_assets::filesystem::metadata(&path) else {
             continue;
         };
         if metadata.is_dir() {
-            let Ok(entries) = std::fs::read_dir(&path) else {
+            let Ok(entries) = scenemax_assets::filesystem::read_dir(&path) else {
                 continue;
             };
             for entry in entries.flatten() {
@@ -895,7 +895,7 @@ fn resolve_project_root(launch: &BevySkyboxDesignerLaunch) -> PathBuf {
     }
     let mut current = launch.skybox.parent();
     while let Some(path) = current {
-        if path.join("resources").is_dir() && path.join("scripts").is_dir() {
+        if scenemax_assets::filesystem::is_dir(&path.join("resources")) && scenemax_assets::filesystem::is_dir(&path.join("scripts")) {
             return path.to_path_buf();
         }
         current = path.parent();

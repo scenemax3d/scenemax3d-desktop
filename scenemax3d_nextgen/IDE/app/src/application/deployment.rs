@@ -19,6 +19,8 @@ pub(crate) enum Action {
     Reveal,
     Log,
     SizeReport,
+    RunWeb,
+    StopWeb,
     Browse(PathField),
 }
 #[derive(Clone, Copy)]
@@ -38,6 +40,8 @@ pub(crate) struct Deployment {
     pub busy: bool,
     pub form_revision: u64,
     pub notification: Option<(bool, String)>,
+    pub preview_status: scenemax_ide_services::deployment::preview::Status,
+    preview: scenemax_ide_services::deployment::preview::Preview,
     notify_job: bool,
     project: PathBuf,
     builder: Builder,
@@ -49,7 +53,9 @@ pub(crate) struct Deployment {
 impl Deployment {
     fn start(&mut self, operation: Operation) -> Result<(), String> {
         let notify = matches!(operation, Operation::Build(_) | Operation::Upload(..));
+        let reset_preview = matches!(operation, Operation::Build(_) | Operation::Load(_));
         self.builder.start(operation).map_err(|e| e.to_string())?;
+        if reset_preview { self.preview.stop(); self.preview_status = self.preview.status(); }
         self.notify_job = notify;
         self.notification = None;
         self.busy = true;
@@ -97,6 +103,7 @@ pub(crate) fn update(
     session: Res<Session>,
     services: Res<EditorServices>,
 ) {
+    state.preview_status = state.preview.status();
     if let Some(report) = state.builder.report() {
         if state.observed != Some(report.revision) {
             state.observed = Some(report.revision);
@@ -187,6 +194,16 @@ pub(crate) fn update(
                     }
                 }
                 Action::DismissResult => state.notification = None,
+                Action::RunWeb => {
+                    if state.busy { return Ok(()); }
+                    let artifact = state.report.web_artifact.clone().ok_or("Build a Web package first.")?;
+                    state.preview.start(artifact).map_err(|e| e.to_string())?;
+                    state.preview_status = state.preview.status();
+                }
+                Action::StopWeb => {
+                    state.preview.stop();
+                    state.preview_status = state.preview.status();
+                }
                 Action::Exit => {
                     state.builder.cancel();
                     state.pending = None;

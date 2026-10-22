@@ -69,7 +69,7 @@ pub fn records(model: &serde_json::Value) -> Result<Vec<Record>, String> {
 fn read(path: &Path) -> Result<Vec<u8>, String> {
     const MAX: u64 = 512 * 1024 * 1024;
     let mut bytes = Vec::new();
-    std::fs::File::open(path)
+    crate::filesystem::File::open(path)
         .map_err(|e| e.to_string())?
         .take(MAX + 1)
         .read_to_end(&mut bytes)
@@ -81,8 +81,8 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
 }
 /// Read glTF/GLB timing with contained sidecars, embedded buffers and sparse accessors.
 pub fn timelines(root: &Path, path: &Path) -> Result<Vec<Timeline>, String> {
-    let root = root.canonicalize().map_err(|e| e.to_string())?;
-    let path = path.canonicalize().map_err(|e| e.to_string())?;
+    let root = crate::filesystem::canonicalize(&root).map_err(|e| e.to_string())?;
+    let path = crate::filesystem::canonicalize(&path).map_err(|e| e.to_string())?;
     if !path.starts_with(&root) {
         return Err("Model is outside its resource root".into());
     }
@@ -104,11 +104,10 @@ pub fn timelines(root: &Path, path: &Path) -> Result<Vec<Timeline>, String> {
                 let uri = percent_encoding::percent_decode_str(uri)
                     .decode_utf8()
                     .map_err(|e| e.to_string())?;
-                let sidecar = path
+                let sidecar = crate::filesystem::canonicalize(path
                     .parent()
                     .ok_or("Missing model folder")?
-                    .join(uri.as_ref())
-                    .canonicalize()
+                    .join(uri.as_ref()))
                     .map_err(|e| e.to_string())?;
                 if !sidecar.starts_with(&root) {
                     return Err("glTF buffer escapes resource root".into());

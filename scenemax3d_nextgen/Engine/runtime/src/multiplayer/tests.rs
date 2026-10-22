@@ -35,9 +35,9 @@ fn material_publication_requires_valid_document_and_target_and_never_echoes() {
     app.world_mut().init_resource::<Multiplayer>();
     let root = std::env::temp_dir().join(format!("scenemax-material-wire-{}-{}",
         std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-    std::fs::create_dir_all(root.join("scripts")).unwrap();
+    scenemax_assets::filesystem::create_dir_all(root.join("scripts")).unwrap();
     let path = root.join("scripts/finish Ω.smmat");
-    std::fs::write(&path, scenemax_assets::material::preset("Gold").to_string()).unwrap();
+    scenemax_assets::filesystem::write(&path, scenemax_assets::material::preset("Gold").to_string()).unwrap();
     let assets = SceneMaxRuntimeAssets { asset_root: Some(root.join("resources")), ..default() };
     let target = app.world_mut().spawn(SceneMaxEntity { name: "subject".into(), runtime_name: "subject".into() }).id();
     apply_entity_material(&mut app.world_mut().commands(), target, "finish Ω".into(), &assets);
@@ -45,7 +45,7 @@ fn material_publication_requires_valid_document_and_target_and_never_echoes() {
     let binding = app.world().get::<scenemax_materials::MaterialBinding>(target).unwrap().material.clone();
     assert_eq!(app.world().resource::<Multiplayer>().pending.len(), 1);
     assert_eq!(app.world().resource::<Multiplayer>().pending[0].1, "{network_entity}.material = \"finish Ω\"");
-    std::fs::write(&path, "{}").unwrap();
+    scenemax_assets::filesystem::write(&path, "{}").unwrap();
     for name in ["finish Ω", "missing"] {
         apply_entity_material(&mut app.world_mut().commands(), target, name.into(), &assets);
         app.world_mut().flush();
@@ -57,7 +57,7 @@ fn material_publication_requires_valid_document_and_target_and_never_echoes() {
     assert!(app.world().get::<scenemax_materials::MaterialBinding>(target).is_none());
     assert_eq!(app.world().resource::<Multiplayer>().pending.len(), 2);
     assert_eq!(app.world().resource::<Multiplayer>().pending[1].1, "{network_entity}.material = \"\"");
-    std::fs::write(&path, scenemax_assets::material::preset("Gold").to_string()).unwrap();
+    scenemax_assets::filesystem::write(&path, scenemax_assets::material::preset("Gold").to_string()).unwrap();
     app.world_mut().resource_mut::<Multiplayer>().remotes.insert(1, "subject".into());
     apply_entity_material(&mut app.world_mut().commands(), target, "finish Ω".into(), &assets);
     app.world_mut().flush();
@@ -67,9 +67,9 @@ fn material_publication_requires_valid_document_and_target_and_never_echoes() {
     app.world_mut().despawn(target);
     app.world_mut().flush();
     assert_eq!(app.world().resource::<Multiplayer>().pending.len(), 2);
-    std::fs::remove_file(path).unwrap();
-    std::fs::remove_dir(root.join("scripts")).unwrap();
-    std::fs::remove_dir(root).unwrap();
+    scenemax_assets::filesystem::remove_file(path).unwrap();
+    scenemax_assets::filesystem::remove_dir(root.join("scripts")).unwrap();
+    scenemax_assets::filesystem::remove_dir(root).unwrap();
 }
 
 #[test]
@@ -1365,8 +1365,8 @@ fn shader_failure_preserves_material_and_only_successful_local_resets_publish() 
 #[test]
 fn shader_publication_follows_mesh_application_and_preserves_literal_names() {
     let root = tempfile::tempdir().unwrap();
-    std::fs::create_dir(root.path().join("scripts")).unwrap();
-    std::fs::write(root.path().join("scripts/finish Ω.bvshader"), r#"{"mainColor":[1,0,0,1]}"#).unwrap();
+    scenemax_assets::filesystem::create_dir(root.path().join("scripts")).unwrap();
+    scenemax_assets::filesystem::write(root.path().join("scripts/finish Ω.bvshader"), r#"{"mainColor":[1,0,0,1]}"#).unwrap();
     for (expression, has_mesh, succeeds) in [("choice", true, true), ("choice", false, false), (r#""choice""#, true, false)] {
         let mut world = world();
         world.insert_resource(Multiplayer::default());
@@ -1465,8 +1465,8 @@ fn remote_surface_history_waits_for_gltf_scene_descendants() {
 #[test]
 fn null_ik_assets_do_not_replace_existing_rigs_or_emit_commands() {
     let root = tempfile::tempdir().unwrap();
-    std::fs::create_dir(root.path().join("ik")).unwrap();
-    std::fs::write(root.path().join("ik/null.smik"), r#"{"id":"null","layers":[]}"#).unwrap();
+    scenemax_assets::filesystem::create_dir(root.path().join("ik")).unwrap();
+    scenemax_assets::filesystem::write(root.path().join("ik/null.smik"), r#"{"id":"null","layers":[]}"#).unwrap();
     for expression in ["null", "choice", r#""null""#] {
         let mut world = world();
         let (_server, _, client) = joins::tests::connection();
