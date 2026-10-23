@@ -9,8 +9,7 @@ includes the matching source workspace and configures its paths through the
 SceneMax Studio shortcut. Keep **Download and install build tools** selected during
 installation to install the prerequisites automatically, or install them later
 through Settings.
-The older `build-installer.ps1` targets a different product and must not be used
-to package this IDE. The Studio installer still needs clean-machine validation.
+The Studio installer still needs clean-machine validation.
 
 | Requirement | How to obtain it | When needed |
 | --- | --- | --- |

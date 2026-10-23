@@ -128,6 +128,15 @@ For implementation details, see the [architecture guide](scenemax3d_nextgen/docs
 
 ## Contributing
 
+The current source tree contains the Rust/Bevy implementation. The former Java
+implementation is available in earlier release tags. Existing local reference
+copies are ignored by Git and are not required to build or run SceneMax Studio.
+
+Normal builds use the checked-in Rust parser. The optional
+`SCENEMAX_REGENERATE_PARSER=1` maintainer workflow uses a locally supplied ANTLR
+generator at `scenemax3d_nextgen/Tools/antlr/antlr4-4.8-2-SNAPSHOT-complete.jar`;
+that tool is not distributed in this repository.
+
 Contributions are welcome. Open an issue to discuss substantial changes, and read [AGENTS.md](AGENTS.md) and the architecture guide before changing engine or editor code. Keep reusable engine behavior independent of any particular game.
 
 Run the relevant tests from `scenemax3d_nextgen`:

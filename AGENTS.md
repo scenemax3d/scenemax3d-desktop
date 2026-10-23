@@ -3,7 +3,9 @@
 The migration creates independent Rust/Bevy IDE and runtime implementations. Use
 the existing Java code only as a behavioral reference; do not add or modify Java
 implementation code or introduce dependencies on Java source, binaries, or a JVM.
-The Java code will eventually be removed. Keep Bevy product UI wording focused
+The legacy Java files are untracked local references and are absent from fresh
+clones. Do not add them back to Git; earlier release tags retain their history.
+Keep Bevy product UI wording focused
 on SceneMax features, without Java compatibility or migration labels. Existing
 SceneMax project data and the dedicated Zig UDP server remain supported.
 
