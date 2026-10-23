@@ -303,14 +303,14 @@ fn builtin_scenemax_material(
 ) -> Option<SceneMaxResolvedMaterial> {
     let builtin_asset_root = builtin_asset_root?;
     let (diffuse, normal) = builtin_material_texture_paths(name)?;
-    if !builtin_asset_root.join(diffuse).is_file() {
+    if !scenemax_assets::filesystem::is_file(&builtin_asset_root.join(diffuse)) {
         return None;
     }
     Some(SceneMaxResolvedMaterial {
         diffuse: Some(Color::WHITE),
         diffuse_map: Some(format!("builtin://{diffuse}")),
         normal_map: normal
-            .filter(|path| builtin_asset_root.join(path).is_file())
+            .filter(|path| scenemax_assets::filesystem::is_file(&builtin_asset_root.join(path)))
             .map(|path| format!("builtin://{path}")),
         glow_color: None,
         glow_map: None,

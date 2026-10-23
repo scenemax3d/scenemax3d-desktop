@@ -444,6 +444,25 @@ impl Library {
             }
             return Ok(());
         }
+        if matches!(extension.as_str(), "efkefc" | "efk")
+            && let Ok(bytes) = files::read_small(&path)
+            && let Ok(references) = crate::imports::effect::references(&bytes)
+        {
+            for (_, reference) in references {
+                let dep = normalized(&path.parent().unwrap_or(&self.root).join(reference));
+                let relative = dep.strip_prefix(&self.root).map_err(|_| {
+                    io::Error::other("Effect dependency escapes resource root")
+                })?;
+                let dependency = relative.to_string_lossy().replace('\\', "/").to_lowercase();
+                if !self.inventory.contains_key(&dependency) {
+                    return Err(io::Error::other(format!(
+                        "Missing effect dependency: {} (from {})", dep.display(), path.display()
+                    )));
+                }
+                self.dependencies.entry(dependency.clone()).or_default().insert(key.clone());
+                self.select(&dependency, names)?;
+            }
+        }
         // Binary effect files reference sidecars internally. Preserve that effect's
         // directory, not the entire shared effect collection.
         if matches!(extension.as_str(), "efkefc" | "efk" | "j3md") {
@@ -580,6 +599,10 @@ impl Library {
                         | "efkefc"
                 );
                 names.contains(*key)
+                    || ((key.ends_with(".efkefc") || key.ends_with(".efk"))
+                        && key.rsplit_once('/')
+                            .and_then(|(folder, _)| folder.strip_prefix("effects/"))
+                            .is_some_and(|folder| names.contains(&format!("effects.effekseer.{folder}"))))
                     || (scenemax_ide_core::ik::is_file(path)
                         && read_text(path)
                             .ok()

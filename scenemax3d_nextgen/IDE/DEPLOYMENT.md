@@ -18,9 +18,84 @@ prebuilt runtimes must also include this support.
 | macOS | `.zip` containing one executable game | Apple SDK, normally a Mac; editable architecture, ARM64 by default |
 | Android | `.apk` | Explicit SDK builder recipe and Android runtime host |
 | iOS | `.ipa` | Explicit SDK builder recipe, iOS runtime host and signing on a Mac |
-| Web | `.zip` with `index.html` and Wasm | Explicit browser-runtime builder recipe |
+| Web | `.zip` with `index.html`, JavaScript, Wasm and game files | Rust Wasm target and matching wasm-bindgen; built-in WebGPU projector |
 
-**Android, iOS and Web are builder integrations, not completed projector ports.** The current projector has no Android activity host, iOS app host or browser filesystem/bootstrap. This change does not emit placeholder applications or relabel raw Wasm as a working browser export. Without a recipe, these selections report their missing requirements before building. Implementing/testing those runtime hosts remains necessary for built-in one-click exports on all six platforms.
+**Android and iOS remain external builder integrations.** They require a platform recipe and runtime host. Web uses the built-in browser projector when its optional custom recipe is blank.
+
+## Browser exports
+
+When updating exporter source, save and close the IDE, then run
+`cargo build --locked -p scenemax_ide` from `scenemax3d_nextgen` and reopen it.
+Export logic and bundled effect runtime files are compiled into the IDE;
+rebuilding a projector or validation example does not update the running IDE.
+The old message “This export contains native Effekseer effects. Their browser
+renderer is not available” indicates an IDE built before browser effect support.
+
+Install **Web tools** in File → Settings → Build Configuration. This installs
+`wasm32-unknown-unknown` for the IDE's pinned Rust toolchain and a matching
+`wasm-bindgen-cli` in a versioned SceneMax tools folder, preserving other installed
+versions. The installer also installs Rust if needed; C++ build tools are needed
+on Windows to compile the binding generator.
+
+Select Web in Package & Deploy and leave the custom recipe blank. The worker
+compiles the shared runtime for Wasm, generates browser bindings, stages the
+selected scripts/assets and creates a static-site ZIP. Unchanged engine builds
+reuse Cargo's cache. Neither Java nor a separate game-specific runtime is used.
+
+After a Web artifact completes, **Run Web locally** in the right-hand build report
+extracts that ZIP into a private temporary folder, starts the IDE's loopback-only
+HTTP server on an available port, and opens the default browser. No Python or Node
+installation is needed. The report shows the URL and **Stop local server**; closing
+the report keeps the preview running, while stopping, rebuilding, or exiting the IDE
+releases it. This previews the completed artifact, so rebuild to test source edits.
+Opening Package and Deploy also discovers the newest completed Web ZIP for the saved
+game filename in its configured output folder, including exports from earlier IDE
+sessions. It can be run immediately without rebuilding or checking build SDKs.
+Multiplayer still requires the gateway configured in the exported network.json,
+with the preview's origin allowed by that gateway.
+
+For manual hosting, serve the extracted ZIP through HTTP on localhost or HTTPS in production.
+Opening `index.html` directly from disk is unsupported. A WebGPU-capable browser
+and graphics adapter are required. The loading page reports file failures and
+waits for a Start click before launching the game. Browser project files are
+mounted read-only before script execution; assets are also available through
+Bevy's HTTP asset loader. This first implementation preloads the complete
+selected snapshot into memory, so large games have higher startup/memory costs.
+Desktop authoring filesystem writes are not browser save-game persistence.
+
+Supported Effekseer `.efkefc` effects use a bundled, locally served WebGPU runtime.
+Existing play, loop, stop, transform, speed and dynamic-input commands use the
+same shared playback state; completion is checked against each playback generation.
+No additional Effekseer SDK is required. The Start game gesture unlocks effect
+audio. Missing dependencies and renderer/device failures are shown on the loading
+screen. Effect dependencies referenced outside the effect directory are included
+when they remain inside the project's resource root.
+
+Web effects currently disable MSAA and draw after transparent geometry, before
+tone mapping. They share Bevy's device, color target and reversed-depth buffer.
+Distortion samples the current camera's scene color on the GPU and supports SDR
+targets, camera viewports and resizing. Soft particles, custom materials and
+GPU-simulated particles are not supported and fail export with an actionable error. Effects need editor metadata
+for that validation; raw `.efk` files are unsupported. Transparent objects from
+Bevy and Effekseer are not jointly sorted. Unsupported render-target formats and
+device loss produce visible errors; device loss requires reloading the game.
+The desktop native-effects setting remains independent of the browser backend.
+Binary pin, checksums, licenses and maintainer update instructions are in
+`Engine/effects/web/MAINTENANCE.md` (EffekseerForWeb 0.1.0 at commit
+`da76b5023bd7aa10fe66ee05f6fecd4b84debce3`).
+Custom Rust additions must compile for `wasm32-unknown-unknown`.
+
+For multiplayer, configure the exported `network.json` with `websocket_url`.
+Browsers use binary WebSocket messages through the supplied
+`scenemax_web_gateway`, which forwards each connection through its own UDP socket
+to the existing Zig server without changing the game protocol. Build the gateway
+with `cargo build --release -p scenemax_multiplayer --features web-gateway --bin scenemax_web_gateway`.
+It takes three arguments: listening socket address, fixed UDP upstream socket
+address, and allowed browser Origin. Example:
+`scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080`.
+Use a TLS reverse proxy for public WSS, and specify the actual hosting/iframe
+origin. Static hosting cannot run the gateway. The ZIP includes these deployment
+instructions. Desktop clients continue to connect directly over UDP.
 
 Linux/macOS package assembly is implemented but not executed on those OSes in this Windows workspace. Cross compilation needs a compatible linker and SDK in addition to the Rust target. The existing automatic Effekseer build stages a Windows DLL. For other targets use a matching prebuilt projector and adjacent libraries, or disable native effects and test the resulting game behavior.
 
@@ -74,7 +149,7 @@ The game page must already exist. Publishing updates its channels immediately. F
 
 ## SDK builder contract
 
-Android/iOS/Web accept an explicit JSON recipe naming an existing builder and structured arguments:
+Android/iOS require an explicit JSON recipe; Web optionally accepts one to override the built-in builder:
 
 ```json
 {
@@ -98,6 +173,36 @@ The builder must consume the snapshot, implement the target runtime bootstrap, i
 - Web: directory containing `index.html`, a Wasm module, generated JavaScript and required assets; the service creates the final ZIP.
 
 Structural output validation does not establish device/browser compatibility or verify signing. Inspect third-party recipes before configuring them: they execute build tools in the user's environment.
+
+## Windows build tool setup
+
+File → Settings → **Build Configuration** scans installed Rust/Cargo, Visual Studio
+MSVC x64 tools, Windows SDK libraries/headers and CMake. Discovery runs off the UI
+thread and checks PATH, Cargo home, user/machine environment settings and Visual
+Studio's installation catalog. It does not download or install during a scan.
+
+**Install / repair Rust** uses the official rustup bootstrapper (verified against
+its published SHA-256) and installs the IDE's pinned MSVC toolchain, rustfmt and
+Clippy without changing an existing default toolchain. **Install C++ / SDK /
+CMake** uses the signed Microsoft Visual Studio 2022 Build Tools installer with
+the C++ workload, recommended SDK and CMake components. Existing Build Tools
+installations are modified; full Visual Studio editions are kept intact. Windows
+may ask for administrator permission. Setup never requests an automatic reboot;
+restart-required results are shown in the dialog.
+
+The dialog shows installed/missing components and paths, download progress,
+indeterminate installation activity, and bounded console output. Microsoft Setup
+also provides its own progress window and `%TEMP%/dd_*` diagnostic logs. Closing
+the dialog leaves the worker running; keep the IDE running until setup finishes.
+Refresh detection after an external installation or reboot. Automatic setup is
+currently for Windows x64; cross-compilation prerequisites remain separate.
+
+Successful scans atomically save `%LOCALAPPDATA%/SceneMax/build-tools.json`.
+Export Cargo processes use the discovered executable and compiler/SDK environment
+without changing the IDE's global environment or requiring an IDE restart. A new
+scan replaces stale installation paths. No Zig SDK is installed by this feature.
+Read-only dialog smoke capture: `SCENEMAX_SMOKE_SETTINGS=1` with `--smoke-frames`
+and `--smoke-screenshot`; the hook never starts an installation.
 
 ## Boundaries and verification
 

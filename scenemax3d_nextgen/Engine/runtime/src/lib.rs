@@ -7,9 +7,10 @@ mod pool_lifecycle;
 mod animation_range;
 mod animation_rewind;
 mod motion_ease;
+use scenemax_assets::filesystem as fs;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    env, fs,
+    env,
     io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -152,13 +153,14 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .as_deref()
         .and_then(Path::parent)
         .map(Path::to_path_buf);
+    #[cfg(not(target_arch = "wasm32"))]
     initialize_runtime_logger(project_root.as_deref(), script_root.as_deref());
     let scene_program = load_startup_program(&launch);
     let effective_script_root = scene_program.1.clone().or_else(|| script_root.clone());
     let asset_root = project_root
         .as_ref()
         .map(|root| root.join("resources"))
-        .filter(|path| path.is_dir());
+        .filter(|path| scenemax_assets::filesystem::is_dir(&path));
     let builtin_asset_root = find_builtin_resources_root(
         project_root.as_deref(),
         effective_script_root.as_deref(),
@@ -187,10 +189,17 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
     let screen_mode = startup_screen_mode(&scene_program);
     let exit_on_escape = screen_mode_requires_escape_exit(screen_mode);
     let primary_window = bevy_window_from_settings(&launch.window, screen_mode);
+    #[cfg(target_arch = "wasm32")]
+    let primary_window = Window {
+        canvas: Some("#game".into()),
+        fit_canvas_to_parent: true,
+        prevent_default_event_handling: true,
+        mode: WindowMode::Windowed,
+        ..primary_window
+    };
 
     let default_plugins = DefaultPlugins
         .build()
-        .disable::<LogPlugin>()
         .set(AssetPlugin {
             file_path: asset_root
                 .as_ref()
@@ -202,6 +211,8 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             primary_window: Some(primary_window),
             ..default()
         });
+    #[cfg(not(target_arch = "wasm32"))]
+    let default_plugins = default_plugins.disable::<LogPlugin>();
 
     #[cfg(feature = "effekseer_native")]
     let default_plugins = default_plugins.set(RenderPlugin {
@@ -1125,7 +1136,7 @@ enum SceneMaxUiAction {
         direction: UiEaseDirection,
         duration_seconds: f32,
         /// Receiver-local origin; preserved while remote UI creation is deferred.
-        received_at: Option<std::time::Instant>,
+        received_at: Option<web_time::Instant>,
     },
     SetProperty {
         target: UiTargetPath,
@@ -1735,16 +1746,16 @@ struct NetworkEffectResume(NetworkAnimationResume);
 struct NetworkAnimationResume {
     owner: SceneMaxControllerKey,
     remaining_seconds: f64,
-    received_at: std::time::Instant,
+    received_at: web_time::Instant,
 }
 impl NetworkAnimationResume {
-    fn loop_seek_seconds(&self, duration: f32, speed: f32, now: std::time::Instant) -> f32 {
+    fn loop_seek_seconds(&self, duration: f32, speed: f32, now: web_time::Instant) -> f32 {
         let age = f64::from(u32::MAX) / 1000. - self.remaining_seconds
             + now.saturating_duration_since(self.received_at).as_secs_f64();
         (age.max(0.) * f64::from(speed)).rem_euclid(f64::from(duration.max(0.001))) as f32
     }
 
-    fn seek_seconds(&self, duration: f32, speed: f32, now: std::time::Instant) -> f32 {
+    fn seek_seconds(&self, duration: f32, speed: f32, now: web_time::Instant) -> f32 {
         let remaining = (self.remaining_seconds - now.saturating_duration_since(self.received_at).as_secs_f64()).max(0.);
         (duration - (remaining * f64::from(speed.max(0.001))) as f32).clamp(0., duration.max(0.))
     }

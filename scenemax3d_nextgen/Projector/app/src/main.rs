@@ -100,6 +100,7 @@ enum Command {
     },
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<()> {
     let cli = Cli::parse();
     scenemax_runtime::set_runtime_logging(cli.runtime_log);
@@ -182,6 +183,12 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(target_arch = "wasm32")]
+mod web;
 
 fn packaged_project_root() -> Option<PathBuf> {
     let current_dir = std::env::current_dir().ok()?;

@@ -1389,7 +1389,7 @@ fn collect_gltf_models(root: &Path, dir: &Path, models: &mut Vec<RetargetDesigne
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        if scenemax_assets::filesystem::is_dir(&path) {
             collect_gltf_models(root, &path, models);
             continue;
         }
@@ -1460,7 +1460,7 @@ fn animation_index_path(asset_root: &Path) -> PathBuf {
         asset_root.join("Animations").join("animations-ext.json"),
     ]
     .into_iter()
-    .find(|path| path.is_file())
+    .find(|path| scenemax_assets::filesystem::is_file(&path))
     .unwrap_or_else(|| asset_root.join("animations").join("animations-ext.json"))
 }
 

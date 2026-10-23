@@ -1,5 +1,12 @@
 use std::path::PathBuf;
 
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::{core_pipeline::upscaling::upscaling, render::renderer::RenderAdapterInfo};
+
+#[cfg(target_arch = "wasm32")]
+#[path = "web.rs"]
+mod web;
+
 #[cfg(feature = "effekseer_native")]
 use std::{
     collections::{HashSet, hash_map::DefaultHasher},
@@ -11,12 +18,12 @@ use std::{
 use ash::vk::Handle;
 
 use bevy::{
-    core_pipeline::{Core3d, upscaling::upscaling},
+    core_pipeline::Core3d,
     prelude::*,
     render::{
         Extract, ExtractSchedule, Render, RenderApp,
         camera::ExtractedCamera,
-        renderer::{RenderAdapterInfo, RenderContext, ViewQuery},
+        renderer::{RenderContext, ViewQuery},
         view::{ExtractedView, ViewTarget},
     },
 };
@@ -51,13 +58,20 @@ impl Plugin for SceneMaxEffekseerBridgePlugin {
         render_app.insert_resource(completions);
         render_app
             .init_resource::<ExtractedEffekseerEffects>()
+            .add_systems(ExtractSchedule, extract_effekseer_effects);
+        #[cfg(target_arch = "wasm32")]
+        web::install(render_app);
+        #[cfg(not(target_arch = "wasm32"))]
+        render_app
             .init_resource::<EffekseerBridgeState>()
-            .add_systems(ExtractSchedule, extract_effekseer_effects)
             .add_systems(Core3d, render_effekseer_3d_pass.after(upscaling))
             .add_systems(
                 Render,
                 announce_effekseer_bridge_state.in_set(bevy::render::RenderSystems::Cleanup),
             );
+
+        #[cfg(target_arch = "wasm32")]
+        app.add_systems(PostUpdate, web::configure_cameras);
 
         #[cfg(feature = "effekseer_native")]
         render_app
@@ -70,7 +84,9 @@ impl Plugin for SceneMaxEffekseerBridgePlugin {
 }
 
 pub const fn effekseer_renderer_label() -> &'static str {
-    if cfg!(feature = "effekseer_native") {
+    if cfg!(target_arch = "wasm32") {
+        "bevy-webgpu"
+    } else if cfg!(feature = "effekseer_native") {
         "bevy-native"
     } else {
         "bevy-native-unbuilt"
@@ -102,6 +118,7 @@ struct ExtractedEffekseerEffects {
 }
 
 #[derive(Debug, Default, Resource)]
+#[cfg(not(target_arch = "wasm32"))]
 struct EffekseerBridgeState {
     announced_backend: bool,
     announced_native_unbuilt: bool,
@@ -170,6 +187,7 @@ fn retain_playback_completions(completions: &crate::PlaybackCompletions, instanc
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn announce_effekseer_bridge_state(
     adapter_info: Option<Res<RenderAdapterInfo>>,
     extracted: Res<ExtractedEffekseerEffects>,
@@ -205,6 +223,7 @@ fn announce_effekseer_bridge_state(
 }
 
 #[allow(clippy::too_many_arguments)] // Bevy injects render-world resources independently.
+#[cfg(not(target_arch = "wasm32"))]
 fn render_effekseer_3d_pass(
     view: ViewQuery<(
         &ExtractedCamera,

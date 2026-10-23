@@ -35,6 +35,7 @@ pub(crate) mod model_import;
 pub(crate) mod sprite_import;
 
 pub(crate) mod deployment;
+pub(crate) mod build_configuration;
 pub(crate) mod effect_import;
 
 pub(crate) mod material;

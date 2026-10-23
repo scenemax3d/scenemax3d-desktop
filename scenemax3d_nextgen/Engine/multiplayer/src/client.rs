@@ -1,14 +1,22 @@
 //! Nonblocking, bounded UDP client. Socket ownership ends with this value.
+use web_time::Instant;
 use crate::protocol::{self, Incoming, Login, Outgoing, Session, Spawn};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, VecDeque},
     io,
-    net::{SocketAddr, UdpSocket},
-    time::{Duration, Instant},
+    net::SocketAddr,
+    time::Duration,
 };
 mod ends;
 mod health;
+#[cfg(not(target_arch = "wasm32"))]
+use std::net::UdpSocket;
+#[cfg(target_arch = "wasm32")]
+#[path = "web_socket.rs"]
+pub mod web_socket;
+#[cfg(target_arch = "wasm32")]
+use web_socket::UdpSocket;
 
 const MAX_PENDING: usize = 4096;
 const MAX_ENTITIES: usize = 2048;

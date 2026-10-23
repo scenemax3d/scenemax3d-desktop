@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
 };
+use web_time::{SystemTime, UNIX_EPOCH};
 
 use bevy_ecs::prelude::Resource;
 use scenemax_parser::{
@@ -443,12 +443,18 @@ pub fn pseudo_random_u32() -> u32 {
 }
 
 fn random_seed() -> u64 {
+    // Browsers have neither std's system clock nor an OS process ID.
+    // web_time uses the browser clock and preserves std behavior on desktop.
+    #[cfg(not(target_arch = "wasm32"))]
+    let process_id = std::process::id() as u64;
+    #[cfg(target_arch = "wasm32")]
+    let process_id = 0_u64;
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| {
             (duration.as_nanos() as u64)
                 ^ 0x9E37_79B9_7F4A_7C15
-                ^ ((std::process::id() as u64) << 32)
+                ^ (process_id << 32)
         })
         .ok()
         .filter(|seed| *seed != 0)

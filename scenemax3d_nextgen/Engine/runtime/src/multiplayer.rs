@@ -1,4 +1,5 @@
 //! Game-thread adapter for the independent SceneMax UDP client.
+use web_time::Instant;
 use super::*;
 use scenemax_multiplayer::{
     client::{Client, State, password_hash},
@@ -6,7 +7,7 @@ use scenemax_multiplayer::{
 };
 use std::{
     net::ToSocketAddrs,
-    time::{Duration, Instant},
+    time::Duration,
 };
 mod lifecycle;
 mod external_config;
@@ -77,6 +78,7 @@ pub(super) fn initialize(app: &mut App, project: Option<&Path>, script: Option<&
         Ok(Some((host, port, login))) => {
             write_runtime_diagnostic_line(format!("NETWORK:CONNECT server={host:?} port={port}"));
             network.player = login.player.clone();
+            #[cfg(not(target_arch = "wasm32"))]
             let result = (host.as_str(), port)
                 .to_socket_addrs()
                 .map_err(|e| e.to_string())
@@ -86,6 +88,8 @@ pub(super) fn initialize(app: &mut App, project: Option<&Path>, script: Option<&
                         .ok_or_else(|| "server has no address".into())
                 })
                 .and_then(|address| Client::connect(address, login).map_err(|e| e.to_string()));
+            #[cfg(target_arch = "wasm32")]
+            let result = Client::connect(std::net::SocketAddr::from(([127,0,0,1],port)),login).map_err(|e|e.to_string());
             match result {
                 Ok(client) => {
                     network.client = Some(client);
@@ -110,6 +114,10 @@ fn settings(
     project: Option<&Path>,
     script: Option<&Path>,
 ) -> Result<Option<(String, u16, Login)>, String> {
+    #[cfg(target_arch = "wasm32")]
+    { return configured_settings(project,script,None,|_|None); }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
     let defaults = env::var("SCENEMAX_MULTIPLAYER_DEFAULTS").ok();
     let executable = env::var_os("SCENEMAX_DISTRIBUTION_EXE")
         .map(PathBuf::from)
@@ -117,6 +125,7 @@ fn settings(
         .unwrap_or_else(env::current_exe)
         .map_err(|error| format!("Cannot locate executable for network.json: {error}"))?;
     external_config::settings(project, script, defaults.as_deref(), &executable, |name| env::var(name).ok())
+    }
 }
 
 fn configured_settings(
@@ -136,7 +145,7 @@ fn configured_settings(
     }
     if let Some(root) = project {
         let path = root.join(".scenemax-studio/multiplayer.json");
-        if path.exists() {
+        if scenemax_assets::filesystem::exists(&path) {
             use std::io::Read;
             let mut bytes = Vec::new();
             fs::File::open(&path)
@@ -207,6 +216,10 @@ fn configured_settings(
     let player = env::var("USERNAME")
         .or_else(|_| env::var("USER"))
         .unwrap_or_else(|_| "client".into());
+    #[cfg(not(target_arch = "wasm32"))]
+    let client_id = std::process::id().to_string();
+    #[cfg(target_arch = "wasm32")]
+    let client_id = scenemax_multiplayer::client::web_socket::client_id();
     Ok(Some((
         host,
         port,
@@ -223,7 +236,7 @@ fn configured_settings(
             player: get(
                 "PLAYER",
                 "multiplayer_player",
-                &format!("{player}-{}", std::process::id()),
+                &format!("{player}-{client_id}"),
             ),
         },
     )))

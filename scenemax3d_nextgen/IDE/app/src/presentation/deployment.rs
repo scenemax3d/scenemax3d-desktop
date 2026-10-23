@@ -42,6 +42,10 @@ struct FollowLog;
 #[derive(Component)]
 struct Artifacts;
 #[derive(Component)]
+struct PreviewControls;
+#[derive(Component)]
+struct PreviewStatus;
+#[derive(Component)]
 struct Form;
 #[derive(Component)]
 struct Detail(usize);
@@ -301,7 +305,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
             field(
                 c,
                 detail,
-                "Platform SDK recipe (.json)",
+                if p.target == Target::Web {"Custom Web recipe (.json, optional)"}else{"Platform SDK recipe (.json)"},
                 Field::Recipe(i),
                 &p.recipe,
             );
@@ -315,7 +319,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
                     Target::Ios => {
                         "Requires a macOS SDK builder, iOS runtime host and signing identity."
                     }
-                    _ => "Requires a browser runtime builder producing index.html and Wasm.",
+                    _ => "Built-in WebGPU export. Install Web tools in File > Settings. Multiplayer requires a browser gateway.",
                 },
                 11.,
                 MUTED,
@@ -323,7 +327,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
             text(
                 c,
                 detail,
-                "SDK recipes are documented in IDE/DEPLOYMENT.md. These runtime hosts are not bundled yet.",
+                if p.target == Target::Web {"Leave the recipe blank for the built-in browser projector. Native Effekseer effects are not supported."}else{"SDK recipes are documented in IDE/DEPLOYMENT.md. These runtime hosts are not bundled yet."},
                 11.,
                 Color::srgb(0.94, 0.72, 0.39),
             );
@@ -455,6 +459,13 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
     action(c, links, "Open output", Action::Reveal);
     action(c, links, "Log folder", Action::Log);
     action(c, links, "Size report", Action::SizeReport);
+    let preview = area(c, right, Node { row_gap: px(6.), display: Display::None, ..column() }, PANEL);
+    c.entity(preview).insert(PreviewControls);
+    let preview_actions = area(c, preview, Node { column_gap: px(8.), flex_wrap: FlexWrap::Wrap, ..default() }, PANEL);
+    action(c, preview_actions, "Run Web locally", Action::RunWeb);
+    action(c, preview_actions, "Stop local server", Action::StopWeb);
+    let preview_status = text(c, preview, "", 11., MUTED);
+    c.entity(preview_status).insert(PreviewStatus);
     action(c, right, "Upload / retry existing builds", Action::Upload);
     let footer = area(
         c,
@@ -543,6 +554,7 @@ type VisualNodes<'w, 's> = Query<
         Option<&'static Detail>,
         Option<&'static Progress>,
         Option<&'static Form>,
+        Option<&'static PreviewControls>,
     ),
 >;
 type VisualText<'w, 's> = Query<
@@ -554,6 +566,7 @@ type VisualText<'w, 's> = Query<
         Option<&'static Logs>,
         Option<&'static Artifacts>,
         Option<&'static BusySummary>,
+        Option<&'static PreviewStatus>,
     ),
 >;
 #[derive(bevy::ecs::system::SystemParam)]
@@ -705,7 +718,10 @@ pub(crate) fn refresh(
         }
         view.form_revision = state.form_revision;
     }
-    for (mut node, detail, progress, form) in &mut visuals.nodes {
+    for (mut node, detail, progress, form, preview) in &mut visuals.nodes {
+        if preview.is_some() {
+            node.display = if (!state.busy && state.report.web_artifact.is_some()) || state.preview_status.active { Display::Flex } else { Display::None };
+        }
         if let Some(detail) = detail {
             let display = if detail.0 == view.tab {
                 Display::Flex
@@ -741,8 +757,10 @@ pub(crate) fn refresh(
         .map(|p| p.file_name().unwrap_or_default().to_string_lossy())
         .collect::<Vec<_>>()
         .join("\n");
-    for (mut text, status, log, artifact, summary) in &mut visuals.texts {
-        let value = if summary.is_some() {
+    for (mut text, status, log, artifact, summary, preview) in &mut visuals.texts {
+        let value = if preview.is_some() {
+            Some(if state.preview_status.message.is_empty() { "Test the completed Web build in your browser. No additional server tools required.".into() } else { state.preview_status.message.clone() })
+        } else if summary.is_some() {
             Some(if state.busy {
                 state.settings.as_ref().map(|s| format!("{}  /  {}\n\n{}\n\nYour release settings are locked for this operation.\nFollow the live build log on the right.\n\nCancel stops the tools owned by this build.\nCompleted artifacts and the build log are kept.", s.name, s.version, s.platforms.iter().filter(|p| p.selected).map(|p| p.target.label()).collect::<Vec<_>>().join("\n"))).unwrap_or_default()
             } else {
@@ -774,10 +792,24 @@ pub(crate) fn refresh(
 
 pub(crate) fn smoke(
     mut done: Local<bool>,
+    mut preview_injected: Local<bool>,
     session: Res<crate::application::Session>,
     services: Res<crate::application::EditorServices>,
     mut state: ResMut<Deployment>,
 ) {
+    // Explicit smoke mode only: display a completed Web result without compiling or opening a browser.
+    if !*preview_injected && state.open && !state.busy && state.settings.is_some()
+        && let Some(path) = std::env::var_os("SCENEMAX_SMOKE_WEB_ARTIFACT")
+    {
+        let path = std::path::PathBuf::from(path);
+        state.report.web_artifact = Some(path.clone());
+        state.report.artifacts = vec![path];
+        state.report.progress = 100.;
+        state.report.finished = true;
+        state.report.success = true;
+        state.report.status = "Build complete. Your release artifacts are ready.".into();
+        *preview_injected = true;
+    }
     if !*done
         && !services.storage.is_pending()
         && session.workspace.project().entry_point().is_some()

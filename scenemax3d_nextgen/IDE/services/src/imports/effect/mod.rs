@@ -3,6 +3,11 @@ use super::*;
 use scenemax_ide_core::effect_import as schema;
 mod binary;
 mod legacy;
+
+/// Read the compiled effect's resource table without loading a renderer.
+pub(crate) fn references(bytes: &[u8]) -> io::Result<Vec<(&'static str, String)>> {
+    binary::references(bytes).map(|(_, references)| references)
+}
 /// A referenced runtime resource and its resolution status.
 #[derive(Clone, Debug)]
 pub struct Dependency {

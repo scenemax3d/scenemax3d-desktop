@@ -92,8 +92,8 @@ pub(super) fn check(request: &Request, context: &Context) -> io::Result<()> {
     for platform in request.settings.platforms.iter().filter(|p| p.selected) {
         context.check()?;
         let result = if platform.target.desktop() {
-            if !available(Path::new("cargo")) {
-                Err(io::Error::other("Install Rust/Cargo or add it to PATH."))
+            if !available(&crate::build_configuration::cargo_path()) {
+                Err(io::Error::other("Open File > Settings > Build Configuration to detect or install Rust/Cargo."))
             } else if !platform.runtime.is_empty() {
                 files::native_binary(Path::new(&platform.runtime), platform.target)
             } else if request.settings.native_effects && platform.target != Target::Windows {
@@ -103,6 +103,8 @@ pub(super) fn check(request: &Request, context: &Context) -> io::Result<()> {
             } else {
                 Ok(())
             }
+        } else if platform.target == Target::Web && platform.recipe.trim().is_empty() {
+            super::web::check(request)
         } else {
             recipe(platform).and_then(|r| {
                 if available(&r.program) {
@@ -168,7 +170,8 @@ fn cargo(
         ));
         return Ok(binary);
     }
-    let mut command = Command::new("cargo");
+    let mut command = Command::new(crate::build_configuration::cargo_path());
+    crate::build_configuration::prepare(&mut command);
     if package != "scenemax_game_launcher" {
         context.log("Checking engine source and dependencies with Cargo; unchanged builds are reused.\n");
     }
@@ -324,6 +327,8 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
                 context,
                 &log,
             )?
+        } else if platform.target == Target::Web && platform.recipe.trim().is_empty() {
+            super::web::build(request, &snapshot, staging.path(), &platform_dir, context, &log)?
         } else {
             sdk(
                 request,
@@ -335,7 +340,10 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
                 &log,
             )?
         };
-        context.edit(|r| r.artifacts.push(artifact.clone()));
+        context.edit(|r| {
+            r.artifacts.push(artifact.clone());
+            if platform.target == Target::Web { r.web_artifact = Some(artifact.clone()); }
+        });
         let summary = format!(
             "Artifact complete: {} ({:.1} MiB), elapsed {:.1}s\n",
             artifact.display(),

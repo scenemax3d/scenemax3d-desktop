@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+web-time = "1.1"
 scenemax_script_values = { path = "../../Common/script_values" }
 bevy_ecs = "0.19.0"
 serde_json.workspace = true

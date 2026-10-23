@@ -123,6 +123,7 @@ pub(crate) struct InputFields<'w, 's> {
     zoom: ResMut<'w, super::editing::EditorZoom>,
     editors: Query<'w, 's, (), super::editing::CodeEditorFilter>,
     deployment: Option<Res<'w, crate::application::deployment::Deployment>>,
+    build_configuration: Option<Res<'w, crate::application::build_configuration::State>>,
     menu: Option<Res<'w, super::tree_menu::State>>,
     imports: Option<Res<'w, super::asset_import::State>>,
     inventory: Option<Res<'w, super::inventory::State>>,
@@ -143,6 +144,7 @@ pub(crate) fn collect_actions(
     session: Res<Session>,
 ) {
     if input_fields.multiplayer.as_ref().is_some_and(|g| g.open)
+        || input_fields.build_configuration.as_ref().is_some_and(|g| g.open)
         || input_fields.physics.as_ref().is_some_and(|g| g.open)
         || input_fields.git.as_ref().is_some_and(|g| g.open)
         || input_fields.chrome.as_ref().is_some_and(|m| m.about_open())

@@ -1,7 +1,10 @@
 //! Owned build jobs. UI polling never touches the filesystem or waits for tools.
 mod files;
+mod existing;
 mod assets;
 mod pipeline;
+mod web;
+pub mod preview;
 mod process;
 mod size_report;
 #[cfg(test)]
@@ -63,6 +66,8 @@ pub struct Report {
     pub success: bool,
     /// Complete artifacts published locally, including builds whose upload failed.
     pub artifacts: Vec<PathBuf>,
+    /// Completed Web ZIP available for local preview, even if another target fails.
+    pub web_artifact: Option<PathBuf>,
     /// Persistent build log (bounded to 16 MiB).
     pub log_path: Option<PathBuf>,
     /// Human-readable staged content sizing analysis, retained even if a later build fails.
@@ -172,6 +177,7 @@ impl Builder {
                 .map(|r| r.artifacts.clone())
                 .unwrap_or_default(),
             size_report_path: previous.as_ref().and_then(|r| r.size_report_path.clone()),
+            web_artifact: previous.as_ref().and_then(|r| r.web_artifact.clone()),
             log_path: previous.and_then(|r| r.log_path),
             ..Default::default()
         }));
@@ -183,7 +189,7 @@ impl Builder {
         let persist_summary = matches!(operation, Operation::Build(_) | Operation::Upload(_, _, _));
         let thread = std::thread::Builder::new().name("scenemax-deployment".into()).spawn(move || {
                 let result = match operation {
-                Operation::Load(root) => files::load_settings(&root).map(|settings| worker.edit(|r| {r.settings = Some(settings); r.status = "Choose platforms, then check requirements or build.".into(); })),
+                Operation::Load(root) => existing::load(&root, &worker),
                 Operation::Check(request) => pipeline::check(&request, &worker).map(|_| worker.edit(|r| r.status = "Requirements checked. Compiler and SDK diagnostics appear during Build.".into())),
                 Operation::Build(request) => pipeline::build(&request, &worker),
                 Operation::Upload(request, artifacts, log) => pipeline::upload(&request, &artifacts, &worker, &log),

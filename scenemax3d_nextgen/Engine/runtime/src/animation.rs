@@ -285,7 +285,7 @@ pub(super) fn play_pending_animations(
                         &animation_to_play.playback_name(),
                         duration_seconds,
                     );
-                    let (seek_seconds,rewind)=if let Some(spec)=&animation_to_play.rewind {animation_rewind::resume(spec,duration_seconds,animation_to_play.speed,resume)} else {(resume.map_or(0.,|r|if animation_to_play.looped { r.loop_seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) } else { r.seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) }),None)};
+                    let (seek_seconds,rewind)=if let Some(spec)=&animation_to_play.rewind {animation_rewind::resume(spec,duration_seconds,animation_to_play.speed,resume)} else {(resume.map_or(0.,|r|if animation_to_play.looped { r.loop_seek_seconds(duration_seconds,animation_to_play.speed,web_time::Instant::now()) } else { r.seek_seconds(duration_seconds,animation_to_play.speed,web_time::Instant::now()) }),None)};
                     if resume.is_some() && rewind.is_none() && seek_seconds >= duration_seconds {
                         commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
                         tracing::debug!(target = target_name, "expired remote animation during asset loading");
@@ -509,7 +509,7 @@ pub(super) fn play_pending_animations(
             duration_seconds,
         );
 
-        let (seek_seconds,rewind)=if let Some(spec)=&animation_to_play.rewind {animation_rewind::resume(spec,duration_seconds,animation_to_play.speed,resume)} else {(resume.map_or(0.,|r|if animation_to_play.looped { r.loop_seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) } else { r.seek_seconds(duration_seconds,animation_to_play.speed,std::time::Instant::now()) }),None)};
+        let (seek_seconds,rewind)=if let Some(spec)=&animation_to_play.rewind {animation_rewind::resume(spec,duration_seconds,animation_to_play.speed,resume)} else {(resume.map_or(0.,|r|if animation_to_play.looped { r.loop_seek_seconds(duration_seconds,animation_to_play.speed,web_time::Instant::now()) } else { r.seek_seconds(duration_seconds,animation_to_play.speed,web_time::Instant::now()) }),None)};
         if resume.is_some() && rewind.is_none() && seek_seconds >= duration_seconds {
             commands.entity(root).try_remove::<AnimationToPlay>().try_remove::<NetworkAnimationResume>();
             tracing::debug!(target = target_name, "expired remote animation during asset loading");

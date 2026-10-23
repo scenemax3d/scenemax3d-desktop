@@ -591,7 +591,7 @@ impl BevyShaderDesignerAssetCatalog {
     fn discover(project_root: Option<&Path>) -> Self {
         let asset_root = project_root
             .map(|root| root.join("resources"))
-            .filter(|path| path.is_dir());
+            .filter(|path| scenemax_assets::filesystem::is_dir(&path));
         let mut models = Vec::new();
         if let Some(root) = asset_root.as_ref() {
             collect_gltf_models(root, root, &mut models);
@@ -620,7 +620,7 @@ fn collect_gltf_models(root: &Path, dir: &Path, models: &mut Vec<DesignerModelAs
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        if scenemax_assets::filesystem::is_dir(&path) {
             collect_gltf_models(root, &path, models);
             continue;
         }

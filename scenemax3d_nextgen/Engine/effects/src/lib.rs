@@ -1,4 +1,4 @@
-//! Generic native Effekseer rendering shared by the projector and retained IDE previews.
+//! Generic Effekseer rendering shared by the projector and retained IDE previews.
 use bevy::prelude::*;
 use std::{
     path::PathBuf,

@@ -13,3 +13,8 @@ wgpu = { version = "29.0.4", default-features = false, features = ["std", "vulka
 
 [lints]
 workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.108"
+serde_json.workspace = true
+bevy = { workspace = true, features = ["webgpu"] }

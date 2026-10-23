@@ -1100,7 +1100,7 @@ pub(super) fn resolve_scenemax_ui_path(
     }
     candidates
         .into_iter()
-        .find(|candidate| candidate.is_file())
+        .find(|candidate| scenemax_assets::filesystem::is_file(&candidate))
         .ok_or_else(|| anyhow::anyhow!("UI document {file_name} was not found"))
 }
 
@@ -1723,12 +1723,12 @@ pub(super) fn ui_asset_path_exists(asset_path: &str, context: &SceneMaxLaunchCon
         return context
             .builtin_asset_root
             .as_ref()
-            .is_some_and(|root| root.join(relative).is_file());
+            .is_some_and(|root| scenemax_assets::filesystem::is_file(&root.join(relative)));
     }
     context
         .asset_root
         .as_ref()
-        .is_some_and(|root| root.join(asset_path).is_file())
+        .is_some_and(|root| scenemax_assets::filesystem::is_file(&root.join(asset_path)))
 }
 
 pub(super) fn refresh_sprite_index(
@@ -1897,13 +1897,13 @@ pub(super) fn ui_asset_file_path(
             .builtin_asset_root
             .as_ref()
             .map(|root| root.join(relative))
-            .filter(|path| path.is_file());
+            .filter(|path| scenemax_assets::filesystem::is_file(&path));
     }
     context
         .asset_root
         .as_ref()
         .map(|root| root.join(asset_path))
-        .filter(|path| path.is_file())
+        .filter(|path| scenemax_assets::filesystem::is_file(&path))
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let root = args
         .first()
-        .ok_or("Usage: package PROJECT OUTPUT [PREBUILT_PROJECTOR]")?;
+        .ok_or("Usage: package PROJECT OUTPUT [PREBUILT_PROJECTOR | --web]")?;
     let project = Filesystem::open_project(&PathBuf::from(root))?;
     let mut settings = Settings {
         name: "package-smoke".into(),
@@ -21,7 +21,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         native_effects: false,
         ..Default::default()
     };
-    if let Some(runtime) = args.get(2)
+    if args.get(2).is_some_and(|arg| arg == "--web") {
+        for platform in &mut settings.platforms {
+            platform.selected = platform.target == scenemax_ide_core::deployment::Target::Web;
+        }
+    } else if let Some(runtime) = args.get(2)
         && let Some(platform) = settings.platforms.iter_mut().find(|p| p.selected)
     {
         platform.runtime = runtime.to_string_lossy().into_owned();

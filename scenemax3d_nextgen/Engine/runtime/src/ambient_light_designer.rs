@@ -10,7 +10,7 @@ use bevy::{
     window::PrimaryWindow,
 };
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use web_time::Instant;
 
 const PANEL_WIDTH: f32 = 380.0;
 const TEXT_MAIN: Color = Color::srgb(0.92, 0.96, 1.0);
@@ -1765,7 +1765,7 @@ fn collect_smdesign_candidates(root: &Path, result: &mut Vec<PathBuf>, depth: us
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        if scenemax_assets::filesystem::is_dir(&path) {
             collect_smdesign_candidates(&path, result, depth + 1);
         } else if path
             .extension()
@@ -1945,7 +1945,7 @@ fn builtin_assets_root() -> Option<PathBuf> {
             Some(current)
         }?;
         let resources = repo_root.join("resources-basic").join("resources");
-        resources.is_dir().then_some(resources)
+        scenemax_assets::filesystem::is_dir(&resources).then_some(resources)
     })
 }
 

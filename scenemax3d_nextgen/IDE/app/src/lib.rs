@@ -259,6 +259,12 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY").is_some() {
         app.add_systems(Update, presentation::deployment::smoke);
     }
+    if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_SETTINGS").is_some() {
+        app.world_mut()
+            .resource_mut::<application::build_configuration::State>()
+            .actions
+            .push_back(application::build_configuration::Action::Open);
+    }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY_BUILD").is_some() {
         app.add_systems(Update, presentation::deployment::smoke_build);
     }
@@ -291,6 +297,8 @@ impl Plugin for StudioPlugin {
             ),
         );
         app.init_resource::<CommandQueue>()
+            .init_resource::<application::build_configuration::State>()
+            .init_resource::<presentation::build_configuration::View>()
             .init_resource::<application::deployment::Deployment>()
             .init_resource::<application::mcp::State>()
             .init_resource::<application::git::State>()
@@ -393,6 +401,11 @@ impl Plugin for StudioPlugin {
                         presentation::deployment::keyboard,
                         application::deployment::update,
                         presentation::deployment::refresh,
+                        (
+                            application::build_configuration::update,
+                            presentation::build_configuration::refresh,
+                        )
+                            .chain(),
                     )
                         .chain(),
                     (
