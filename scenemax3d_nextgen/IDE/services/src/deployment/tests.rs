@@ -1,6 +1,20 @@
 use super::*;
 use std::{fs, sync::atomic::AtomicBool};
 #[test]
+fn effect_folder_declaration_selects_binary_and_sidecars_without_catalog() {
+    let project = workspace().join("Tests/fixtures/web_effects/project");
+    let root = tempfile::tempdir().unwrap();
+    let output = root.path().join("snapshot");
+    let request = Request {
+        entry: project.join("scripts/main"), project, workspace: workspace(),
+        settings: Default::default(),
+    };
+    assets::snapshot(&request, &output, &root.path().join("size.json"), &context()).unwrap();
+    assert!(output.join("resources/effects/fixture/effect.efkefc").is_file());
+    assert!(output.join("resources/effects/fixture/Texture/Particle01.png").is_file());
+}
+
+#[test]
 fn animation_analyzer_records_survive_packaging_without_selecting_other_models() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join("scripts")).unwrap();

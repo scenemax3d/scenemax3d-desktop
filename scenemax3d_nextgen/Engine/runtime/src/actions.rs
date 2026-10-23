@@ -4632,6 +4632,16 @@ pub(super) fn resolve_effekseer_effect_path(asset_root: &Path, asset_id: &str) -
 }
 
 pub(super) fn effekseer_one_shot_duration_seconds(effect_path: Option<&Path>) -> f32 {
+    // Browser loads are asynchronous and completion comes from the live renderer.
+    // A metadata/default timeout would end the command before loading or truncate
+    // dynamically evaluated effects. Preserve the desktop duration policy below.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = effect_path;
+        return f32::INFINITY;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
     let metadata = effekseer_metadata_duration_seconds(effect_path);
     let native = effect_path.and_then(scenemax_effects::native_duration_seconds);
     let duration = native.map_or(metadata, |seconds| metadata.max(seconds));
@@ -4639,6 +4649,7 @@ pub(super) fn effekseer_one_shot_duration_seconds(effect_path: Option<&Path>) ->
         write_runtime_diagnostic_line(format!("EFFEKSEER:NATIVE_DURATION metadata={metadata} duration={duration}"));
     }
     duration
+    }
 }
 
 fn effekseer_metadata_duration_seconds(effect_path: Option<&Path>) -> f32 {

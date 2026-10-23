@@ -5458,7 +5458,9 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "bevy",
+ "serde_json",
  "tracing",
+ "wasm-bindgen",
  "wgpu",
 ]
 
@@ -5506,6 +5508,7 @@ name = "scenemax_ide_services"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "flate2",
  "fontique",
  "image",
  "scenemax_assets",
@@ -5658,6 +5661,7 @@ dependencies = [
  "scenemax_runtime_script_core",
  "scenemax_script_values",
  "serde_json",
+ "web-time",
 ]
 
 [[package]]
@@ -6753,8 +6757,6 @@ dependencies = [
 [[package]]
 name = "wgpu"
 version = "29.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76e8840e1ba2881d4cbb18d2147627a56af426ff064c0401eb0c8410c6325d07"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.1",

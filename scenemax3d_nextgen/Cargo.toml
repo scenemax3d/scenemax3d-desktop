@@ -25,6 +25,9 @@ exclude = ["third_party/bevy_mod_inverse_kinematics"]
 resolver = "3"
 default-members = ["IDE/app", "Projector/app"]
 
+[patch.crates-io]
+wgpu = { path = "third_party/wgpu" }
+
 [workspace.package]
 edition = "2024"
 rust-version = "1.97"

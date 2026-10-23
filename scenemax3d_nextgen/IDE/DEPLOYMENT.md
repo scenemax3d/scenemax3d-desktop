@@ -24,6 +24,13 @@ prebuilt runtimes must also include this support.
 
 ## Browser exports
 
+When updating exporter source, save and close the IDE, then run
+`cargo build --locked -p scenemax_ide` from `scenemax3d_nextgen` and reopen it.
+Export logic and bundled effect runtime files are compiled into the IDE;
+rebuilding a projector or validation example does not update the running IDE.
+The old message “This export contains native Effekseer effects. Their browser
+renderer is not available” indicates an IDE built before browser effect support.
+
 Install **Web tools** in File → Settings → Build Configuration. This installs
 `wasm32-unknown-unknown` for the IDE's pinned Rust toolchain and a matching
 `wasm-bindgen-cli` in a versioned SceneMax tools folder, preserving other installed
@@ -56,9 +63,26 @@ Bevy's HTTP asset loader. This first implementation preloads the complete
 selected snapshot into memory, so large games have higher startup/memory costs.
 Desktop authoring filesystem writes are not browser save-game persistence.
 
-Native Effekseer `.efkefc` payloads cannot be rendered by the browser projector.
-The built-in exporter rejects snapshots containing them rather than silently
-dropping effects. The desktop native-effects setting does not link DLLs into Wasm.
+Supported Effekseer `.efkefc` effects use a bundled, locally served WebGPU runtime.
+Existing play, loop, stop, transform, speed and dynamic-input commands use the
+same shared playback state; completion is checked against each playback generation.
+No additional Effekseer SDK is required. The Start game gesture unlocks effect
+audio. Missing dependencies and renderer/device failures are shown on the loading
+screen. Effect dependencies referenced outside the effect directory are included
+when they remain inside the project's resource root.
+
+Web effects currently disable MSAA and draw after transparent geometry, before
+tone mapping. They share Bevy's device, color target and reversed-depth buffer.
+Distortion samples the current camera's scene color on the GPU and supports SDR
+targets, camera viewports and resizing. Soft particles, custom materials and
+GPU-simulated particles are not supported and fail export with an actionable error. Effects need editor metadata
+for that validation; raw `.efk` files are unsupported. Transparent objects from
+Bevy and Effekseer are not jointly sorted. Unsupported render-target formats and
+device loss produce visible errors; device loss requires reloading the game.
+The desktop native-effects setting remains independent of the browser backend.
+Binary pin, checksums, licenses and maintainer update instructions are in
+`Engine/effects/web/MAINTENANCE.md` (EffekseerForWeb 0.1.0 at commit
+`da76b5023bd7aa10fe66ee05f6fecd4b84debce3`).
 Custom Rust additions must compile for `wasm32-unknown-unknown`.
 
 For multiplayer, configure the exported `network.json` with `websocket_url`.
