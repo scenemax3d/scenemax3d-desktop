@@ -368,7 +368,7 @@ pub(super) fn build_temporary(request: &Request, context: &Context) -> io::Resul
     context.stage(
         100.,
         if request.settings.upload {
-            "Build and upload complete."
+            "Build and upload complete. itch.io may still be processing the upload before browser play is ready."
         } else {
             "Build complete. Your release artifacts are ready."
         },
@@ -423,7 +423,7 @@ pub(super) fn upload(
     }
     context.stage(
         100.,
-        "Upload complete. All selected channels were published.",
+        "Upload complete. itch.io may still be processing the upload before browser play is ready.",
     )
 }
 pub(super) fn push_command(

@@ -7,7 +7,7 @@ the remaining Java parity gaps. Complete multiplayer parity is not yet achieved.
 
 Material authoring: **Assets → Create New Material…** opens the retained [Material Studio](MATERIAL_EDITOR.md): a visual PBR composer with texture channels, presets, live primitive/model previews, named-slot assignment, undo, and shared runtime rendering.
 
-Latest distribution slice: **Tools → Package & Deploy…** provides retained release settings, desktop packaging, phase progress, live logs, cancellation and Butler publishing/retry. Windows is a single Java-free executable; Linux/macOS use ZIPs. Android/iOS/Web expose explicit SDK-builder integration, with runtime-port limitations described in [DEPLOYMENT.md](DEPLOYMENT.md). This supersedes older statements below that all packaging is deferred.
+Latest distribution slice: **Tools → Package & Deploy…** provides retained release settings, desktop packaging, phase progress, live logs, cancellation and Butler publishing/retry. Windows is a single Java-free executable; Linux/macOS use ZIPs. Web has a built-in WebGPU exporter; Android/iOS expose explicit SDK-builder integration. New users should follow the [Web setup and publishing guide](WEB_EXPORT.md) for required tools, source workspace, local preview and itch.io setup. Platform limitations are described in [DEPLOYMENT.md](DEPLOYMENT.md). This supersedes older statements below that all packaging is deferred.
 
 SceneMax Studio is an independent Rust/Bevy IDE. The current milestone supports everyday SceneMax script editing and run/check workflows; visual designer and distribution parity with Swing are still separate migration work.
 

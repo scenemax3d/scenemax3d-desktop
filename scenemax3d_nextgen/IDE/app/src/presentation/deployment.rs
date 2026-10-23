@@ -324,7 +324,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
                     Target::Ios => {
                         "Requires a macOS SDK builder, iOS runtime host and signing identity."
                     }
-                    _ => "Built-in WebGPU export. Install Web tools in File > Settings. Multiplayer requires a browser gateway.",
+                    _ => "First-time setup: File > Settings > Build Configuration. Install Rust, C++ / SDK tools, then Web tools; refresh detection.",
                 },
                 11.,
                 MUTED,
@@ -338,6 +338,15 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
             );
         }
         if p.target == Target::Web {
+            let setup = button(c, detail, "Open Web build setup", Name::new("Open Web build setup"));
+            c.entity(setup).observe(|mut event: On<Pointer<Click>>, mut state: ResMut<crate::application::build_configuration::State>| {
+                if event.button == PointerButton::Primary {
+                    event.propagate(false);
+                    state.actions.push_back(crate::application::build_configuration::Action::Open);
+                }
+            });
+            text(c, detail, "Requires the matching SceneMax source workspace in a writable folder, internet for first-build dependencies, and several GB of free disk space. Setup guide: IDE/WEB_EXPORT.md.", 11., MUTED);
+            text(c, detail, "Test with Run Web locally after building. Players need WebGPU and HTTPS (or localhost); sound begins after a click or key press. Multiplayer needs a separately hosted WebSocket gateway.", 11., MUTED);
             text(c, detail, "Loading screen - starts automatically", 12., INK);
             field(c, detail, "Background image (PNG / JPEG, optional)", Field::WebBackground, &settings.web_loading.background);
             field(c, detail, "Header", Field::WebHeader, &settings.web_loading.header);
@@ -350,7 +359,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         c,
         scroll,
         Effects,
-        "Include native Effekseer support",
+        "Include native Effekseer support (desktop only)",
         settings.native_effects,
     );
     property::checkbox(
@@ -398,6 +407,8 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         &settings.butler,
     );
     action(c, scroll, "Sign in with Butler…", Action::Login);
+    text(c, scroll, "Butler is only needed for automatic itch.io uploads. Download from https://itchio.itch.io/butler, extract it, select its executable, then sign in. Manual ZIP upload needs no Butler.", 11., MUTED);
+    text(c, scroll, "Create your itch.io page first. For Web, choose HTML Game and mark the uploaded file playable in the browser. Upload completion may precede itch.io processing/extraction. Release versions are entered manually.", 11., MUTED);
     text(
         c,
         scroll,
