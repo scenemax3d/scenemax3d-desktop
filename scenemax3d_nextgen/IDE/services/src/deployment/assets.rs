@@ -448,6 +448,7 @@ impl Library {
             && let Ok(bytes) = files::read_small(&path)
             && let Ok(references) = crate::imports::effect::references(&bytes)
         {
+            let complete = references.iter().all(|(kind, _)| *kind != "Material");
             for (_, reference) in references {
                 let dep = normalized(&path.parent().unwrap_or(&self.root).join(reference));
                 let relative = dep.strip_prefix(&self.root).map_err(|_| {
@@ -459,9 +460,13 @@ impl Library {
                         "Missing effect dependency: {} (from {})", dep.display(), path.display()
                     )));
                 }
-                self.dependencies.entry(dependency.clone()).or_default().insert(key.clone());
+                self.dependencies.entry(key.clone()).or_default().insert(dependency.clone());
                 self.select(&dependency, names)?;
             }
+            // INFO enumerates the built-in renderer's runtime resources. Do not
+            // copy editor projects, source models or unrelated sample textures.
+            // Custom materials retain the conservative fallback for desktop.
+            if complete { return Ok(()); }
         }
         // Binary effect files reference sidecars internally. Preserve that effect's
         // directory, not the entire shared effect collection.

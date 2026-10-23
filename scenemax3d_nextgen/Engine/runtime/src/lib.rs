@@ -145,6 +145,9 @@ pub struct WindowSettings {
     pub height: u32,
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+mod web_assets;
+
 pub fn run_bevy_projector(launch: ProjectorLaunch) {
     tracing::info!(?launch, "starting SceneMax NextGen projector");
     let project_root = launch.project_root.clone();
@@ -167,13 +170,27 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         asset_root.as_deref(),
     );
     let mut app = App::new();
+    #[cfg(target_arch = "wasm32")]
+    {
+        let root = asset_root.clone().unwrap_or_else(|| "assets".into());
+        app.register_asset_source(bevy::asset::io::AssetSourceId::Default,
+            AssetSourceBuilder::new(move || Box::new(web_assets::MountedAssets(root.clone()))));
+    }
     multiplayer::initialize(&mut app, project_root.as_deref(), launch.script.as_deref());
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
+        #[cfg(not(target_arch = "wasm32"))]
         let source_path = builtin_asset_root.to_string_lossy().to_string();
+        #[cfg(not(target_arch = "wasm32"))]
         app.register_asset_source(
             "builtin",
             AssetSourceBuilder::platform_default(&source_path, None),
         );
+        #[cfg(target_arch = "wasm32")]
+        {
+            let root = builtin_asset_root.clone();
+            app.register_asset_source("builtin",
+                AssetSourceBuilder::new(move || Box::new(web_assets::MountedAssets(root.clone()))));
+        }
         tracing::info!(
             path = %builtin_asset_root.display(),
             "registered SceneMax built-in asset source"

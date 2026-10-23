@@ -15,6 +15,28 @@ fn effect_folder_declaration_selects_binary_and_sidecars_without_catalog() {
 }
 
 #[test]
+fn effects_select_only_declared_runtime_dependencies_and_reject_missing_ones() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("project");
+    files::tree(&workspace().join("Tests/fixtures/web_distortion/project"), &project, &context()).unwrap();
+    let effect = project.join("resources/effects/screen_warp");
+    fs::write(effect.join("unused.efkproj"), b"editor data").unwrap();
+    fs::write(effect.join("Texture/unused.png"), b"unused texture").unwrap();
+    let request = Request {entry:project.join("scripts/main"),project,workspace:workspace(),settings:Default::default()};
+    let output = root.path().join("snapshot");
+    assets::snapshot(&request,&output,&root.path().join("size.json"),&context()).unwrap();
+    let exported = output.join("resources/effects/screen_warp");
+    assert!(!exported.join("unused.efkproj").exists());
+    assert!(!exported.join("Texture/unused.png").exists());
+    let refs = crate::imports::effect::references(&fs::read(effect.join("effect.efkefc")).unwrap()).unwrap();
+    assert!(!refs.is_empty());
+    for (_, path) in &refs { assert!(exported.join(path).is_file(), "{path}"); }
+    fs::remove_file(effect.join(&refs[0].1)).unwrap();
+    let error=assets::snapshot(&request,&root.path().join("missing"),&root.path().join("missing.json"),&context()).unwrap_err();
+    assert!(error.to_string().contains("Missing effect dependency"),"{error}");
+}
+
+#[test]
 fn animation_analyzer_records_survive_packaging_without_selecting_other_models() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join("scripts")).unwrap();

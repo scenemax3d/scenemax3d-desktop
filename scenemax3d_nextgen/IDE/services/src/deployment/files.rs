@@ -372,7 +372,7 @@ fn content_hash(path: &Path, context: &Context) -> io::Result<u64> {
     }
     Ok(hash.finish())
 }
-fn same_content(a: &Path, b: &Path, context: &Context) -> io::Result<bool> {
+pub(super) fn same_content(a: &Path, b: &Path, context: &Context) -> io::Result<bool> {
     let (mut a, mut b) = (File::open(a)?, File::open(b)?);
     let (mut left, mut right) = ([0; 256 * 1024], [0; 256 * 1024]);
     loop {
