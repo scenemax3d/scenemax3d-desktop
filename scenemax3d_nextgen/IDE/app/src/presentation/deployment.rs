@@ -14,6 +14,10 @@ pub(crate) enum Field {
     Version,
     Output,
     Builtin,
+    WebBackground,
+    WebHeader,
+    WebMessage,
+    WebFooter,
     Itch,
     Butler,
     Triple(usize),
@@ -102,6 +106,7 @@ fn field(c: &mut Commands, p: Entity, title: &str, kind: Field, value: &str) -> 
     let path = match kind {
         Field::Output => Some(PathField::Output),
         Field::Builtin => Some(PathField::Builtin),
+        Field::WebBackground => Some(PathField::WebBackground),
         Field::Butler => Some(PathField::Butler),
         Field::Runtime(i) => Some(PathField::Runtime(i)),
         Field::Recipe(i) => Some(PathField::Recipe(i)),
@@ -305,7 +310,11 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
             field(
                 c,
                 detail,
-                if p.target == Target::Web {"Custom Web recipe (.json, optional)"}else{"Platform SDK recipe (.json)"},
+                if p.target == Target::Web {
+                    "Custom Web recipe (.json, optional)"
+                } else {
+                    "Platform SDK recipe (.json)"
+                },
                 Field::Recipe(i),
                 &p.recipe,
             );
@@ -319,7 +328,9 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
                     Target::Ios => {
                         "Requires a macOS SDK builder, iOS runtime host and signing identity."
                     }
-                    _ => "Built-in WebGPU export. Install Web tools in File > Settings. Multiplayer requires a browser gateway.",
+                    _ => {
+                        "First-time setup: File > Settings > Build Configuration. Install Rust, C++ / SDK tools, then Web tools; refresh detection."
+                    }
                 },
                 11.,
                 MUTED,
@@ -327,9 +338,70 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
             text(
                 c,
                 detail,
-                if p.target == Target::Web {"Leave the recipe blank for the built-in browser projector. Native Effekseer effects are not supported."}else{"SDK recipes are documented in IDE/DEPLOYMENT.md. These runtime hosts are not bundled yet."},
+                if p.target == Target::Web {
+                    "Leave the recipe blank for the built-in browser projector. Effekseer effects are bundled for the browser."
+                } else {
+                    "SDK recipes are documented in IDE/DEPLOYMENT.md. These runtime hosts are not bundled yet."
+                },
                 11.,
                 Color::srgb(0.94, 0.72, 0.39),
+            );
+        }
+        if p.target == Target::Web {
+            let setup = button(
+                c,
+                detail,
+                "Open Web build setup",
+                Name::new("Open Web build setup"),
+            );
+            c.entity(setup).observe(|mut event: On<Pointer<Click>>, mut state: ResMut<crate::application::build_configuration::State>| {
+                if event.button == PointerButton::Primary {
+                    event.propagate(false);
+                    state.actions.push_back(crate::application::build_configuration::Action::Open);
+                }
+            });
+            text(
+                c,
+                detail,
+                "Requires the matching SceneMax source workspace in a writable folder, internet for first-build dependencies, and several GB of free disk space. Setup guide: IDE/WEB_EXPORT.md.",
+                11.,
+                MUTED,
+            );
+            text(
+                c,
+                detail,
+                "Test with Run Web locally after building. Players need WebGPU and HTTPS (or localhost); sound begins after a click or key press. Multiplayer needs a separately hosted WebSocket gateway.",
+                11.,
+                MUTED,
+            );
+            text(c, detail, "Loading screen - starts automatically", 12., INK);
+            field(
+                c,
+                detail,
+                "Background image (PNG / JPEG, optional)",
+                Field::WebBackground,
+                &settings.web_loading.background,
+            );
+            field(
+                c,
+                detail,
+                "Header",
+                Field::WebHeader,
+                &settings.web_loading.header,
+            );
+            field(
+                c,
+                detail,
+                "Loading text",
+                Field::WebMessage,
+                &settings.web_loading.message,
+            );
+            field(
+                c,
+                detail,
+                "Text below progress bar",
+                Field::WebFooter,
+                &settings.web_loading.footer,
             );
         }
         field(c, detail, "itch.io channel", Field::Channel(i), &p.channel);
@@ -338,7 +410,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         c,
         scroll,
         Effects,
-        "Include native Effekseer support",
+        "Include native Effekseer support (desktop only)",
         settings.native_effects,
     );
     property::checkbox(
@@ -348,7 +420,13 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         "Require source build instead of installed runtime",
         settings.rebuild_runtime,
     );
-    text(c, scroll, "Source installations always check for engine updates. Unchanged builds are reused.", 12., INK);
+    text(
+        c,
+        scroll,
+        "Source installations always check for engine updates. Unchanged builds are reused.",
+        12.,
+        INK,
+    );
     property::checkbox(
         c,
         scroll,
@@ -386,6 +464,20 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         &settings.butler,
     );
     action(c, scroll, "Sign in with Butler…", Action::Login);
+    text(
+        c,
+        scroll,
+        "Butler is only needed for automatic itch.io uploads. Download from https://itchio.itch.io/butler, extract it, select its executable, then sign in. Manual ZIP upload needs no Butler.",
+        11.,
+        MUTED,
+    );
+    text(
+        c,
+        scroll,
+        "Create your itch.io page first. For Web, choose HTML Game and mark the uploaded file playable in the browser. Upload completion may precede itch.io processing/extraction. Release versions are entered manually.",
+        11.,
+        MUTED,
+    );
     text(
         c,
         scroll,
@@ -459,9 +551,27 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
     action(c, links, "Open output", Action::Reveal);
     action(c, links, "Log folder", Action::Log);
     action(c, links, "Size report", Action::SizeReport);
-    let preview = area(c, right, Node { row_gap: px(6.), display: Display::None, ..column() }, PANEL);
+    let preview = area(
+        c,
+        right,
+        Node {
+            row_gap: px(6.),
+            display: Display::None,
+            ..column()
+        },
+        PANEL,
+    );
     c.entity(preview).insert(PreviewControls);
-    let preview_actions = area(c, preview, Node { column_gap: px(8.), flex_wrap: FlexWrap::Wrap, ..default() }, PANEL);
+    let preview_actions = area(
+        c,
+        preview,
+        Node {
+            column_gap: px(8.),
+            flex_wrap: FlexWrap::Wrap,
+            ..default()
+        },
+        PANEL,
+    );
     action(c, preview_actions, "Run Web locally", Action::RunWeb);
     action(c, preview_actions, "Stop local server", Action::StopWeb);
     let preview_status = text(c, preview, "", 11., MUTED);
@@ -514,6 +624,10 @@ pub(crate) fn collect(mut state: ResMut<Deployment>, fields: Fields) {
     for (kind, value) in &fields.inputs {
         let destination = match *kind {
             Field::Builtin => &mut settings.builtin_resources,
+            Field::WebBackground => &mut settings.web_loading.background,
+            Field::WebHeader => &mut settings.web_loading.header,
+            Field::WebMessage => &mut settings.web_loading.message,
+            Field::WebFooter => &mut settings.web_loading.footer,
             Field::Name => &mut settings.name,
             Field::Version => &mut settings.version,
             Field::Output => &mut settings.output,
@@ -707,6 +821,7 @@ pub(crate) fn refresh(
             let value = match *field {
                 Field::Output => Some(&settings.output),
                 Field::Builtin => Some(&settings.builtin_resources),
+                Field::WebBackground => Some(&settings.web_loading.background),
                 Field::Butler => Some(&settings.butler),
                 Field::Runtime(i) => Some(&settings.platforms[i].runtime),
                 Field::Recipe(i) => Some(&settings.platforms[i].recipe),
@@ -720,7 +835,13 @@ pub(crate) fn refresh(
     }
     for (mut node, detail, progress, form, preview) in &mut visuals.nodes {
         if preview.is_some() {
-            node.display = if (!state.busy && state.report.web_artifact.is_some()) || state.preview_status.active { Display::Flex } else { Display::None };
+            node.display = if (!state.busy && state.report.web_artifact.is_some())
+                || state.preview_status.active
+            {
+                Display::Flex
+            } else {
+                Display::None
+            };
         }
         if let Some(detail) = detail {
             let display = if detail.0 == view.tab {
@@ -759,7 +880,12 @@ pub(crate) fn refresh(
         .join("\n");
     for (mut text, status, log, artifact, summary, preview) in &mut visuals.texts {
         let value = if preview.is_some() {
-            Some(if state.preview_status.message.is_empty() { "Test the completed Web build in your browser. No additional server tools required.".into() } else { state.preview_status.message.clone() })
+            Some(if state.preview_status.message.is_empty() {
+                "Test the completed Web build in your browser. No additional server tools required."
+                    .into()
+            } else {
+                state.preview_status.message.clone()
+            })
         } else if summary.is_some() {
             Some(if state.busy {
                 state.settings.as_ref().map(|s| format!("{}  /  {}\n\n{}\n\nYour release settings are locked for this operation.\nFollow the live build log on the right.\n\nCancel stops the tools owned by this build.\nCompleted artifacts and the build log are kept.", s.name, s.version, s.platforms.iter().filter(|p| p.selected).map(|p| p.target.label()).collect::<Vec<_>>().join("\n"))).unwrap_or_default()
@@ -798,7 +924,10 @@ pub(crate) fn smoke(
     mut state: ResMut<Deployment>,
 ) {
     // Explicit smoke mode only: display a completed Web result without compiling or opening a browser.
-    if !*preview_injected && state.open && !state.busy && state.settings.is_some()
+    if !*preview_injected
+        && state.open
+        && !state.busy
+        && state.settings.is_some()
         && let Some(path) = std::env::var_os("SCENEMAX_SMOKE_WEB_ARTIFACT")
     {
         let path = std::path::PathBuf::from(path);

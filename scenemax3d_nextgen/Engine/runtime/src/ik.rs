@@ -70,7 +70,11 @@ pub(super) fn enqueue(
         let result = (|| -> Result<()> {
             let owner =
                 owner.ok_or_else(|| anyhow::anyhow!("IK owner not found: {}", cmd.owner))?;
-            anyhow::ensure!(world.get_entity(owner).is_ok(), "IK owner no longer exists: {}", cmd.owner);
+            anyhow::ensure!(
+                world.get_entity(owner).is_ok(),
+                "IK owner no longer exists: {}",
+                cmd.owner
+            );
             anyhow::ensure!(
                 cmd.weight.is_none() || weight.is_some_and(f32::is_finite),
                 "IK weight must resolve to a finite number"
@@ -134,8 +138,8 @@ pub(super) fn enqueue(
                         }
                         IkAction::PolePosition(v) => layer["polePosition"] = json!(v),
                         IkAction::Play => {
-                            layer["runtimeWeight"] = layer.get("defaultPlayWeight")
-                                .cloned().unwrap_or(json!(1.));
+                            layer["runtimeWeight"] =
+                                layer.get("defaultPlayWeight").cloned().unwrap_or(json!(1.));
                             layer["enabled"] = json!(true);
                         }
                         IkAction::Stop => layer["enabled"] = json!(false),
@@ -227,7 +231,11 @@ mod tests {
     #[test]
     fn stopped_weight_is_a_default_until_play_and_zero_play_stays_stopped() {
         let mut world = World::new();
-        let owner = world.spawn(Rig::new(json!({"layers":[{"id":"contact","enabled":false,"runtimeWeight":1.}]}))).id();
+        let owner = world
+            .spawn(Rig::new(
+                json!({"layers":[{"id":"contact","enabled":false,"runtimeWeight":1.}]}),
+            ))
+            .id();
         for (action, weight, expected) in [
             (IkAction::Weight, Some(0.4), 0.),
             (IkAction::Play, None, 0.4),
@@ -238,11 +246,28 @@ mod tests {
             (IkAction::Weight, Some(0.2), 0.),
             (IkAction::Play, None, 0.2),
         ] {
-            let cmd = IkStatement { owner:"fixture".into(), layer:Some("CONTACT".into()), action,
-                target:None, weight:None, blend:None };
-            enqueue(&mut world.commands(), cmd, Some(owner), None, None, weight, None);
+            let cmd = IkStatement {
+                owner: "fixture".into(),
+                layer: Some("CONTACT".into()),
+                action,
+                target: None,
+                weight: None,
+                blend: None,
+            };
+            enqueue(
+                &mut world.commands(),
+                cmd,
+                Some(owner),
+                None,
+                None,
+                weight,
+                None,
+            );
             world.flush();
-            assert!((world.get::<Rig>(owner).unwrap().runtime_weight("contact") - expected).abs() < 0.0001);
+            assert!(
+                (world.get::<Rig>(owner).unwrap().runtime_weight("contact") - expected).abs()
+                    < 0.0001
+            );
         }
     }
     #[test]
@@ -250,21 +275,66 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, TransformPlugin, scenemax_ik::IkPlugin));
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
-            std::time::Duration::from_millis(100)));
-        let owner = app.world_mut().spawn((Transform::default(), Rig::new(json!({
-            "layers":[{"id":"contact","enabled":true,"runtimeWeight":1.}]
-        })))).id();
+            std::time::Duration::from_millis(100),
+        ));
+        let owner = app
+            .world_mut()
+            .spawn((
+                Transform::default(),
+                Rig::new(json!({
+                    "layers":[{"id":"contact","enabled":true,"runtimeWeight":1.}]
+                })),
+            ))
+            .id();
         app.update();
-        let command = |action| IkStatement { owner:"fixture".into(), layer:Some("contact".into()), action,
-            target:None, weight:None, blend:None };
-        enqueue(&mut app.world_mut().commands(), command(IkAction::Stop), Some(owner), None, None, None, Some(1.));
+        let command = |action| IkStatement {
+            owner: "fixture".into(),
+            layer: Some("contact".into()),
+            action,
+            target: None,
+            weight: None,
+            blend: None,
+        };
+        enqueue(
+            &mut app.world_mut().commands(),
+            command(IkAction::Stop),
+            Some(owner),
+            None,
+            None,
+            None,
+            Some(1.),
+        );
         app.world_mut().flush();
         app.update();
-        assert!((app.world().get::<Rig>(owner).unwrap().runtime_weight("contact") - 0.9).abs() < 0.001);
-        enqueue(&mut app.world_mut().commands(), command(IkAction::Weight), Some(owner), None, None, Some(1.), None);
+        assert!(
+            (app.world()
+                .get::<Rig>(owner)
+                .unwrap()
+                .runtime_weight("contact")
+                - 0.9)
+                .abs()
+                < 0.001
+        );
+        enqueue(
+            &mut app.world_mut().commands(),
+            command(IkAction::Weight),
+            Some(owner),
+            None,
+            None,
+            Some(1.),
+            None,
+        );
         app.world_mut().flush();
         app.update();
-        assert!((app.world().get::<Rig>(owner).unwrap().runtime_weight("contact") - 1.).abs() < 0.001);
+        assert!(
+            (app.world()
+                .get::<Rig>(owner)
+                .unwrap()
+                .runtime_weight("contact")
+                - 1.)
+                .abs()
+                < 0.001
+        );
     }
     #[test]
     fn quoted_target_bones_keep_dots_and_names() {
@@ -408,8 +478,22 @@ mod pose_tests {
         fs::write(root.path().join("ik/fixture.smik"), r#"{"layers":[]}"#).unwrap();
         let mut world = World::new();
         let owner = world.spawn_empty().id();
-        let Statement::Ik(command) = scenemax_parser::parse_program(r#"subject.ik = "fixture""#).unwrap().statements.remove(0) else { panic!() };
-        enqueue(&mut world.commands(), command, Some(owner), Some(root.path().into()), Some("fixture".into()), None, None);
+        let Statement::Ik(command) = scenemax_parser::parse_program(r#"subject.ik = "fixture""#)
+            .unwrap()
+            .statements
+            .remove(0)
+        else {
+            panic!()
+        };
+        enqueue(
+            &mut world.commands(),
+            command,
+            Some(owner),
+            Some(root.path().into()),
+            Some("fixture".into()),
+            None,
+            None,
+        );
         world.despawn(owner);
         world.flush();
         assert_eq!(world.query::<&Rig>().iter(&world).count(), 0);

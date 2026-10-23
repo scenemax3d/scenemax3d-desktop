@@ -24,6 +24,10 @@ prebuilt runtimes must also include this support.
 
 ## Browser exports
 
+New installation? Start with the [Web setup and publishing guide](WEB_EXPORT.md).
+The built-in exporter needs the matching full SceneMax source workspace in a
+writable folder as well as the build tools; the IDE executable alone is insufficient.
+
 When updating exporter source, save and close the IDE, then run
 `cargo build --locked -p scenemax_ide` from `scenemax3d_nextgen` and reopen it.
 Export logic and bundled effect runtime files are compiled into the IDE;
@@ -57,17 +61,17 @@ with the preview's origin allowed by that gateway.
 For manual hosting, serve the extracted ZIP through HTTP on localhost or HTTPS in production.
 Opening `index.html` directly from disk is unsupported. A WebGPU-capable browser
 and graphics adapter are required. The loading page reports file failures and
-waits for a Start click before launching the game. Browser project files are
-mounted read-only before script execution; assets are also available through
-Bevy's HTTP asset loader. This first implementation preloads the complete
+starts automatically after loading. Browser project files are
+mounted read-only before script execution; Bevy asset loaders use the same mounted
+store, so content aliases do not trigger duplicate HTTP downloads. This first implementation preloads the complete
 selected snapshot into memory, so large games have higher startup/memory costs.
 Desktop authoring filesystem writes are not browser save-game persistence.
 
 Supported Effekseer `.efkefc` effects use a bundled, locally served WebGPU runtime.
 Existing play, loop, stop, transform, speed and dynamic-input commands use the
 same shared playback state; completion is checked against each playback generation.
-No additional Effekseer SDK is required. The Start game gesture unlocks effect
-audio. Missing dependencies and renderer/device failures are shown on the loading
+No additional Effekseer SDK is required. The first click or key press in the game
+unlocks browser-restricted game and effect audio without blocking automatic startup. Missing dependencies and renderer/device failures are shown on the loading
 screen. Effect dependencies referenced outside the effect directory are included
 when they remain inside the project's resource root.
 
@@ -109,7 +113,7 @@ Linux/macOS package assembly is implemented but not executed on those OSes in th
 6. Follow phase progress and live stdout/stderr. Logs wrap inside the panel; disable **Follow log** to inspect earlier output. **Cancel build** stops the owned tool tree and preserves finished artifacts and logs. Partial artifacts remain private and are removed.
 7. A modal **Release complete** or **Build stopped** message clearly marks the end. It offers output/log actions and stays until dismissed. **Open output** opens the artifact directory; **Log folder** locates `build.log`.
 
-Settings are saved at build time in `.scenemax-studio/deployment.json`. Closing/reopening the form also preserves its draft for the same project. Unknown top-level settings fields are preserved. Existing source documents, undo history, Java code and Java settings remain untouched. Relative form paths resolve against the project.
+Settings edits are saved in `.scenemax-studio/deployment.json` without requiring a build. Closing/reopening the form also preserves its draft for the same project. Unknown top-level settings fields are preserved. Existing source documents, undo history, Java code and Java settings remain untouched. Relative form paths resolve against the project.
 
 ## Fast packaging and resource selection
 
@@ -145,7 +149,10 @@ New forms import matching non-secret page/channel defaults from the Java project
 
 Automatic upload starts only after all selected artifacts succeed. Each channel uses `butler push` and `--userversion`. ZIPs are passed directly, so their contents become the upload root. Executable/APK/IPA files are pushed from their dedicated platform directory. Source folders, settings and build logs are not uploaded. A failed upload preserves local artifacts. **Upload / retry existing builds** publishes those outputs without compiling again; keep their platform selection. Retrying can re-push already successful channels.
 
-The game page must already exist. Publishing updates its channels immediately. For Web, mark the page/upload playable in the browser through itch's UI after the first upload; see the official [Butler manual](https://itch.io/docs/butler/pushing.html).
+The game page must already exist. Successful upload updates the selected channel,
+but itch.io may still need to process and extract it before browser play is ready.
+Do not immediately reupload while processing; wait and reload the game page.
+The release version is entered manually and does not increment automatically. For Web, mark the page/upload playable in the browser through itch's UI after the first upload; see the official [Butler manual](https://itch.io/docs/butler/pushing.html).
 
 ## SDK builder contract
 

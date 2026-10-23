@@ -29,11 +29,18 @@ pub(crate) fn smoke(
         if let Ok(password) = std::env::var("SCENEMAX_SMOKE_MULTIPLAYER_PASSWORD") {
             state.password = Some(password);
             state.revision += 1;
-            if std::env::var_os("SCENEMAX_SMOKE_MULTIPLAYER_SAVE_RUN").is_some() { state.actions.push_back(Action::Save); }
+            if std::env::var_os("SCENEMAX_SMOKE_MULTIPLAYER_SAVE_RUN").is_some() {
+                state.actions.push_back(Action::Save);
+            }
         }
         *seeded = true;
     }
-    if *seeded && !*launched && !state.busy && state.status == "Multiplayer settings saved." && std::env::var_os("SCENEMAX_SMOKE_MULTIPLAYER_SAVE_RUN").is_some() {
+    if *seeded
+        && !*launched
+        && !state.busy
+        && state.status == "Multiplayer settings saved."
+        && std::env::var_os("SCENEMAX_SMOKE_MULTIPLAYER_SAVE_RUN").is_some()
+    {
         state.actions.push_back(Action::Close);
         queue.0.push_back(crate::application::Command::RunProject);
         *launched = true;
@@ -69,7 +76,9 @@ pub(crate) fn input(
         }
     }
     for password in &passwords {
-        if password.touched() { state.password = Some(password.value().to_owned()); }
+        if password.touched() {
+            state.password = Some(password.value().to_owned());
+        }
     }
     if keys.just_pressed(KeyCode::Escape) {
         state.actions.push_back(Action::Close);
@@ -172,19 +181,68 @@ pub(crate) fn refresh(
             }
         }
         text(&mut c, panel, "Password (this IDE session only)");
-        scenemax_ide_ui::password::input(&mut c, panel, Name::new("Multiplayer password"), state.password.as_deref().unwrap_or(""));
-        let password_actions = node(&mut c, panel, Node { column_gap: px(8.), ..default() });
-        let clear = scenemax_ide_ui::button(&mut c, password_actions, "No password", Name::new("No password"));
-        c.entity(clear).observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| state.actions.push_back(Action::NoPassword));
-        let environment = scenemax_ide_ui::button(&mut c, password_actions, "Use environment password", Name::new("Use environment password"));
-        c.entity(environment).observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| state.actions.push_back(Action::UseEnvironment));
-        text(&mut c, panel, "Save applies the password to future runs. Build Server uses the same password.\nPasswords are never saved to project files. Clear the field for no password.");
-        let local_row = node(&mut c, panel, Node { column_gap: px(8.), ..default() });
-        for (caption, action) in [("Run Server Locally", Action::RunLocal), ("Stop Local Server", Action::StopLocal)] {
+        scenemax_ide_ui::password::input(
+            &mut c,
+            panel,
+            Name::new("Multiplayer password"),
+            state.password.as_deref().unwrap_or(""),
+        );
+        let password_actions = node(
+            &mut c,
+            panel,
+            Node {
+                column_gap: px(8.),
+                ..default()
+            },
+        );
+        let clear = scenemax_ide_ui::button(
+            &mut c,
+            password_actions,
+            "No password",
+            Name::new("No password"),
+        );
+        c.entity(clear)
+            .observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| {
+                state.actions.push_back(Action::NoPassword)
+            });
+        let environment = scenemax_ide_ui::button(
+            &mut c,
+            password_actions,
+            "Use environment password",
+            Name::new("Use environment password"),
+        );
+        c.entity(environment)
+            .observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| {
+                state.actions.push_back(Action::UseEnvironment)
+            });
+        text(
+            &mut c,
+            panel,
+            "Save applies the password to future runs. Build Server uses the same password.\nPasswords are never saved to project files. Clear the field for no password.",
+        );
+        let local_row = node(
+            &mut c,
+            panel,
+            Node {
+                column_gap: px(8.),
+                ..default()
+            },
+        );
+        for (caption, action) in [
+            ("Run Server Locally", Action::RunLocal),
+            ("Stop Local Server", Action::StopLocal),
+        ] {
             let e = scenemax_ide_ui::button(&mut c, local_row, caption, Name::new(caption));
-            c.entity(e).observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| s.actions.push_back(action));
+            c.entity(e)
+                .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| {
+                    s.actions.push_back(action)
+                });
         }
-        text(&mut c, panel, "Run saves these settings and builds a local-only server. The server stops when the IDE closes or you change projects.");
+        text(
+            &mut c,
+            panel,
+            "Run saves these settings and builds a local-only server. The server stops when the IDE closes or you change projects.",
+        );
         let local = text(&mut c, panel, &state.local_status);
         c.entity(local).insert(LocalStatus);
         let row = node(
@@ -219,8 +277,14 @@ pub(crate) fn refresh(
         }
     }
     for mut text in &mut local_status {
-        let value = if state.local_status.is_empty() { "UDP local server stopped" } else { &state.local_status };
-        if text.0 != value { text.0 = value.to_owned(); }
+        let value = if state.local_status.is_empty() {
+            "UDP local server stopped"
+        } else {
+            &state.local_status
+        };
+        if text.0 != value {
+            text.0 = value.to_owned();
+        }
     }
 }
 

@@ -11,7 +11,7 @@ fn request(kind: Kind, source: PathBuf) -> Request {
         clip: String::new(),
         scale: 2.,
         model: None,
-            effect: None,
+        effect: None,
     }
 }
 #[test]
@@ -33,7 +33,9 @@ fn each_import_registers_the_runtime_format_and_preserves_other_entries() {
         }];
         let path = source.path().join(format!("source.{extension}"));
         fs::write(&path,if extension=="gltf" {br#"{"asset":{"version":"2.0"},"animations":[{"name":"walk"}],"buffers":[{"uri":"data.bin"}]}"#.as_slice()} else {b"sample"}).unwrap();
-        if kind == Kind::Effect { fs::write(&path, empty_effect()).unwrap(); }
+        if kind == Kind::Effect {
+            fs::write(&path, empty_effect()).unwrap();
+        }
         fs::write(source.path().join("data.bin"), [0; 8]).unwrap();
         let (folder, stem, key) = kind.location();
         let category = project.path().join("resources").join(folder);
@@ -155,4 +157,6 @@ fn invalid_clip_and_name_never_publish() {
     );
 }
 
-fn empty_effect() -> Vec<u8> { [b"SKFE".as_slice(),&[0;8]].concat() }
+fn empty_effect() -> Vec<u8> {
+    [b"SKFE".as_slice(), &[0; 8]].concat()
+}

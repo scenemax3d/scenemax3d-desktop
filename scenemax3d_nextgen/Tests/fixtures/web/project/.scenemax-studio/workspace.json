@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tabs": [
+    {
+      "path": "scripts\\main",
+      "anchor": 0,
+      "focus": 0
+    }
+  ],
+  "active": "scripts\\main"
+}

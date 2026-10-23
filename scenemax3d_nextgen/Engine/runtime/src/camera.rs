@@ -177,9 +177,17 @@ fn resolve_camera_target_value(
     references::entity_name_with_aliases(target, vars, scope, &pools.aliases)
 }
 
-fn bind_camera_target(target: &str, vars: &SceneMaxVars, pools: &SceneMaxObjectPools, scope: Option<&SceneMaxScopeFrame>) -> String {
+fn bind_camera_target(
+    target: &str,
+    vars: &SceneMaxVars,
+    pools: &SceneMaxObjectPools,
+    scope: Option<&SceneMaxScopeFrame>,
+) -> String {
     let resolved = resolve_camera_target_value(target, vars, pools, scope);
-    write_runtime_diagnostic_line(format!("CAMERA:BIND operand={target:?} resolved={resolved:?} scoped={}", scope.is_some()));
+    write_runtime_diagnostic_line(format!(
+        "CAMERA:BIND operand={target:?} resolved={resolved:?} scoped={}",
+        scope.is_some()
+    ));
     resolved
 }
 
@@ -386,7 +394,11 @@ pub(super) fn load_cinematic_rigs(
 ) {
     let mut remaining = HashSet::new();
     collect_cinematic_rig_ids(&program.statements, &mut remaining);
-    remaining.retain(|id| !camera_system.cinematic_rigs.contains_key(&id.to_ascii_lowercase()));
+    remaining.retain(|id| {
+        !camera_system
+            .cinematic_rigs
+            .contains_key(&id.to_ascii_lowercase())
+    });
     if remaining.is_empty() {
         return;
     }
@@ -835,9 +847,22 @@ mod tests {
         let object_pools = SceneMaxObjectPools::default();
 
         let mut vars = SceneMaxVars::default();
-        vars.2.insert("alias".into(), scenemax_runtime_vm_core::references::Reference::entity("shot_cam"));
-        let play = CinematicPlayStatement { target: "alias".into(), ..play };
-        start_cinematic_camera(&play, &transforms, &object_pools, &vars, None, &mut camera_system);
+        vars.2.insert(
+            "alias".into(),
+            scenemax_runtime_vm_core::references::Reference::entity("shot_cam"),
+        );
+        let play = CinematicPlayStatement {
+            target: "alias".into(),
+            ..play
+        };
+        start_cinematic_camera(
+            &play,
+            &transforms,
+            &object_pools,
+            &vars,
+            None,
+            &mut camera_system,
+        );
 
         assert!(camera_system.active_cinematic.is_some());
         assert!(camera_system.attached.is_none());
@@ -997,9 +1022,14 @@ mod tests {
 }
 
 pub(super) fn select_camera_system(name: &str, camera_system: &mut SceneMaxCameraSystem) {
-    write_runtime_diagnostic_line(format!("CAMERA:SELECT requested={name:?} fighting={:?} third_person={} previous={:?} attached={} cinematic={}",
-        camera_system.fighting.as_ref().map(|c| &c.name), camera_system.third_person.contains_key(name), camera_system.selected,
-        camera_system.attached.is_some(), camera_system.active_cinematic.is_some()));
+    write_runtime_diagnostic_line(format!(
+        "CAMERA:SELECT requested={name:?} fighting={:?} third_person={} previous={:?} attached={} cinematic={}",
+        camera_system.fighting.as_ref().map(|c| &c.name),
+        camera_system.third_person.contains_key(name),
+        camera_system.selected,
+        camera_system.attached.is_some(),
+        camera_system.active_cinematic.is_some()
+    ));
     if camera_system
         .fighting
         .as_ref()
@@ -1057,7 +1087,12 @@ pub(super) fn start_cinematic_camera(
     scope: Option<&SceneMaxScopeFrame>,
     camera_system: &mut SceneMaxCameraSystem,
 ) {
-    let target = scenemax_runtime_vm_core::references::entity_name_with_aliases(&play.target, vars, scope, &object_pools.aliases);
+    let target = scenemax_runtime_vm_core::references::entity_name_with_aliases(
+        &play.target,
+        vars,
+        scope,
+        &object_pools.aliases,
+    );
     let Some(camera_ref) = camera_system.cinematic_vars.get(&target).cloned() else {
         write_runtime_diagnostic_line(format!("cinematic camera {} was not declared", play.target));
         return;
@@ -1080,14 +1115,21 @@ pub(super) fn start_cinematic_camera(
     }
 
     let mut active = ActiveCinematicCamera {
-            completion: std::sync::Arc::new(()),
+        completion: std::sync::Arc::new(()),
         rig,
         playback,
         elapsed_seconds: 0.0,
         duration_seconds: play.duration_seconds.max(0.1),
         playback_fov_degrees: None,
         look_at: play.look_at.as_ref().map(|target| match target {
-            CinematicLookAt::Entity(name) => CinematicLookAt::Entity(scenemax_runtime_vm_core::references::entity_name_with_aliases(name, vars, scope, &object_pools.aliases)),
+            CinematicLookAt::Entity(name) => CinematicLookAt::Entity(
+                scenemax_runtime_vm_core::references::entity_name_with_aliases(
+                    name,
+                    vars,
+                    scope,
+                    &object_pools.aliases,
+                ),
+            ),
             other => other.clone(),
         }),
         reverse: play.reverse,
@@ -1104,7 +1146,10 @@ pub(super) fn start_cinematic_camera(
         "started SceneMax cinematic camera"
     );
     if std::env::var_os("SCENEMAX_ATTACHMENT_AUDIT").is_some() {
-        write_runtime_diagnostic_line(format!("CINEMATIC_PLAY target={} resolved={} rig={}", play.target, target, active.rig.id));
+        write_runtime_diagnostic_line(format!(
+            "CINEMATIC_PLAY target={} resolved={} rig={}",
+            play.target, target, active.rig.id
+        ));
     }
     camera_system.active_cinematic = Some(active);
 }
@@ -1612,12 +1657,17 @@ pub(super) fn update_fighting_camera(
         }
     }
 
-    let status = format!("name={:?} selected={selected:?} cinematic={cinematic} target_a={:?} entity_a={resolved_a:?} target_b={:?} entity_b={resolved_b:?}",
-        camera_settings.name, camera_settings.target_a, camera_settings.target_b);
+    let status = format!(
+        "name={:?} selected={selected:?} cinematic={cinematic} target_a={:?} entity_a={resolved_a:?} target_b={:?} entity_b={resolved_b:?}",
+        camera_settings.name, camera_settings.target_a, camera_settings.target_b
+    );
     let report = runtime_logging_enabled() && (audit.0 != status || time.elapsed_secs() >= audit.1);
     if report {
-        write_runtime_diagnostic_line(format!("CAMERA:TARGETS {status} position_a={:?} position_b={:?}",
-            target_a.map(|t| t.translation), target_b.map(|t| t.translation)));
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:TARGETS {status} position_a={:?} position_b={:?}",
+            target_a.map(|t| t.translation),
+            target_b.map(|t| t.translation)
+        ));
         *audit = (status, time.elapsed_secs() + 5.);
     }
     if cinematic || selected.as_deref() != Some(camera_settings.name.as_str()) {
@@ -1704,8 +1754,10 @@ pub(super) fn update_fighting_camera(
     };
     set_perspective_fov_degrees(projection, smoothed_fov);
     if report {
-        write_runtime_diagnostic_line(format!("CAMERA:FRAME name={:?} position={:?} look_at={:?} fov={smoothed_fov}",
-            camera_settings.name, camera.translation, camera_settings.smoothed_look_at));
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:FRAME name={:?} position={:?} look_at={:?} fov={smoothed_fov}",
+            camera_settings.name, camera.translation, camera_settings.smoothed_look_at
+        ));
     }
 }
 
@@ -1730,14 +1782,25 @@ pub(super) fn update_third_person_camera(
         return;
     };
 
-    let resolved = entities.iter().find(|(entity, _)| camera_target_matches(&camera_settings.target, entity, &vars));
-    let status = format!("name={selected:?} target={:?} entity={:?}", camera_settings.target, resolved.map(|(e, _)| &e.name));
+    let resolved = entities
+        .iter()
+        .find(|(entity, _)| camera_target_matches(&camera_settings.target, entity, &vars));
+    let status = format!(
+        "name={selected:?} target={:?} entity={:?}",
+        camera_settings.target,
+        resolved.map(|(e, _)| &e.name)
+    );
     let report = runtime_logging_enabled() && (audit.0 != status || time.elapsed_secs() >= audit.1);
     if report {
-        write_runtime_diagnostic_line(format!("CAMERA:THIRD_PERSON {status} position={:?}", resolved.map(|(_, t)| t.translation)));
+        write_runtime_diagnostic_line(format!(
+            "CAMERA:THIRD_PERSON {status} position={:?}",
+            resolved.map(|(_, t)| t.translation)
+        ));
         *audit = (status, time.elapsed_secs() + 5.);
     }
-    let Some((_, target)) = resolved else { return; };
+    let Some((_, target)) = resolved else {
+        return;
+    };
     let Ok((mut camera, mut modifier_state)) = cameras.single_mut() else {
         return;
     };

@@ -20,12 +20,23 @@ pub(super) fn encode(
     Some(match action {
         Statement::LabelText { target, value } => (
             target.clone(),
-            format!("{{network_entity}}.text = {}", crate::labels::wire_text(&crate::labels::text(value, vars, scope, guards, transforms))),
+            format!(
+                "{{network_entity}}.text = {}",
+                crate::labels::wire_text(&crate::labels::text(
+                    value, vars, scope, guards, transforms
+                ))
+            ),
         ),
         Statement::RotationReset { target, rotation } => {
-            let angles = evaluate_position_value_runtime(rotation, vars, scope, guards, transforms, None)?;
-            if !angles.is_finite() { return None; }
-            (target.clone(), format!("{{network_entity}}.rotate {}", vector(angles)))
+            let angles =
+                evaluate_position_value_runtime(rotation, vars, scope, guards, transforms, None)?;
+            if !angles.is_finite() {
+                return None;
+            }
+            (
+                target.clone(),
+                format!("{{network_entity}}.rotate {}", vector(angles)),
+            )
         }
         Statement::Position(a) => {
             let p = evaluate_position_value_runtime(
@@ -53,11 +64,23 @@ pub(super) fn encode(
             // A single original displacement fits the existing 192-byte action
             // field and remains valid at an overshooting curve's zero crossings.
             if a.easing.is_some() || matches!(a.destination, MoveToDestination::Delta(_)) {
-                let target = scenemax_runtime_vm_core::references::entity_name(&a.target, vars, scope);
-                let delta = if matches!(a.destination, MoveToDestination::Delta(_)) { p } else { p - transforms.get(&target)?.translation };
+                let target =
+                    scenemax_runtime_vm_core::references::entity_name(&a.target, vars, scope);
+                let delta = if matches!(a.destination, MoveToDestination::Delta(_)) {
+                    p
+                } else {
+                    p - transforms.get(&target)?.translation
+                };
                 let duration = number(&a.duration_value)?;
-                let easing = motion_ease::resolve(&a.easing, vars, scope, guards, transforms).wire();
-                return Some((a.target.clone(), format!("{{network_entity}}.move by {} in {duration} seconds{easing} async", vector(delta))));
+                let easing =
+                    motion_ease::resolve(&a.easing, vars, scope, guards, transforms).wire();
+                return Some((
+                    a.target.clone(),
+                    format!(
+                        "{{network_entity}}.move by {} in {duration} seconds{easing} async",
+                        vector(delta)
+                    ),
+                ));
             }
             (
                 a.target.clone(),
@@ -72,31 +95,45 @@ pub(super) fn encode(
             let a = crate::attachments::evaluated(a, vars, scope, guards, transforms, None)?;
             let (target, joint) = crate::ik::split_target(&a.target);
             (
-            target.into(),
-            format!(
-                "{}.attach to {}: pos ({},{},{})",
-                crate::ik::reference("{network_entity}", joint.as_deref()),
-                reference(&a.subject),
-                a.offset.x,
-                a.offset.y,
-                a.offset.z
-            ),
-        )},
+                target.into(),
+                format!(
+                    "{}.attach to {}: pos ({},{},{})",
+                    crate::ik::reference("{network_entity}", joint.as_deref()),
+                    reference(&a.subject),
+                    a.offset.x,
+                    a.offset.y,
+                    a.offset.z
+                ),
+            )
+        }
         Statement::EffekseerPlay(a) => {
             let mut options = Vec::new();
             if let Some(position) = &a.position {
-                options.push(format!("pos {}", vector(evaluate_position_value_runtime(
-                    position, vars, scope, guards, transforms, None)?)));
+                options.push(format!(
+                    "pos {}",
+                    vector(evaluate_position_value_runtime(
+                        position, vars, scope, guards, transforms, None
+                    )?)
+                ));
             }
             let mut attrs = Vec::new();
-            if a.looped { attrs.push("\"loop\" 1".into()); }
+            if a.looped {
+                attrs.push("\"loop\" 1".into());
+            }
             for (key, value) in &a.attrs {
-                attrs.push(format!("{} {}", serde_json::Value::String(key.clone()), number(value)?));
+                attrs.push(format!(
+                    "{} {}",
+                    serde_json::Value::String(key.clone()),
+                    number(value)?
+                ));
             }
             // The attribute list identifies effect playback even without a position
             // or loop flag. Keep the parser's normal command syntax on the wire.
             options.push(format!("attr = [{}]", attrs.join(", ")));
-            (a.target.clone(), format!("{{network_entity}}.play {} async", options.join(", ")))
+            (
+                a.target.clone(),
+                format!("{{network_entity}}.play {} async", options.join(", ")),
+            )
         }
         Statement::Ik(a) => {
             let prefix = format!(
@@ -108,7 +145,17 @@ pub(super) fn encode(
             );
             let command = match &a.action {
                 IkAction::Apply(asset) => {
-                    format!("{prefix} = {}", serde_json::Value::String(resolve_ik_asset_name(asset,vars,scope,guards,Some(transforms),None)?))
+                    format!(
+                        "{prefix} = {}",
+                        serde_json::Value::String(resolve_ik_asset_name(
+                            asset,
+                            vars,
+                            scope,
+                            guards,
+                            Some(transforms),
+                            None
+                        )?)
+                    )
                 }
                 IkAction::Remove => format!("{prefix} = empty"),
                 IkAction::Target => format!("{prefix}.target = {}", reference(a.target.as_ref()?)),
@@ -180,10 +227,16 @@ pub(super) fn references(
         }
         output.push(ch);
         if quoted {
-            if escaped { escaped = false; }
-            else if ch == '\\' { escaped = true; }
-            else if ch == '"' { quoted = false; }
-        } else if ch == '"' { quoted = true; }
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                quoted = false;
+            }
+        } else if ch == '"' {
+            quoted = true;
+        }
         index += ch.len_utf8();
     }
     Some(output)

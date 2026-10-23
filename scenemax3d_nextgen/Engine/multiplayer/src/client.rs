@@ -1,5 +1,4 @@
 //! Nonblocking, bounded UDP client. Socket ownership ends with this value.
-use web_time::Instant;
 use crate::protocol::{self, Incoming, Login, Outgoing, Session, Spawn};
 use sha2::{Digest, Sha256};
 use std::{
@@ -8,6 +7,7 @@ use std::{
     net::SocketAddr,
     time::Duration,
 };
+use web_time::Instant;
 mod ends;
 mod health;
 #[cfg(not(target_arch = "wasm32"))]

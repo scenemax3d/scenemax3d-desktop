@@ -105,7 +105,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     scenemax_runtime::set_runtime_logging(cli.runtime_log);
     fmt()
-        .with_env_filter(if cli.runtime_log { EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")) } else { EnvFilter::new("off") })
+        .with_env_filter(if cli.runtime_log {
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+        } else {
+            EnvFilter::new("off")
+        })
         .without_time()
         .init();
 

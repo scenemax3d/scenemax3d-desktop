@@ -18,8 +18,8 @@ pub struct SceneMaxVars(
     pub HashMap<String, serde_json::Value>,
     pub HashMap<String, references::Reference>,
 );
-pub mod typed;
 pub mod references;
+pub mod typed;
 impl From<HashMap<String, f32>> for SceneMaxVars {
     fn from(values: HashMap<String, f32>) -> Self {
         Self(values, HashMap::new(), HashMap::new())
@@ -161,7 +161,9 @@ pub fn apply_assignment_with_spatial(
         guards_by_name,
         spatial,
     )?;
-    let typed_value = reference.snapshot().or_else(|| reference.opaque().then_some(serde_json::Value::Null))?;
+    let typed_value = reference
+        .snapshot()
+        .or_else(|| reference.opaque().then_some(serde_json::Value::Null))?;
     let value = typed::number(&typed_value).unwrap_or(0.) as f32;
     references::assign(
         &assignment.name,
@@ -209,8 +211,12 @@ pub fn resolve_assignment_value_scoped_with_guards(
     spatial: &impl SceneMaxVmSpatial,
 ) -> Option<f32> {
     match value {
-        AssignmentValue::RuntimeValue(value) => value.snapshot().and_then(|v| typed::number(&v)).map(|v| v as f32),
-        AssignmentValue::Literal(_) | AssignmentValue::Json(_)
+        AssignmentValue::RuntimeValue(value) => value
+            .snapshot()
+            .and_then(|v| typed::number(&v))
+            .map(|v| v as f32),
+        AssignmentValue::Literal(_)
+        | AssignmentValue::Json(_)
         | AssignmentValue::Array(_)
         | AssignmentValue::ArrayEdit { .. }
         | AssignmentValue::Access { .. } => {
@@ -303,28 +309,49 @@ pub fn condition_matches_scoped(
     guards_by_name: &HashMap<String, Condition>,
     spatial: &impl SceneMaxVmSpatial,
 ) -> bool {
-    let eval_number = |v: &AssignmentValue| typed::evaluate(v, vars, scope, guards_by_name, spatial).and_then(|v| typed::number(&v));
+    let eval_number = |v: &AssignmentValue| {
+        typed::evaluate(v, vars, scope, guards_by_name, spatial).and_then(|v| typed::number(&v))
+    };
     match condition {
         Condition::EqualsNumber { name, value } => {
-            if references::lookup(name, vars, scope).is_some_and(|v| v.opaque()) { return false; }
-            (eval_number(&AssignmentValue::Symbol(name.clone())).unwrap_or_default() - f64::from(*value))
-                .abs()
+            if references::lookup(name, vars, scope).is_some_and(|v| v.opaque()) {
+                return false;
+            }
+            (eval_number(&AssignmentValue::Symbol(name.clone())).unwrap_or_default()
+                - f64::from(*value))
+            .abs()
                 <= f64::from(f32::EPSILON)
         }
         Condition::NotEqualsNumber { name, value } => {
-            if references::lookup(name, vars, scope).is_some_and(|v| v.opaque()) { return true; }
-            (eval_number(&AssignmentValue::Symbol(name.clone())).unwrap_or_default() - f64::from(*value))
-                .abs()
+            if references::lookup(name, vars, scope).is_some_and(|v| v.opaque()) {
+                return true;
+            }
+            (eval_number(&AssignmentValue::Symbol(name.clone())).unwrap_or_default()
+                - f64::from(*value))
+            .abs()
                 > f64::from(f32::EPSILON)
         }
         Condition::EqualsSymbol { name, value } | Condition::NotEqualsSymbol { name, value } => {
             let (Some(left), Some(right)) = (
-                references::evaluate(&AssignmentValue::Symbol(name.clone()), vars, scope, guards_by_name, spatial),
-                references::evaluate(&AssignmentValue::Symbol(value.clone()), vars, scope, guards_by_name, spatial),
+                references::evaluate(
+                    &AssignmentValue::Symbol(name.clone()),
+                    vars,
+                    scope,
+                    guards_by_name,
+                    spatial,
+                ),
+                references::evaluate(
+                    &AssignmentValue::Symbol(value.clone()),
+                    vars,
+                    scope,
+                    guards_by_name,
+                    spatial,
+                ),
             ) else {
                 return false;
             };
-            references::equal(&left, &right) != matches!(condition, Condition::NotEqualsSymbol { .. })
+            references::equal(&left, &right)
+                != matches!(condition, Condition::NotEqualsSymbol { .. })
         }
         Condition::Compare {
             name,
@@ -342,10 +369,7 @@ pub fn condition_matches_scoped(
             operator,
             right,
         } => {
-            let (Some(left), Some(right)) = (
-                eval_number(left),
-                eval_number(right),
-            ) else {
+            let (Some(left), Some(right)) = (eval_number(left), eval_number(right)) else {
                 return false;
             };
             compare_values(left, *operator, right)
@@ -357,7 +381,8 @@ pub fn condition_matches_scoped(
             ) else {
                 return false;
             };
-            references::equal(&left, &right) != matches!(condition, Condition::NotEqualsValue { .. })
+            references::equal(&left, &right)
+                != matches!(condition, Condition::NotEqualsValue { .. })
         }
         Condition::Truthy { name } => {
             resolve_symbol_value_scoped(name, vars, scope, spatial)
@@ -451,11 +476,7 @@ fn random_seed() -> u64 {
     let process_id = 0_u64;
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| {
-            (duration.as_nanos() as u64)
-                ^ 0x9E37_79B9_7F4A_7C15
-                ^ (process_id << 32)
-        })
+        .map(|duration| (duration.as_nanos() as u64) ^ 0x9E37_79B9_7F4A_7C15 ^ (process_id << 32))
         .ok()
         .filter(|seed| *seed != 0)
         .unwrap_or(0xA076_1D64_78BD_642F)

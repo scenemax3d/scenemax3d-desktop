@@ -2,8 +2,16 @@
 use super::*;
 
 pub(crate) fn canonical(widget: &SceneMaxUiTarget, property: &str) -> Option<&'static str> {
-    if widget.widget_type == "EDIT_TEXT" && let Some(property) = edits::canonical(property) { return Some(property); }
-    if widget.widget_type == "LIST_VIEW" && let Some(property) = lists::canonical(property) { return Some(property); }
+    if widget.widget_type == "EDIT_TEXT"
+        && let Some(property) = edits::canonical(property)
+    {
+        return Some(property);
+    }
+    if widget.widget_type == "LIST_VIEW"
+        && let Some(property) = lists::canonical(property)
+    {
+        return Some(property);
+    }
     match property.to_ascii_lowercase().as_str() {
         "text" => Some("text"),
         "value" if widget.widget_type == "EDIT_TEXT" => Some("text"),
@@ -12,7 +20,14 @@ pub(crate) fn canonical(widget: &SceneMaxUiTarget, property: &str) -> Option<&'s
         "image" | "imagepath" if widget.widget_type == "IMAGE" => Some("image"),
         "image" | "backgroundimage" if widget.widget_type == "PANEL" => Some("image"),
         "sprite" | "spritename" if widget.widget_type == "IMAGE" => Some("sprite"),
-        "shader" if matches!(widget.widget_type.as_str(), "PANEL" | "BUTTON" | "IMAGE" | "TEXT_VIEW" | "LIST_VIEW" | "EDIT_TEXT") => Some("shader"),
+        "shader"
+            if matches!(
+                widget.widget_type.as_str(),
+                "PANEL" | "BUTTON" | "IMAGE" | "TEXT_VIEW" | "LIST_VIEW" | "EDIT_TEXT"
+            ) =>
+        {
+            Some("shader")
+        }
         "font" | "fontname" if widget.text_entity.is_some() => Some("font"),
         "fontsize" if widget.text_entity.is_some() => Some("fontsize"),
         "textcolor" | "buttontextcolor" if widget.text_entity.is_some() => Some("textcolor"),
@@ -76,13 +91,17 @@ pub(super) fn queue(
                 image_shaders::apply(world, target.entity, &value);
                 return;
             }
-            if shaders::apply(world, target.entity, &value) && let Some(path) = publish_shader {
+            if shaders::apply(world, target.entity, &value)
+                && let Some(path) = publish_shader
+            {
                 multiplayer::widgets::capture_shader(world, target.entity, &path);
             }
             return;
         }
         if property == "backgroundcolor" {
-            if shaders::active(world, target.entity) { return; }
+            if shaders::active(world, target.entity) {
+                return;
+            }
             if let Some(color) = color(&value) {
                 world
                     .entity_mut(target.entity)
@@ -249,7 +268,7 @@ mod tests {
                 .insert(
                     key.into(),
                     SceneMaxBitmapFont {
-                                    images: HashMap::from([(0,Handle::default())]),
+                        images: HashMap::from([(0, Handle::default())]),
                         metrics: metrics.clone(),
                     },
                 );

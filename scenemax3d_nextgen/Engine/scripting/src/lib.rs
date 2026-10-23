@@ -186,7 +186,7 @@ fn wrap_actions_with_rechecked_guard(
                 | Statement::Guarded { actions, .. }
                 | Statement::Repeat { actions, .. }
                 | Statement::DoWhile { actions, .. }
-            | Statement::ForEachModel { actions, .. }
+                | Statement::ForEachModel { actions, .. }
                 | Statement::LoopContinue { actions, .. } => {
                     *actions = wrap_actions_with_rechecked_guard(
                         std::mem::take(actions),
@@ -235,16 +235,30 @@ pub fn substitute_statement(
     bindings: &HashMap<String, String>,
 ) -> Statement {
     match statement {
-        Statement::ModelDecl { name, resource, options } if options.label.is_some() => {
+        Statement::ModelDecl {
+            name,
+            resource,
+            options,
+        } if options.label.is_some() => {
             let mut options = options.clone();
             if let Some(label) = options.label.as_mut() {
-                label.text = label.text.as_ref().map(|value| substitute_assignment_value(value, bindings));
-                label.transparency = label.transparency.as_ref().map(|value| substitute_assignment_value(value, bindings));
+                label.text = label
+                    .text
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings));
+                label.transparency = label
+                    .transparency
+                    .as_ref()
+                    .map(|value| substitute_assignment_value(value, bindings));
             }
-            Statement::ModelDecl { name: substitute_path(name, bindings), resource: resource.clone(), options }
+            Statement::ModelDecl {
+                name: substitute_path(name, bindings),
+                resource: resource.clone(),
+                options,
+            }
         }
         Statement::Animate(animation) => Statement::Animate(AnimationStatement {
- rewind: animation.rewind.clone(),
+            rewind: animation.rewind.clone(),
             frame_range: animation.frame_range,
             frame_range_name: animation.frame_range_name.clone(),
             target: substitute_path(&animation.target, bindings),
@@ -268,7 +282,10 @@ pub fn substitute_statement(
                 duration_value: substitute_assignment_value(&sprite_play.duration_value, bindings),
                 looped: sprite_play.looped,
                 repeat_count: sprite_play.repeat_count,
-                playback_seconds: sprite_play.playback_seconds.as_ref().map(|v| substitute_assignment_value(v, bindings)),
+                playback_seconds: sprite_play
+                    .playback_seconds
+                    .as_ref()
+                    .map(|v| substitute_assignment_value(v, bindings)),
             })
         }
         Statement::AnimationSpeed(animation_speed) => {
@@ -317,7 +334,11 @@ pub fn substitute_statement(
             duration_value: substitute_assignment_value(&turn.duration_value, bindings),
             easing: turn.easing.as_ref().map(|ease| {
                 let mut ease = ease.clone();
-                ease.params = ease.params.iter().map(|v| substitute_assignment_value(v, bindings)).collect();
+                ease.params = ease
+                    .params
+                    .iter()
+                    .map(|v| substitute_assignment_value(v, bindings))
+                    .collect();
                 ease
             }),
             loop_condition: turn
@@ -335,7 +356,11 @@ pub fn substitute_statement(
             duration_value: substitute_assignment_value(&movement.duration_value, bindings),
             easing: movement.easing.as_ref().map(|ease| {
                 let mut ease = ease.clone();
-                ease.params = ease.params.iter().map(|v| substitute_assignment_value(v, bindings)).collect();
+                ease.params = ease
+                    .params
+                    .iter()
+                    .map(|v| substitute_assignment_value(v, bindings))
+                    .collect();
                 ease
             }),
             loop_condition: movement
@@ -351,7 +376,11 @@ pub fn substitute_statement(
             duration_value: substitute_assignment_value(&move_to.duration_value, bindings),
             easing: move_to.easing.as_ref().map(|ease| {
                 let mut ease = ease.clone();
-                ease.params = ease.params.iter().map(|v| substitute_assignment_value(v, bindings)).collect();
+                ease.params = ease
+                    .params
+                    .iter()
+                    .map(|v| substitute_assignment_value(v, bindings))
+                    .collect();
                 ease
             }),
             async_run: move_to.async_run,
@@ -386,7 +415,10 @@ pub fn substitute_statement(
             target: substitute_path(&attach.target, bindings),
             subject: substitute_path(&attach.subject, bindings),
             offset: attach.offset,
-            offset_value: attach.offset_value.as_ref().map(|v| substitute_position_value(v, bindings)),
+            offset_value: attach
+                .offset_value
+                .as_ref()
+                .map(|v| substitute_position_value(v, bindings)),
             restore_destination_node: attach.restore_destination_node,
         }),
         Statement::CameraAttach(attach) => Statement::CameraAttach(CameraAttachStatement {
@@ -424,7 +456,8 @@ pub fn substitute_statement(
             async_run: jump.async_run,
         }),
         Statement::PhysicsMotion { target, action } => Statement::PhysicsMotion {
-            target: substitute_path(target, bindings), action: action.clone(),
+            target: substitute_path(target, bindings),
+            action: action.clone(),
         },
         Statement::PhysicsImpulse(impulse) => {
             Statement::PhysicsImpulse(scenemax_parser::PhysicsImpulseStatement {
@@ -498,7 +531,10 @@ pub fn substitute_statement(
             })
         }
         Statement::UiEase(ease) => Statement::UiEase(scenemax_parser::UiEaseStatement {
-            target_reference: ease.target_reference.as_ref().map(|name| substitute_reference(name, bindings)),
+            target_reference: ease
+                .target_reference
+                .as_ref()
+                .map(|name| substitute_reference(name, bindings)),
             target: substitute_ui_target_path(&ease.target, bindings),
             easing: ease.easing.clone(),
             direction: ease.direction,
@@ -532,8 +568,11 @@ pub fn substitute_statement(
         Statement::ForEachModel { variable, actions } => {
             let mut inner = bindings.clone();
             inner.remove(variable);
-            Statement::ForEachModel { variable: variable.clone(), actions: substitute_statements(actions, &inner) }
-        },
+            Statement::ForEachModel {
+                variable: variable.clone(),
+                actions: substitute_statements(actions, &inner),
+            }
+        }
         Statement::WaitValue { value } => Statement::WaitValue {
             value: substitute_assignment_value(value, bindings),
         },
@@ -569,10 +608,22 @@ pub fn substitute_statement(
             }
         }
         Statement::AnimationControllerAction(action) => Statement::AnimationControllerAction(
-            scenemax_parser::AnimationControllerActionStatement { rewind: action.rewind.as_ref().map(|r| scenemax_parser::animation_rewind::Request {
-                percent: substitute_assignment_value(&r.percent, bindings), duration: substitute_assignment_value(&r.duration, bindings),
-                easing: r.easing.as_ref().map(|e| { let mut e=e.clone(); e.params=e.params.iter().map(|v| substitute_assignment_value(v,bindings)).collect(); e }),
-            }),
+            scenemax_parser::AnimationControllerActionStatement {
+                rewind: action.rewind.as_ref().map(|r| {
+                    scenemax_parser::animation_rewind::Request {
+                        percent: substitute_assignment_value(&r.percent, bindings),
+                        duration: substitute_assignment_value(&r.duration, bindings),
+                        easing: r.easing.as_ref().map(|e| {
+                            let mut e = e.clone();
+                            e.params = e
+                                .params
+                                .iter()
+                                .map(|v| substitute_assignment_value(v, bindings))
+                                .collect();
+                            e
+                        }),
+                    }
+                }),
                 controller: substitute_path(&action.controller, bindings),
                 action: action.action,
             },
@@ -589,12 +640,44 @@ pub fn substitute_statement(
             use scenemax_parser::network::NetworkStatement as N;
             let expr = |s: &str| substitute_reference(s, bindings);
             Statement::Network(match command {
-                N::EntityData {target,field,value} => N::EntityData {target:substitute_path(target,bindings),field:field.clone(),value:expr(value)},
-                N::Variable {name,value} => N::Variable {name:substitute_path(name,bindings),value:expr(value)},
-                N::Broadcast {event,message} => N::Broadcast {event:expr(event),message:message.as_deref().map(expr)},
-                N::Send {recipient,event,message} => N::Send {recipient:recipient.as_deref().map(|s|substitute_path(s,bindings)),event:expr(event),message:message.as_deref().map(expr)},
-                N::JoinSession {value} => N::JoinSession {value:expr(value)},
-                N::On {handler_id,event,argument,actions} => N::On {handler_id:*handler_id,event:expr(event),argument:argument.as_deref().map(expr),actions:substitute_statements(actions,bindings)},
+                N::EntityData {
+                    target,
+                    field,
+                    value,
+                } => N::EntityData {
+                    target: substitute_path(target, bindings),
+                    field: field.clone(),
+                    value: expr(value),
+                },
+                N::Variable { name, value } => N::Variable {
+                    name: substitute_path(name, bindings),
+                    value: expr(value),
+                },
+                N::Broadcast { event, message } => N::Broadcast {
+                    event: expr(event),
+                    message: message.as_deref().map(expr),
+                },
+                N::Send {
+                    recipient,
+                    event,
+                    message,
+                } => N::Send {
+                    recipient: recipient.as_deref().map(|s| substitute_path(s, bindings)),
+                    event: expr(event),
+                    message: message.as_deref().map(expr),
+                },
+                N::JoinSession { value } => N::JoinSession { value: expr(value) },
+                N::On {
+                    handler_id,
+                    event,
+                    argument,
+                    actions,
+                } => N::On {
+                    handler_id: *handler_id,
+                    event: expr(event),
+                    argument: argument.as_deref().map(expr),
+                    actions: substitute_statements(actions, bindings),
+                },
             })
         }
         Statement::Ik(command) => {
@@ -671,7 +754,11 @@ pub fn substitute_logger_message(
                 arg.parse::<f32>()
                     .ok()
                     .map(|value| LoggerMessage::Value(AssignmentValue::Number(value)))
-                    .or_else(|| Some(LoggerMessage::Text(serde_json::from_str::<String>(arg).unwrap_or_else(|_| arg.clone()))))
+                    .or_else(|| {
+                        Some(LoggerMessage::Text(
+                            serde_json::from_str::<String>(arg).unwrap_or_else(|_| arg.clone()),
+                        ))
+                    })
             })
             .unwrap_or_else(|| {
                 LoggerMessage::Value(substitute_assignment_value(
@@ -747,7 +834,9 @@ pub fn substitute_move_to_destination(
     bindings: &HashMap<String, String>,
 ) -> scenemax_parser::MoveToDestination {
     match destination {
-        scenemax_parser::MoveToDestination::Delta(position) => scenemax_parser::MoveToDestination::Delta(substitute_position_value(position, bindings)),
+        scenemax_parser::MoveToDestination::Delta(position) => {
+            scenemax_parser::MoveToDestination::Delta(substitute_position_value(position, bindings))
+        }
         scenemax_parser::MoveToDestination::Position(position) => {
             scenemax_parser::MoveToDestination::Position(substitute_position_value(
                 position, bindings,
@@ -854,15 +943,29 @@ pub fn substitute_assignment_value(
             AssignmentValue::ArrayEdit {
                 source: Box::new(substitute_assignment_value(source, bindings)),
                 operation: match operation {
-                    ArrayOperation::Push(v) => ArrayOperation::Push(Box::new(substitute_assignment_value(v, bindings))),
-                    ArrayOperation::Reset(v) => ArrayOperation::Reset(Box::new(substitute_assignment_value(v, bindings))),
+                    ArrayOperation::Push(v) => {
+                        ArrayOperation::Push(Box::new(substitute_assignment_value(v, bindings)))
+                    }
+                    ArrayOperation::Reset(v) => {
+                        ArrayOperation::Reset(Box::new(substitute_assignment_value(v, bindings)))
+                    }
                     other => other.clone(),
                 },
             }
         }
-        AssignmentValue::Json(value) => AssignmentValue::Json(Box::new(substitute_assignment_value(value,bindings))),
-        AssignmentValue::Array(values) => AssignmentValue::Array(values.iter().map(|v| substitute_assignment_value(v, bindings)).collect()),
-        AssignmentValue::Access {value,index} => AssignmentValue::Access { value: Box::new(substitute_assignment_value(value,bindings)), index: Box::new(substitute_assignment_value(index,bindings)) },
+        AssignmentValue::Json(value) => {
+            AssignmentValue::Json(Box::new(substitute_assignment_value(value, bindings)))
+        }
+        AssignmentValue::Array(values) => AssignmentValue::Array(
+            values
+                .iter()
+                .map(|v| substitute_assignment_value(v, bindings))
+                .collect(),
+        ),
+        AssignmentValue::Access { value, index } => AssignmentValue::Access {
+            value: Box::new(substitute_assignment_value(value, bindings)),
+            index: Box::new(substitute_assignment_value(index, bindings)),
+        },
         AssignmentValue::Number(value) => AssignmentValue::Number(*value),
         AssignmentValue::CameraModifier(value) => AssignmentValue::CameraModifier(value.clone()),
         AssignmentValue::Condition(condition) => {
@@ -873,11 +976,21 @@ pub fn substitute_assignment_value(
         }
         AssignmentValue::AnimationController(value) => {
             AssignmentValue::AnimationController(AnimationControllerValue {
-                subsequent: value.subsequent.iter().map(|animation| match substitute_statement(&Statement::Animate(animation.clone()), bindings) {
-                    Statement::Animate(animation) => animation,
-                    _ => unreachable!(),
-                }).collect(),
-                animation: match substitute_statement(&Statement::Animate((*value.animation).clone()), bindings) {
+                subsequent: value
+                    .subsequent
+                    .iter()
+                    .map(|animation| {
+                        match substitute_statement(&Statement::Animate(animation.clone()), bindings)
+                        {
+                            Statement::Animate(animation) => animation,
+                            _ => unreachable!(),
+                        }
+                    })
+                    .collect(),
+                animation: match substitute_statement(
+                    &Statement::Animate((*value.animation).clone()),
+                    bindings,
+                ) {
                     Statement::Animate(animation) => Box::new(animation),
                     _ => unreachable!(),
                 },
@@ -887,7 +1000,10 @@ pub fn substitute_assignment_value(
         }
         AssignmentValue::Call { name, args } => AssignmentValue::Call {
             name: name.clone(),
-            args: args.iter().map(|arg| substitute_assignment_value(arg, bindings)).collect(),
+            args: args
+                .iter()
+                .map(|arg| substitute_assignment_value(arg, bindings))
+                .collect(),
         },
         AssignmentValue::RandomInt { max } => AssignmentValue::RandomInt {
             max: Box::new(substitute_assignment_value(max, bindings)),
@@ -1074,13 +1190,24 @@ mod tests {
     #[test]
     fn array_command_function_arguments_keep_typed_values() {
         use super::*;
-        let program = scenemax_parser::parse_program("append(value) = {\n items.push(value)\n items.reset(value)\n}").unwrap();
+        let program = scenemax_parser::parse_program(
+            "append(value) = {\n items.push(value)\n items.reset(value)\n}",
+        )
+        .unwrap();
         let functions = collect_functions_by_name(&program);
         let actions = instantiate_function_actions(&functions["append"], &["\"a,b\"".into()]);
         for action in actions {
-            let Statement::Assignment(a) = action else { panic!("assignment") };
-            let AssignmentValue::ArrayEdit { operation, .. } = a.value else { panic!("array edit") };
-            let (scenemax_parser::ArrayOperation::Push(value) | scenemax_parser::ArrayOperation::Reset(value)) = operation else { panic!("operand") };
+            let Statement::Assignment(a) = action else {
+                panic!("assignment")
+            };
+            let AssignmentValue::ArrayEdit { operation, .. } = a.value else {
+                panic!("array edit")
+            };
+            let (scenemax_parser::ArrayOperation::Push(value)
+            | scenemax_parser::ArrayOperation::Reset(value)) = operation
+            else {
+                panic!("operand")
+            };
             assert_eq!(*value, AssignmentValue::Literal(serde_json::json!("a,b")));
         }
     }
@@ -1095,7 +1222,7 @@ mod tests {
         assert_eq!(
             animations.get("d"),
             Some(&AnimationStatement {
- rewind: None,
+                rewind: None,
                 frame_range: None,
                 frame_range_name: None,
                 target: "d".to_owned(),
@@ -1135,7 +1262,7 @@ mod tests {
     #[test]
     fn nested_branch_continuation_keeps_ai_parent_tail_after_blocking_action() {
         let branch_actions = vec![Statement::Animate(AnimationStatement {
- rewind: None,
+            rewind: None,
             frame_range: None,
             frame_range_name: None,
             target: "player2".to_owned(),
@@ -1164,7 +1291,7 @@ mod tests {
                     value: 0.0,
                 },
                 actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                    rewind: None,
                     frame_range: None,
                     frame_range_name: None,
                     target: "player2".to_owned(),
@@ -1246,7 +1373,7 @@ mod tests {
                         value: 0.0,
                     },
                     actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player2".to_owned(),
@@ -1277,18 +1404,32 @@ mod tests {
 
     #[test]
     fn quoted_resource_names_do_not_substitute_function_bindings() {
-        let program = parse_program("target.material = \"surface\"\ntarget.shader = \"surface\"\ntarget.ik = \"surface\"").unwrap();
-        let bindings = HashMap::from([("target".into(), "instance".into()), ("surface".into(), "replacement".into())]);
+        let program = parse_program(
+            "target.material = \"surface\"\ntarget.shader = \"surface\"\ntarget.ik = \"surface\"",
+        )
+        .unwrap();
+        let bindings = HashMap::from([
+            ("target".into(), "instance".into()),
+            ("surface".into(), "replacement".into()),
+        ]);
         for statement in &program.statements {
             let resolved = substitute_statement(statement, &bindings);
             let (target, value) = match &resolved {
                 Statement::SetMaterial(a) => (&a.target, &a.material),
                 Statement::SetShader(a) => (&a.target, &a.shader),
-                Statement::Ik(a) => (&a.owner, match &a.action { scenemax_parser::ik::IkAction::Apply(value) => value, _ => panic!() }),
+                Statement::Ik(a) => (
+                    &a.owner,
+                    match &a.action {
+                        scenemax_parser::ik::IkAction::Apply(value) => value,
+                        _ => panic!(),
+                    },
+                ),
                 _ => panic!(),
             };
             assert_eq!(target, "instance");
-            assert!(matches!(value, AssignmentValue::Literal(serde_json::Value::String(name)) if name == "surface"));
+            assert!(
+                matches!(value, AssignmentValue::Literal(serde_json::Value::String(name)) if name == "surface")
+            );
         }
     }
 
@@ -1321,12 +1462,16 @@ mod tests {
     #[test]
     fn substitutes_physics_body_function_argument() {
         let program = parse_program("launch(item) = {\nitem.physics velocity (0,4,8)\nitem.physics torque (0,2,0) impulse\n}").unwrap();
-        let functions=collect_functions_by_name(&program);
-        let actions=instantiate_function_actions(functions.get("launch").unwrap(), &["sample_body".into()]);
-        assert!(actions.iter().all(|s|matches!(s,Statement::PhysicsMotion{target,..} if target=="sample_body")));
-        assert_eq!(actions.len(),2);
+        let functions = collect_functions_by_name(&program);
+        let actions =
+            instantiate_function_actions(functions.get("launch").unwrap(), &["sample_body".into()]);
+        assert!(
+            actions
+                .iter()
+                .all(|s| matches!(s,Statement::PhysicsMotion{target,..} if target=="sample_body"))
+        );
+        assert_eq!(actions.len(), 2);
     }
-
 }
 
 #[cfg(test)]
@@ -1335,26 +1480,55 @@ mod controller_substitution_tests {
     #[test]
     fn controller_function_arguments_reach_animation_speed_and_target() {
         let p = scenemax_parser::parse_program("control = animation subject.take[1.5-75%] at speed of rate then other[2-4] at speed of rate").unwrap();
-        let statement = substitute_statement(&p.statements[0], &HashMap::from([("subject".into(),"instance".into()),("rate".into(),"0.25".into())]));
-        let Statement::Assignment(a) = statement else { panic!(); };
-        let AssignmentValue::AnimationController(c) = a.value else { panic!(); };
-        assert_eq!(c.target, "instance"); assert_eq!(c.animation.target, "instance");
+        let statement = substitute_statement(
+            &p.statements[0],
+            &HashMap::from([
+                ("subject".into(), "instance".into()),
+                ("rate".into(), "0.25".into()),
+            ]),
+        );
+        let Statement::Assignment(a) = statement else {
+            panic!();
+        };
+        let AssignmentValue::AnimationController(c) = a.value else {
+            panic!();
+        };
+        assert_eq!(c.target, "instance");
+        assert_eq!(c.animation.target, "instance");
         assert_eq!(c.animation.speed_value, AssignmentValue::Number(0.25));
         assert_eq!(c.animation.frame_range.unwrap().start.value, 1.5);
-        assert_eq!(c.subsequent[0].target,"instance");
-        assert_eq!(c.subsequent[0].speed_value,AssignmentValue::Number(0.25));
+        assert_eq!(c.subsequent[0].target, "instance");
+        assert_eq!(c.subsequent[0].speed_value, AssignmentValue::Number(0.25));
     }
 }
 
 #[cfg(test)]
 mod rewind_substitution_tests {
- use super::*;
- #[test]
- fn rewind_request_substitutes_controller_time_percent_and_ease_params() {
- let p=scenemax_parser::parse_program("controller.rewind amount in seconds_count seconds ease out \"Back\" (overshoot)").unwrap();
- let statement=substitute_statement(&p.statements[0],&HashMap::from([("controller".into(),"local_control".into()),("amount".into(),"30".into()),("seconds_count".into(),"4".into()),("overshoot".into(),"2".into())]));
- let Statement::AnimationControllerAction(a)=statement else{panic!()};assert_eq!(a.controller,"local_control");let r=a.rewind.unwrap();assert_eq!(r.percent,AssignmentValue::Number(30.));assert_eq!(r.duration,AssignmentValue::Number(4.));assert_eq!(r.easing.unwrap().params,vec![AssignmentValue::Number(2.)]);
- }
+    use super::*;
+    #[test]
+    fn rewind_request_substitutes_controller_time_percent_and_ease_params() {
+        let p = scenemax_parser::parse_program(
+            "controller.rewind amount in seconds_count seconds ease out \"Back\" (overshoot)",
+        )
+        .unwrap();
+        let statement = substitute_statement(
+            &p.statements[0],
+            &HashMap::from([
+                ("controller".into(), "local_control".into()),
+                ("amount".into(), "30".into()),
+                ("seconds_count".into(), "4".into()),
+                ("overshoot".into(), "2".into()),
+            ]),
+        );
+        let Statement::AnimationControllerAction(a) = statement else {
+            panic!()
+        };
+        assert_eq!(a.controller, "local_control");
+        let r = a.rewind.unwrap();
+        assert_eq!(r.percent, AssignmentValue::Number(30.));
+        assert_eq!(r.duration, AssignmentValue::Number(4.));
+        assert_eq!(r.easing.unwrap().params, vec![AssignmentValue::Number(2.)]);
+    }
 }
 
 #[cfg(test)]
@@ -1362,11 +1536,20 @@ mod value_call_substitution_tests {
     use super::*;
     #[test]
     fn parameters_substitute_inside_nested_calls_without_renaming_callees() {
-        let value = scenemax_parser::parse_assignment_value("construct(amount, wrap(label))[index]").unwrap().unwrap();
-        let bindings = HashMap::from([("amount".into(), "3".into()), ("label".into(), "\"value\"".into()),
-            ("index".into(), "1".into()), ("construct".into(), "wrong".into())]);
+        let value =
+            scenemax_parser::parse_assignment_value("construct(amount, wrap(label))[index]")
+                .unwrap()
+                .unwrap();
+        let bindings = HashMap::from([
+            ("amount".into(), "3".into()),
+            ("label".into(), "\"value\"".into()),
+            ("index".into(), "1".into()),
+            ("construct".into(), "wrong".into()),
+        ]);
         let actual = substitute_assignment_value(&value, &bindings);
-        let expected = scenemax_parser::parse_assignment_value("construct(3, wrap(\"value\"))[1]").unwrap().unwrap();
+        let expected = scenemax_parser::parse_assignment_value("construct(3, wrap(\"value\"))[1]")
+            .unwrap()
+            .unwrap();
         assert_eq!(actual, expected);
     }
 }

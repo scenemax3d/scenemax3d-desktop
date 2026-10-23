@@ -89,6 +89,30 @@ pub struct Platform {
     pub channel: String,
 }
 
+/// Customizable browser loading screen, saved with deployment settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebLoading {
+    /// Optional PNG or JPEG, relative to the project or absolute.
+    pub background: String,
+    /// Main heading.
+    pub header: String,
+    /// Label displayed with file download progress.
+    pub message: String,
+    /// Smaller text below the progress bar; may be empty.
+    pub footer: String,
+}
+impl Default for WebLoading {
+    fn default() -> Self {
+        Self {
+            background: String::new(),
+            header: "Loading game".into(),
+            message: "Loading files".into(),
+            footer: "powered by SceneMax3D".into(),
+        }
+    }
+}
+
 /// Serializable non-secret package form.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -115,10 +139,13 @@ pub struct Settings {
     pub butler: String,
     /// All six target configurations.
     pub platforms: Vec<Platform>,
+    /// Browser loading screen appearance.
+    pub web_loading: WebLoading,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            web_loading: WebLoading::default(),
             name: "game".into(),
             version: "1.0.0".into(),
             output: String::new(),

@@ -11,8 +11,8 @@ pub(crate) use commands::{Command, CommandQueue, execute_commands};
 pub(crate) use jobs::{EditorServices, poll_jobs};
 pub(crate) use session::{Session, ViewChange};
 
-pub(crate) mod deployment;
 pub(crate) mod build_configuration;
+pub(crate) mod deployment;
 pub(crate) mod symbols;
 
 pub(crate) mod material;

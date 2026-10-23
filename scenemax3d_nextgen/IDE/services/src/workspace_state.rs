@@ -99,6 +99,9 @@ pub fn save(
     state: &WorkspaceState,
     last_project: Option<&Path>,
 ) -> Result<(), ServiceError> {
+    if is_installation_root(root) {
+        return Ok(());
+    }
     let project = Project::new(root.to_owned(), vec![]);
     let folder = root.join(".scenemax-studio");
     if folder.exists() {
@@ -150,8 +153,26 @@ pub fn restore(project: &Project) -> Option<(Vec<Document>, Option<PathBuf>)> {
         .filter(|p| docs.iter().any(|d| d.path() == p));
     Some((docs, active))
 }
-/// Application-wide state file, shared by launches with or without an explicit project.
+/// Identify the program directory, which must not become an implicit project.
+pub fn is_installation_root(root: &Path) -> bool {
+    root.join(".scenemax-studio-installation").is_file()
+}
+/// Locate the installed distribution independently of the working directory.
+pub fn installation_root() -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    installed_history_root(&executable)
+}
+fn installed_history_root(executable: &Path) -> Option<PathBuf> {
+    executable
+        .parent()
+        .filter(|p| is_installation_root(p))
+        .map(Path::to_owned)
+}
+/// Installed copies keep navigation history separate from development launches.
 pub fn last_project_file() -> Option<PathBuf> {
+    if let Some(root) = installation_root() {
+        return Some(root.join("user-state/last-project.json"));
+    }
     #[cfg(windows)]
     let root = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     #[cfg(not(windows))]
@@ -164,7 +185,7 @@ pub fn last_project_file() -> Option<PathBuf> {
 pub fn last_project(path: &Path) -> Option<PathBuf> {
     read_json::<PathBuf>(path)
         .ok()
-        .filter(|p| p.is_absolute() && p.is_dir())
+        .filter(|p| p.is_absolute() && p.is_dir() && !is_installation_root(p))
 }
 
 /// Relaunch the IDE after the previous UI has shut down. Arguments are never shell-interpreted.
@@ -175,7 +196,9 @@ pub fn restart(
     projector: Option<&Path>,
 ) -> Result<(), ServiceError> {
     let mut command = std::process::Command::new(executable);
-    command.arg("--project-root").arg(root);
+    if !is_installation_root(root) {
+        command.arg("--project-root").arg(root);
+    }
     if let Some(path) = catalog {
         command.arg("--project-catalog").arg(path);
     }
@@ -189,6 +212,30 @@ pub fn restart(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn installed_history_is_separate_and_empty_root_is_not_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let installed = dir.path().join("installed");
+        fs::create_dir(&installed).unwrap();
+        let exe = installed.join("scenemax_ide.exe");
+        assert_eq!(installed_history_root(&exe), None);
+        fs::write(installed.join(".scenemax-studio-installation"), "1").unwrap();
+        assert_eq!(installed_history_root(&exe), Some(installed.clone()));
+        let history = installed.join("user-state/last-project.json");
+        let state = WorkspaceState {
+            version: 1,
+            tabs: vec![],
+            active: None,
+        };
+        save(&installed, &state, Some(&history)).unwrap();
+        assert!(!history.exists());
+        let project = dir.path().join("project");
+        fs::create_dir(&project).unwrap();
+        save(&project, &state, Some(&history)).unwrap();
+        assert_eq!(last_project(&history), Some(project));
+        assert!(!installed.join(".scenemax-studio").exists());
+    }
+
     #[test]
     fn restores_tab_order_active_file_and_unicode_selection_without_saving_edits() {
         let dir = tempfile::tempdir().unwrap();

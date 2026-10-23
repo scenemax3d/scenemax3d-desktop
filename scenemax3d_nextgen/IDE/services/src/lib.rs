@@ -3,12 +3,12 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
-mod catalog;
 pub mod build_configuration;
+mod catalog;
 mod diagnostics;
 mod filesystem;
-mod projector;
 pub mod multiplayer;
+mod projector;
 mod recovery;
 mod runtime_log;
 mod scene_save;

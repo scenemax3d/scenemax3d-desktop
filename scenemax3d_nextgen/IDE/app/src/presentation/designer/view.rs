@@ -356,8 +356,16 @@ fn draw_visual(
             let image = server.load(path);
             if visual.text {
                 for (index, (source, dest)) in visual.quads.iter().enumerate() {
-                    let Some(page) = visual.glyph_pages.get(index).and_then(|id|visual.pages.get(id)) else {continue;};
-                    let Some(path) = assets.asset(&visual.root,page) else {continue;};
+                    let Some(page) = visual
+                        .glyph_pages
+                        .get(index)
+                        .and_then(|id| visual.pages.get(id))
+                    else {
+                        continue;
+                    };
+                    let Some(path) = assets.asset(&visual.root, page) else {
+                        continue;
+                    };
                     let glyph_image = server.load(path);
                     let glyph = commands
                         .spawn((
@@ -454,7 +462,13 @@ pub(super) fn update_preview(
             .entity(rendered.hidden_frame)
             .insert(hidden::node(!w.visible));
         let same_visual = match (&w.visual, &old.visual) {
-            (Some(a), Some(b)) => a.path == b.path && a.quads == b.quads && a.text == b.text && a.pages == b.pages && a.glyph_pages == b.glyph_pages,
+            (Some(a), Some(b)) => {
+                a.path == b.path
+                    && a.quads == b.quads
+                    && a.text == b.text
+                    && a.pages == b.pages
+                    && a.glyph_pages == b.glyph_pages
+            }
             (None, None) => true,
             _ => false,
         };

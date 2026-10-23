@@ -1,17 +1,103 @@
 use super::*;
 use std::{fs, sync::atomic::AtomicBool};
 #[test]
+fn temporary_export_does_not_replace_saved_publishing_preferences() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("scripts")).unwrap();
+    fs::write(root.path().join("scripts/main"), "print \"fixture\"").unwrap();
+    let mut settings = Settings::default();
+    settings.itch_page = "https://example.itch.io/game".into();
+    settings.butler = "tools/butler.exe".into();
+    files::save_settings(root.path(), &settings).unwrap();
+    let path = root.path().join(".scenemax-studio/deployment.json");
+    let before = fs::read(&path).unwrap();
+    let request = Request {
+        project: root.path().into(),
+        entry: root.path().join("scripts/main"),
+        workspace: workspace(),
+        settings: Settings::default(),
+    };
+    assert!(pipeline::build_temporary(&request, &context()).is_err());
+    assert_eq!(fs::read(path).unwrap(), before);
+}
+#[test]
 fn effect_folder_declaration_selects_binary_and_sidecars_without_catalog() {
     let project = workspace().join("Tests/fixtures/web_effects/project");
     let root = tempfile::tempdir().unwrap();
     let output = root.path().join("snapshot");
     let request = Request {
-        entry: project.join("scripts/main"), project, workspace: workspace(),
+        entry: project.join("scripts/main"),
+        project,
+        workspace: workspace(),
         settings: Default::default(),
     };
-    assets::snapshot(&request, &output, &root.path().join("size.json"), &context()).unwrap();
-    assert!(output.join("resources/effects/fixture/effect.efkefc").is_file());
-    assert!(output.join("resources/effects/fixture/Texture/Particle01.png").is_file());
+    assets::snapshot(
+        &request,
+        &output,
+        &root.path().join("size.json"),
+        &context(),
+    )
+    .unwrap();
+    assert!(
+        output
+            .join("resources/effects/fixture/effect.efkefc")
+            .is_file()
+    );
+    assert!(
+        output
+            .join("resources/effects/fixture/Texture/Particle01.png")
+            .is_file()
+    );
+}
+
+#[test]
+fn effects_select_only_declared_runtime_dependencies_and_reject_missing_ones() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("project");
+    files::tree(
+        &workspace().join("Tests/fixtures/web_distortion/project"),
+        &project,
+        &context(),
+    )
+    .unwrap();
+    let effect = project.join("resources/effects/screen_warp");
+    fs::write(effect.join("unused.efkproj"), b"editor data").unwrap();
+    fs::write(effect.join("Texture/unused.png"), b"unused texture").unwrap();
+    let request = Request {
+        entry: project.join("scripts/main"),
+        project,
+        workspace: workspace(),
+        settings: Default::default(),
+    };
+    let output = root.path().join("snapshot");
+    assets::snapshot(
+        &request,
+        &output,
+        &root.path().join("size.json"),
+        &context(),
+    )
+    .unwrap();
+    let exported = output.join("resources/effects/screen_warp");
+    assert!(!exported.join("unused.efkproj").exists());
+    assert!(!exported.join("Texture/unused.png").exists());
+    let refs = crate::imports::effect::references(&fs::read(effect.join("effect.efkefc")).unwrap())
+        .unwrap();
+    assert!(!refs.is_empty());
+    for (_, path) in &refs {
+        assert!(exported.join(path).is_file(), "{path}");
+    }
+    fs::remove_file(effect.join(&refs[0].1)).unwrap();
+    let error = assets::snapshot(
+        &request,
+        &root.path().join("missing"),
+        &root.path().join("missing.json"),
+        &context(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("Missing effect dependency"),
+        "{error}"
+    );
 }
 
 #[test]

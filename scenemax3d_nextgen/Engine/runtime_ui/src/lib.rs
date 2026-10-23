@@ -846,9 +846,19 @@ mod tests {
     }
 }
 
-fn default_list_columns() -> usize { 3 }
-fn default_no_selection() -> i32 { -1 }
+fn default_list_columns() -> usize {
+    3
+}
+fn default_no_selection() -> i32 {
+    -1
+}
 
-fn default_edit_background()->String { "#20242AFF".into() }
-fn default_edit_focused()->String { "#2A303AFF".into() }
-fn default_edit_selection()->String { "#4A90E280".into() }
+fn default_edit_background() -> String {
+    "#20242AFF".into()
+}
+fn default_edit_focused() -> String {
+    "#2A303AFF".into()
+}
+fn default_edit_selection() -> String {
+    "#4A90E280".into()
+}

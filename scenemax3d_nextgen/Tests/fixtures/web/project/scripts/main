@@ -1,0 +1,4 @@
+camera.pos(0,0,15)
+camera.rotate(0,180,0)
+add "scene.code" Code
+sys.print "SCENEMAX_WEB_SMOKE_READY"

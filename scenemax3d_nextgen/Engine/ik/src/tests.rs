@@ -286,20 +286,48 @@ fn authored_influence_does_not_shorten_activation_or_release_blends() {
     for authored in [0.25, 0.5, 1.] {
         let (mut app, owner, _, _, _, _) = fixture(1.);
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
-            std::time::Duration::from_millis(100)));
+            std::time::Duration::from_millis(100),
+        ));
         {
             let mut rig = app.world_mut().get_mut::<Rig>(owner).unwrap();
             rig.definition["layers"][0]["weight"] = json!(authored);
             rig.definition["layers"][0]["blendTime"] = json!(1.);
         }
         app.update();
-        for _ in 0..5 { app.update(); }
-        assert!((app.world().get::<Rig>(owner).unwrap().runtime_weight("contact") - 0.5).abs() < 0.001);
-        app.world_mut().get_mut::<Rig>(owner).unwrap().definition["layers"][0]["enabled"] = json!(false);
+        for _ in 0..5 {
+            app.update();
+        }
+        assert!(
+            (app.world()
+                .get::<Rig>(owner)
+                .unwrap()
+                .runtime_weight("contact")
+                - 0.5)
+                .abs()
+                < 0.001
+        );
+        app.world_mut().get_mut::<Rig>(owner).unwrap().definition["layers"][0]["enabled"] =
+            json!(false);
         app.update();
-        assert!((app.world().get::<Rig>(owner).unwrap().runtime_weight("contact") - 0.4).abs() < 0.001);
-        for _ in 0..5 { app.update(); }
-        assert_eq!(app.world().get::<Rig>(owner).unwrap().runtime_weight("contact"), 0.);
+        assert!(
+            (app.world()
+                .get::<Rig>(owner)
+                .unwrap()
+                .runtime_weight("contact")
+                - 0.4)
+                .abs()
+                < 0.001
+        );
+        for _ in 0..5 {
+            app.update();
+        }
+        assert_eq!(
+            app.world()
+                .get::<Rig>(owner)
+                .unwrap()
+                .runtime_weight("contact"),
+            0.
+        );
     }
 }
 

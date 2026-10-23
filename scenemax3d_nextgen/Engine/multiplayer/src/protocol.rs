@@ -83,7 +83,11 @@ pub struct Session {
 /// Outbound packets. Entity creation request IDs make retries idempotent on Zig.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Outgoing {
-    ActionEndReceipt { entity: u32, slot: u8, sequence: u16 },
+    ActionEndReceipt {
+        entity: u32,
+        slot: u8,
+        sequence: u16,
+    },
     Login(Login),
     Heartbeat,
     Disconnect,
@@ -139,7 +143,11 @@ pub enum Outgoing {
 /// elapsed time and can contain the same entity in multiple datagrams.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Incoming {
-    ActionEndReceipt { entity: u32, slot: u8, sequence: u16 },
+    ActionEndReceipt {
+        entity: u32,
+        slot: u8,
+        sequence: u16,
+    },
     Accepted {
         client: u16,
         session: u32,
@@ -255,7 +263,12 @@ pub fn encode(client: u16, message: &Outgoing) -> Result<Vec<u8>, Error> {
             w.u32(action.duration_ms);
             w.fixed(&action.command, 192)?;
         }
-        Outgoing::ActionEndReceipt { entity, slot, sequence } | Outgoing::ActionEnd {
+        Outgoing::ActionEndReceipt {
+            entity,
+            slot,
+            sequence,
+        }
+        | Outgoing::ActionEnd {
             entity,
             slot,
             sequence,
@@ -364,14 +377,22 @@ pub fn decode(packet: &[u8], local_client: u16) -> Result<(u16, Incoming), Error
             let slot = r.byte()?;
             r.byte()?;
             let sequence = r.u16()?;
-            if slot == 0 { return Err(Error::Invalid("zero action end slot")); }
+            if slot == 0 {
+                return Err(Error::Invalid("zero action end slot"));
+            }
             if header.packet_type == ACTION_END_RECEIPT {
-                Incoming::ActionEndReceipt { entity, slot, sequence }
-            } else { Incoming::ActionEnd {
-                entity,
-                slot,
-                sequence,
-            } }
+                Incoming::ActionEndReceipt {
+                    entity,
+                    slot,
+                    sequence,
+                }
+            } else {
+                Incoming::ActionEnd {
+                    entity,
+                    slot,
+                    sequence,
+                }
+            }
         }
         NETWORK_EVENT => {
             let bytes = r.take(r.0.len())?;

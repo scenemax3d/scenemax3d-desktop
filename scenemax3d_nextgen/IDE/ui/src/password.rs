@@ -129,8 +129,12 @@ fn keyboard(
             field.cursor = match event.input.key_code {
                 KeyCode::Home => 0,
                 KeyCode::End => length,
-                KeyCode::ArrowLeft if !shift && field.cursor != field.anchor => field.cursor.min(field.anchor),
-                KeyCode::ArrowRight if !shift && field.cursor != field.anchor => field.cursor.max(field.anchor),
+                KeyCode::ArrowLeft if !shift && field.cursor != field.anchor => {
+                    field.cursor.min(field.anchor)
+                }
+                KeyCode::ArrowRight if !shift && field.cursor != field.anchor => {
+                    field.cursor.max(field.anchor)
+                }
                 KeyCode::ArrowLeft => field.cursor.saturating_sub(1),
                 _ => (field.cursor + 1).min(length),
             };
@@ -140,7 +144,9 @@ fn keyboard(
         }
         _ if !control => {
             if let Some(value) = &event.input.text {
-                if value.chars().any(|c| !c.is_control()) { field.replace(value); }
+                if value.chars().any(|c| !c.is_control()) {
+                    field.replace(value);
+                }
             }
         }
         _ => {}
@@ -172,14 +178,35 @@ mod tests {
         use bevy::input::keyboard::Key;
         use bevy::input_focus::{FocusCause, InputFocusPlugin};
         let mut app = App::new();
-        app.add_plugins((bevy::input::InputPlugin, InputFocusPlugin, bevy::input_focus::InputDispatchPlugin, bevy::clipboard::ClipboardPlugin));
+        app.add_plugins((
+            bevy::input::InputPlugin,
+            InputFocusPlugin,
+            bevy::input_focus::InputDispatchPlugin,
+            bevy::clipboard::ClipboardPlugin,
+        ));
         app.add_systems(Update, render);
-        let window = app.world_mut().spawn((Window::default(), bevy::window::PrimaryWindow)).id();
-        let field = app.world_mut().spawn((Password::default(), Text::default(), BackgroundColor(BG))).observe(keyboard).id();
+        let window = app
+            .world_mut()
+            .spawn((Window::default(), bevy::window::PrimaryWindow))
+            .id();
+        let field = app
+            .world_mut()
+            .spawn((Password::default(), Text::default(), BackgroundColor(BG)))
+            .observe(keyboard)
+            .id();
         app.update();
-        app.world_mut().resource_mut::<InputFocus>().set(field, FocusCause::Navigated);
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(field, FocusCause::Navigated);
         let send = |app: &mut App, key_code, logical_key, text: &str| {
-            app.world_mut().write_message(KeyboardInput { key_code, logical_key, text: Some(text.into()), state: ButtonState::Pressed, repeat: false, window });
+            app.world_mut().write_message(KeyboardInput {
+                key_code,
+                logical_key,
+                text: Some(text.into()),
+                state: ButtonState::Pressed,
+                repeat: false,
+                window,
+            });
             app.update();
         };
         send(&mut app, KeyCode::Enter, Key::Enter, "\r");

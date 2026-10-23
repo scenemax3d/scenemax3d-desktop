@@ -93,7 +93,9 @@ pub(super) fn check(request: &Request, context: &Context) -> io::Result<()> {
         context.check()?;
         let result = if platform.target.desktop() {
             if !available(&crate::build_configuration::cargo_path()) {
-                Err(io::Error::other("Open File > Settings > Build Configuration to detect or install Rust/Cargo."))
+                Err(io::Error::other(
+                    "Open File > Settings > Build Configuration to detect or install Rust/Cargo.",
+                ))
             } else if !platform.runtime.is_empty() {
                 files::native_binary(Path::new(&platform.runtime), platform.target)
             } else if request.settings.native_effects && platform.target != Target::Windows {
@@ -173,7 +175,9 @@ fn cargo(
     let mut command = Command::new(crate::build_configuration::cargo_path());
     crate::build_configuration::prepare(&mut command);
     if package != "scenemax_game_launcher" {
-        context.log("Checking engine source and dependencies with Cargo; unchanged builds are reused.\n");
+        context.log(
+            "Checking engine source and dependencies with Cargo; unchanged builds are reused.\n",
+        );
     }
     command
         .current_dir(&request.workspace)
@@ -243,12 +247,15 @@ fn release_has_effects(release: &Path, package: &str) -> bool {
         })
 }
 pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
+    files::save_settings(&request.project, &request.settings)?;
+    build_temporary(request, context)
+}
+pub(super) fn build_temporary(request: &Request, context: &Context) -> io::Result<()> {
     let started = std::time::Instant::now();
     let mut rooted_request = request.clone();
     rooted_request.entry = assets::root_entry(&request.project.canonicalize()?, context)?;
     let request = &rooted_request;
     check(request, context)?;
-    files::save_settings(&request.project, &request.settings)?;
     let output = PathBuf::from(&request.settings.output);
     fs::create_dir_all(&output)?;
     let output = output.canonicalize()?;
@@ -286,7 +293,8 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
     let entry = canonical_entry
         .strip_prefix(&project)
         .map_err(io::Error::other)?;
-    crate::multiplayer::embed_settings(&project, &snapshot.join(entry)).map_err(io::Error::other)?;
+    crate::multiplayer::embed_settings(&project, &snapshot.join(entry))
+        .map_err(io::Error::other)?;
     let entry = entry
         .to_str()
         .ok_or_else(|| io::Error::other("Entry point must be Unicode."))?
@@ -328,7 +336,14 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
                 &log,
             )?
         } else if platform.target == Target::Web && platform.recipe.trim().is_empty() {
-            super::web::build(request, &snapshot, staging.path(), &platform_dir, context, &log)?
+            super::web::build(
+                request,
+                &snapshot,
+                staging.path(),
+                &platform_dir,
+                context,
+                &log,
+            )?
         } else {
             sdk(
                 request,
@@ -342,7 +357,9 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
         };
         context.edit(|r| {
             r.artifacts.push(artifact.clone());
-            if platform.target == Target::Web { r.web_artifact = Some(artifact.clone()); }
+            if platform.target == Target::Web {
+                r.web_artifact = Some(artifact.clone());
+            }
         });
         let summary = format!(
             "Artifact complete: {} ({:.1} MiB), elapsed {:.1}s\n",
@@ -365,7 +382,7 @@ pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
     context.stage(
         100.,
         if request.settings.upload {
-            "Build and upload complete."
+            "Build and upload complete. itch.io may still be processing the upload before browser play is ready."
         } else {
             "Build complete. Your release artifacts are ready."
         },
@@ -420,7 +437,7 @@ pub(super) fn upload(
     }
     context.stage(
         100.,
-        "Upload complete. All selected channels were published.",
+        "Upload complete. itch.io may still be processing the upload before browser play is ready.",
     )
 }
 pub(super) fn push_command(

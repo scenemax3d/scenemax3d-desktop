@@ -8,8 +8,10 @@ pub(super) fn find_builtin_resources_root(
 ) -> Option<PathBuf> {
     #[cfg(target_arch = "wasm32")]
     if let Some(root) = project_root {
-        let builtin=root.join("builtin/resources");
-        if fs::is_dir(&builtin) { return Some(builtin); }
+        let builtin = root.join("builtin/resources");
+        if fs::is_dir(&builtin) {
+            return Some(builtin);
+        }
     }
     let active_asset_root = active_asset_root.and_then(canonicalize_existing);
     let mut candidates = Vec::new();
@@ -43,7 +45,8 @@ pub(super) fn find_builtin_resources_root(
         if active_asset_root.as_ref() == Some(&canonical) {
             return false;
         }
-        scenemax_assets::filesystem::is_dir(&canonical.join("Models")) || scenemax_assets::filesystem::is_dir(&canonical.join("models"))
+        scenemax_assets::filesystem::is_dir(&canonical.join("Models"))
+            || scenemax_assets::filesystem::is_dir(&canonical.join("models"))
     })
 }
 
@@ -127,7 +130,9 @@ fn resolve_gltf_source_path(
 }
 
 pub(super) fn initialize_runtime_logger(project_root: Option<&Path>, script_root: Option<&Path>) {
-    if !runtime_logging_enabled() { return; }
+    if !runtime_logging_enabled() {
+        return;
+    }
     let base = project_root
         .or(script_root)
         .map(Path::to_path_buf)
@@ -142,10 +147,16 @@ pub(super) fn initialize_runtime_logger(project_root: Option<&Path>, script_root
     }
     write_runtime_diagnostic_line("initialized SceneMax NextGen runtime log");
     let executable = std::env::current_exe().unwrap_or_default();
-    let modified = fs::metadata(&executable).and_then(|m| m.modified()).ok()
-        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|time| time.as_secs());
-    write_runtime_diagnostic_line(format!("RUNTIME:BUILD camera_diagnostics=1 pid={} executable={} modified_unix={modified:?}",
-        std::process::id(), executable.display()));
+    let modified = fs::metadata(&executable)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|time| time.as_secs());
+    write_runtime_diagnostic_line(format!(
+        "RUNTIME:BUILD camera_diagnostics=1 pid={} executable={} modified_unix={modified:?}",
+        std::process::id(),
+        executable.display()
+    ));
     write_nextgen_launch_diagnostics();
 }
 
@@ -169,7 +180,9 @@ fn write_nextgen_launch_diagnostics() {
 }
 
 pub(super) fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
-    if !runtime_logging_enabled() { return; }
+    if !runtime_logging_enabled() {
+        return;
+    }
     let Some(path) = SCENEMAX_RUNTIME_LOG_FILE
         .lock()
         .ok()
@@ -184,7 +197,9 @@ pub(super) fn write_runtime_diagnostic_line(message: impl AsRef<str>) {
 }
 
 pub(super) fn runtime_verbose_logging() -> bool {
-    if !runtime_logging_enabled() { return false; }
+    if !runtime_logging_enabled() {
+        return false;
+    }
     static VERBOSE: OnceLock<bool> = OnceLock::new();
     *VERBOSE.get_or_init(|| {
         env::var("SCENEMAX_RUNTIME_VERBOSE_LOG")
@@ -199,7 +214,9 @@ pub(super) fn runtime_verbose_logging() -> bool {
 }
 
 pub(super) fn write_runtime_log_line(level: LoggerLevel, message: &str) {
-    if !runtime_logging_enabled() { return; }
+    if !runtime_logging_enabled() {
+        return;
+    }
     let level_text = match level {
         LoggerLevel::Info => "INFO",
         LoggerLevel::Debug => "DEBUG",
@@ -673,8 +690,10 @@ pub(super) fn collect_unsupported_statements(
 pub(super) fn has_scene_content(program: &Program) -> bool {
     fn contains_scene(statements: &[Statement]) -> bool {
         statements.iter().any(|statement| match statement {
-            Statement::ModelDecl { .. } | Statement::LightDecl(_)
-            | Statement::CameraPosition(_) | Statement::CameraRotation(_) => true,
+            Statement::ModelDecl { .. }
+            | Statement::LightDecl(_)
+            | Statement::CameraPosition(_)
+            | Statement::CameraRotation(_) => true,
             Statement::ScopedBlock { actions } => contains_scene(actions),
             _ => false,
         })
@@ -719,7 +738,7 @@ pub(super) fn statement_has_ui_runtime_content(statement: &Statement) -> bool {
         Statement::Guarded { actions, .. }
         | Statement::Repeat { actions, .. }
         | Statement::DoWhile { actions, .. }
-            | Statement::ForEachModel { actions, .. }
+        | Statement::ForEachModel { actions, .. }
         | Statement::LoopContinue { actions, .. }
         | Statement::ScopedBlock { actions }
         | Statement::Async { actions } => actions.iter().any(statement_has_ui_runtime_content),
@@ -932,7 +951,9 @@ fn spawn_scenemax_program_with_visibility_mode(
     let attaches_by_target = collect_attaches_by_target(program);
     let mut startup_gltfs = Vec::new();
     if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
-        object_pools.entity_templates.retain(|_, (_, options)| options.shared);
+        object_pools
+            .entity_templates
+            .retain(|_, (_, options)| options.shared);
     }
     let mut model_declarations = collect_model_declarations(program);
     if visibility_mode == SceneMaxSpawnVisibilityMode::DesignerPreview {
@@ -964,7 +985,9 @@ fn spawn_scenemax_program_with_visibility_mode(
     } else {
         set_fallback_lighting_enabled(commands, false);
         for light in &light_declarations {
-            if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup && shared_entities::retained(&light.name, vars, object_pools, None) {
+            if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup
+                && shared_entities::retained(&light.name, vars, object_pools, None)
+            {
                 spawned_any = true;
                 continue;
             }
@@ -978,9 +1001,19 @@ fn spawn_scenemax_program_with_visibility_mode(
                 Some(collider_bounds),
             );
             if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
-                let reference = scenemax_runtime_vm_core::references::Reference::entity(&light.name);
-                scenemax_runtime_vm_core::references::assign(&light.name, reference.clone(), vars, None, false);
-                object_pools.entity_values.2.insert(light.name.clone(), reference);
+                let reference =
+                    scenemax_runtime_vm_core::references::Reference::entity(&light.name);
+                scenemax_runtime_vm_core::references::assign(
+                    &light.name,
+                    reference.clone(),
+                    vars,
+                    None,
+                    false,
+                );
+                object_pools
+                    .entity_values
+                    .2
+                    .insert(light.name.clone(), reference);
                 object_pools.root_entity_names.insert(light.name.clone());
                 if light.shared {
                     object_pools.shared_entities.insert(light.name.clone());
@@ -1000,12 +1033,23 @@ fn spawn_scenemax_program_with_visibility_mode(
     } in &model_declarations
     {
         if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
-            if shared_entities::retained(name, vars, object_pools, None) { spawned_any = true; continue; }
+            if shared_entities::retained(name, vars, object_pools, None) {
+                spawned_any = true;
+                continue;
+            }
         }
         multiplayer::declaration(commands, name, resource, options);
         if resource.eq_ignore_ascii_case("label") {
-            let transform = transform_from_options_resolved(options, None, vars, &guards_by_name, Some(&transforms_by_name), Some(collider_bounds));
-            let entity = crate::labels::spawn(commands, name, options, transform, vars, &guards_by_name);
+            let transform = transform_from_options_resolved(
+                options,
+                None,
+                vars,
+                &guards_by_name,
+                Some(&transforms_by_name),
+                Some(collider_bounds),
+            );
+            let entity =
+                crate::labels::spawn(commands, name, options, transform, vars, &guards_by_name);
             if visibility_mode == SceneMaxSpawnVisibilityMode::RuntimeStartup {
                 commands.entity(entity).insert(Visibility::Hidden);
             }
@@ -1459,11 +1503,17 @@ pub(super) fn apply_startup_runs_when_ready(
                 .insert(scene_entity.name.clone(), model_resource.resource.clone());
         }
     }
-    runtime_assets.root_entity_declarations.retain(|_, value| value.entity_identity()
-        .is_some_and(|v| object_pools.shared_entities.contains(&v.runtime_name)));
+    runtime_assets.root_entity_declarations.retain(|_, value| {
+        value
+            .entity_identity()
+            .is_some_and(|v| object_pools.shared_entities.contains(&v.runtime_name))
+    });
     for name in &object_pools.root_entity_names {
         if let Some(reference) = object_pools.entity_values.2.get(name) {
-            runtime_assets.root_entity_declarations.entry(name.clone()).or_insert_with(|| reference.clone());
+            runtime_assets
+                .root_entity_declarations
+                .entry(name.clone())
+                .or_insert_with(|| reference.clone());
         }
     }
     runtime_assets.gltf_handles_by_name = gltfs_by_name.clone();

@@ -104,11 +104,12 @@ pub fn timelines(root: &Path, path: &Path) -> Result<Vec<Timeline>, String> {
                 let uri = percent_encoding::percent_decode_str(uri)
                     .decode_utf8()
                     .map_err(|e| e.to_string())?;
-                let sidecar = crate::filesystem::canonicalize(path
-                    .parent()
-                    .ok_or("Missing model folder")?
-                    .join(uri.as_ref()))
-                    .map_err(|e| e.to_string())?;
+                let sidecar = crate::filesystem::canonicalize(
+                    path.parent()
+                        .ok_or("Missing model folder")?
+                        .join(uri.as_ref()),
+                )
+                .map_err(|e| e.to_string())?;
                 if !sidecar.starts_with(&root) {
                     return Err("glTF buffer escapes resource root".into());
                 }

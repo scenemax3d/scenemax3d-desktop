@@ -72,16 +72,25 @@ impl ProjectorProcess {
         let script = script.to_owned();
         let executable = self.executable.clone();
         let catalog = self.catalog.clone();
-        let password = self.password.as_ref().filter(|(path, _)| path == &root).map(|(_, value)| value.clone());
+        let password = self
+            .password
+            .as_ref()
+            .filter(|(path, _)| path == &root)
+            .map(|(_, value)| value.clone());
         let work_root = root.clone();
         let (tx, rx) = mpsc::sync_channel(1);
         let handle = thread::Builder::new()
             .name("projector-launch".into())
             .spawn(move || {
-                let prepared = prepare_command(&executable, &work_root, &script, catalog.as_deref()).map(|mut command| {
-                    if let Some(password) = password { command.env("SCENEMAX_MULTIPLAYER_PASSWORD", password); }
-                    command
-                });
+                let prepared =
+                    prepare_command(&executable, &work_root, &script, catalog.as_deref()).map(
+                        |mut command| {
+                            if let Some(password) = password {
+                                command.env("SCENEMAX_MULTIPLAYER_PASSWORD", password);
+                            }
+                            command
+                        },
+                    );
                 let _ = tx.send(prepared);
             })?;
         self.pending = Some(PendingLaunch {
@@ -246,13 +255,21 @@ mod tests {
         std::fs::write(&catalog, "{\"projects\":[]}").unwrap();
         let mut process = ProjectorProcess::new(std::env::current_exe().unwrap());
         process.set_catalog(Some(catalog));
-        for value in [Some("private-password".to_owned()), Some(String::new()), None] {
+        for value in [
+            Some("private-password".to_owned()),
+            Some(String::new()),
+            None,
+        ] {
             process.set_password(dir.path(), value.clone());
             process.start(dir.path(), Path::new("main")).unwrap();
             let pending = process.pending.take().unwrap();
             pending.handle.join().unwrap();
             let command = pending.result.lock().unwrap().recv().unwrap().unwrap();
-            let actual = command.get_envs().find(|(key, _)| *key == "SCENEMAX_MULTIPLAYER_PASSWORD").and_then(|(_, value)| value).map(|s| s.to_string_lossy().into_owned());
+            let actual = command
+                .get_envs()
+                .find(|(key, _)| *key == "SCENEMAX_MULTIPLAYER_PASSWORD")
+                .and_then(|(_, value)| value)
+                .map(|s| s.to_string_lossy().into_owned());
             assert_eq!(actual, value);
         }
         process.set_password(Path::new("another-project"), Some("unrelated".into()));
@@ -260,7 +277,11 @@ mod tests {
         let pending = process.pending.take().unwrap();
         pending.handle.join().unwrap();
         let command = pending.result.lock().unwrap().recv().unwrap().unwrap();
-        assert!(!command.get_envs().any(|(key, _)| key == "SCENEMAX_MULTIPLAYER_PASSWORD"));
+        assert!(
+            !command
+                .get_envs()
+                .any(|(key, _)| key == "SCENEMAX_MULTIPLAYER_PASSWORD")
+        );
     }
 
     #[test]

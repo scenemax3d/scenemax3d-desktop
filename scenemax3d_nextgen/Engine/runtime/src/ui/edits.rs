@@ -398,7 +398,9 @@ pub(crate) fn publish_values(
     let mut current = std::collections::HashSet::new();
     for (name, loaded) in &runtime.loaded {
         for (path, target) in &loaded.targets {
-            let Ok(edit) = edits.get(target.entity) else { continue; };
+            let Ok(edit) = edits.get(target.entity) else {
+                continue;
+            };
             let mut paths = vec![format!("UI.{path}")];
             if runtime.active_ui_name.as_ref() == Some(name) {
                 if let Some(relative) = path.strip_prefix(&format!("{name}.")) {
@@ -408,7 +410,11 @@ pub(crate) fn publish_values(
             for path in paths {
                 for property in ["text", "value"] {
                     let key = format!("{path}.{property}");
-                    scenemax_runtime_vm_core::typed::store(&mut vars, &key, serde_json::json!(edit.state.text));
+                    scenemax_runtime_vm_core::typed::store(
+                        &mut vars,
+                        &key,
+                        serde_json::json!(edit.state.text),
+                    );
                     current.insert(key);
                 }
             }
@@ -528,34 +534,73 @@ mod tests {
             .add_systems(Update, publish_values);
         let entity = fixture(app.world_mut());
         let mut loaded = LoadedSceneMaxUi::default();
-        loaded.targets.insert("form.layer1.entry".into(), SceneMaxUiTarget {
-            entity, text_entity: None, multiplayer: false, widget_type: "EDIT_TEXT".into(), ui_scale: 1.,
-        });
+        loaded.targets.insert(
+            "form.layer1.entry".into(),
+            SceneMaxUiTarget {
+                entity,
+                text_entity: None,
+                multiplayer: false,
+                widget_type: "EDIT_TEXT".into(),
+                ui_scale: 1.,
+            },
+        );
         {
             let mut runtime = app.world_mut().resource_mut::<SceneMaxUiRuntime>();
             runtime.active_ui_name = Some("form".into());
             runtime.loaded.insert("form".into(), loaded);
         }
-        app.world_mut().get_mut::<EditControl>(entity).unwrap().replace_selection("Ada λ🙂");
+        app.world_mut()
+            .get_mut::<EditControl>(entity)
+            .unwrap()
+            .replace_selection("Ada λ🙂");
         app.update();
-        let program = scenemax_parser::parse_program("shared var chosen = UI.layer1.entry.text").unwrap();
+        let program =
+            scenemax_parser::parse_program("shared var chosen = UI.layer1.entry.text").unwrap();
         {
             let mut vars = app.world_mut().resource_mut::<SceneMaxVars>();
             scenemax_runtime_vm_core::apply_initial_assignments(&program, &mut vars);
-            assert_eq!(scenemax_runtime_vm_core::typed::lookup("chosen", &vars, None), Some(serde_json::json!("Ada λ🙂")));
-            assert_eq!(scenemax_runtime_vm_core::typed::lookup("UI.form.layer1.entry.value", &vars, None), Some(serde_json::json!("Ada λ🙂")));
+            assert_eq!(
+                scenemax_runtime_vm_core::typed::lookup("chosen", &vars, None),
+                Some(serde_json::json!("Ada λ🙂"))
+            );
+            assert_eq!(
+                scenemax_runtime_vm_core::typed::lookup("UI.form.layer1.entry.value", &vars, None),
+                Some(serde_json::json!("Ada λ🙂"))
+            );
         }
         assert!(apply(app.world_mut(), entity, "text", ""));
         app.update();
-        assert_eq!(scenemax_runtime_vm_core::typed::lookup("UI.layer1.entry.text", app.world().resource::<SceneMaxVars>(), None), Some(serde_json::json!("")));
-        app.world_mut().resource_mut::<SceneMaxUiRuntime>().loaded.clear();
+        assert_eq!(
+            scenemax_runtime_vm_core::typed::lookup(
+                "UI.layer1.entry.text",
+                app.world().resource::<SceneMaxVars>(),
+                None
+            ),
+            Some(serde_json::json!(""))
+        );
+        app.world_mut()
+            .resource_mut::<SceneMaxUiRuntime>()
+            .loaded
+            .clear();
         app.update();
         let vars = app.world().resource::<SceneMaxVars>();
-        assert!(scenemax_runtime_vm_core::typed::lookup("UI.layer1.entry.text", vars, None).is_none());
-        assert_eq!(scenemax_runtime_vm_core::typed::lookup("chosen", vars, None), Some(serde_json::json!("Ada λ🙂")));
+        assert!(
+            scenemax_runtime_vm_core::typed::lookup("UI.layer1.entry.text", vars, None).is_none()
+        );
+        assert_eq!(
+            scenemax_runtime_vm_core::typed::lookup("chosen", vars, None),
+            Some(serde_json::json!("Ada λ🙂"))
+        );
         let mut vars = app.world_mut().resource_mut::<SceneMaxVars>();
-        crate::actions::retain_scene_switch_shared_vars(&mut vars, Some(&program), &mut std::collections::HashSet::new());
-        assert_eq!(scenemax_runtime_vm_core::typed::lookup("chosen", &vars, None), Some(serde_json::json!("Ada λ🙂")));
+        crate::actions::retain_scene_switch_shared_vars(
+            &mut vars,
+            Some(&program),
+            &mut std::collections::HashSet::new(),
+        );
+        assert_eq!(
+            scenemax_runtime_vm_core::typed::lookup("chosen", &vars, None),
+            Some(serde_json::json!("Ada λ🙂"))
+        );
     }
     #[test]
     fn focused_field_consumes_keyboard_input_and_clicking_outside_releases_it() {

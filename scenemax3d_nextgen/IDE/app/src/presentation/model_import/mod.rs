@@ -413,7 +413,7 @@ pub(crate) fn update(
                             clip: String::new(),
                             scale: 1.,
                             model: Some(draft.clone()),
-            effect: None,
+                            effect: None,
                         };
                         let root = session.workspace.project().root().to_owned();
                         state.task = Some(

@@ -10,7 +10,10 @@ pub struct Canvas {
 }
 impl Canvas {
     /// Resize the virtual surface while retaining its navigation state.
-    pub fn resize(&mut self, width: f32, height: f32) { self.width = width; self.height = height; }
+    pub fn resize(&mut self, width: f32, height: f32) {
+        self.width = width;
+        self.height = height;
+    }
     /// Virtual dimensions must be positive finite values.
     pub fn new(viewport: Entity, width: f32, height: f32) -> Self {
         Self {

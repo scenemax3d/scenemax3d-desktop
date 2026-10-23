@@ -513,11 +513,20 @@ mod scale_tests {
     #[test]
     fn authored_model_scale_overrides_catalog_even_when_it_is_one() {
         for (scale, expected) in [("[1,1,1]", "scale 1"), ("[2,3,4]", "scale (2,3,4)")] {
-            let source = format!(r#"{{"entities":[{{"type":"MODEL","name":"subject","resourcePath":"sample","scale":{scale}}}]}}"#);
+            let source = format!(
+                r#"{{"entities":[{{"type":"MODEL","name":"subject","resourcePath":"sample","scale":{scale}}}]}}"#
+            );
             let code = generate(&source, "scene.smdesign", "", "", &[]).unwrap();
             assert!(code.contains(expected), "{code}");
         }
-        let code = generate(r#"{"entities":[{"type":"MODEL","name":"subject","resourcePath":"sample"}]}"#, "scene.smdesign", "", "", &[]).unwrap();
+        let code = generate(
+            r#"{"entities":[{"type":"MODEL","name":"subject","resourcePath":"sample"}]}"#,
+            "scene.smdesign",
+            "",
+            "",
+            &[],
+        )
+        .unwrap();
         assert!(!code.contains("scale "));
     }
 }

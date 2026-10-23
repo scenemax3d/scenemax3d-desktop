@@ -342,9 +342,15 @@ pub(crate) fn update(
 
     if let Some(action) = state.action.take() {
         match action {
-            Action::Open(Kind::Effect) if state.host.is_none() => { super::effect_import::open(&mut session, &mut changes); }
-            Action::Open(Kind::Sprite) if state.host.is_none() => { super::sprite_import::open(&mut session, &mut changes); }
-            Action::Open(Kind::Model) if state.host.is_none() => { super::model_import::open(&mut session,&mut changes); }
+            Action::Open(Kind::Effect) if state.host.is_none() => {
+                super::effect_import::open(&mut session, &mut changes);
+            }
+            Action::Open(Kind::Sprite) if state.host.is_none() => {
+                super::sprite_import::open(&mut session, &mut changes);
+            }
+            Action::Open(Kind::Model) if state.host.is_none() => {
+                super::model_import::open(&mut session, &mut changes);
+            }
             Action::Open(kind) if state.host.is_none() => {
                 state.project = session.workspace.project().root().to_owned();
                 state.kind = Some(kind);
@@ -405,7 +411,7 @@ pub(crate) fn update(
                         Ok(Request {
                             kind,
                             model: None,
-            effect: None,
+                            effect: None,
                             source: value(Field::Source).into(),
                             name: value(Field::Name),
 

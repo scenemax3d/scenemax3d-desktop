@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SceneMax Game</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#171b22;color:#eef2f7;font:16px system-ui;overflow:hidden}
+#game{width:100%;height:100%;display:block;outline:none}
+#loading{position:fixed;inset:0;display:grid;place-content:center;gap:18px;text-align:center;background:#171b22 {{background}} center/cover no-repeat;padding:24px;z-index:2}
+progress{width:min(460px,85vw)}
+#loading h1{font-size:32px;margin:0;text-shadow:0 2px 6px #000}
+#status,#credit{text-shadow:0 2px 4px #000}
+#credit{font-size:14px;white-space:pre-wrap}
+#error{white-space:pre-wrap;max-width:75vw;overflow-wrap:anywhere;color:#ffb2a6} [hidden]{display:none!important}
+#effect-status{position:fixed;bottom:12px;left:12px;padding:6px 10px;background:#171b22cc;border-radius:6px;font-size:13px;pointer-events:none;z-index:1}
+#audio-status{position:fixed;bottom:12px;right:12px;padding:6px 10px;background:#171b22cc;border-radius:6px;font-size:13px;pointer-events:none;z-index:1}
+</style></head><body><canvas id="game" tabindex="0"></canvas>
+<section id="loading"><h1>{{header}}</h1><div id="status" data-label="{{message}}">{{message}}</div><progress id="progress" max="1" value="0"></progress><div id="credit">{{footer}}</div><div id="error" role="alert"></div></section>
+<div id="effect-status" role="status" hidden></div>
+<div id="audio-status" role="status" hidden>Click or press a key to enable sound</div>
+<script type="module" src="./bootstrap.mjs"></script></body></html>

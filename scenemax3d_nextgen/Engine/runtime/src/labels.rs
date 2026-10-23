@@ -271,7 +271,11 @@ pub(super) fn layout(
             continue;
         }
         let (text_size, glyphs) = if let Some(font) = label.bitmap_font.as_ref() {
-            if font.images.values().any(|image|!images.contains(image.id())) {
+            if font
+                .images
+                .values()
+                .any(|image| !images.contains(image.id()))
+            {
                 continue;
             }
             fonts::bitmap_layout(font, &label.text)

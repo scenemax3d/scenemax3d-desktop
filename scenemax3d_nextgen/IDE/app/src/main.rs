@@ -36,7 +36,10 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     scenemax_ide::run(LaunchOptions {
         select_catalog_project: args.project_root.is_none(),
-        project_root: args.project_root.unwrap_or(std::env::current_dir()?),
+        project_root: args.project_root.unwrap_or(
+            scenemax_ide_services::workspace_state::installation_root()
+                .unwrap_or(std::env::current_dir()?),
+        ),
         project_catalog: args.project_catalog,
         script: args.script,
         projector: args.projector,

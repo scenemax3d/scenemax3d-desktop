@@ -103,8 +103,12 @@ pub(super) fn copy_asset(source: &Path, stage: &Path, kind: Kind) -> io::Result<
     }
     if kind == Kind::Effect {
         let prepared = effect::prepare(source)?;
-        if !prepared.complete() { return Err(error("Missing effect dependencies")); }
-        for dep in &prepared.dependencies { copy_local(root, Path::new(&dep.path), stage)?; }
+        if !prepared.complete() {
+            return Err(error("Missing effect dependencies"));
+        }
+        for dep in &prepared.dependencies {
+            copy_local(root, Path::new(&dep.path), stage)?;
+        }
         for sibling in fs::read_dir(root)? {
             let sibling = sibling?;
             let lower = sibling.file_name().to_string_lossy().to_ascii_lowercase();

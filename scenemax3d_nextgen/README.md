@@ -20,6 +20,8 @@ Continuing the migration in a new conversation? Start with the [migration handof
 
 Read the [architecture and coding standards](docs/ARCHITECTURE.md), [IDE guide](IDE/README.md), [projector guide](Projector/README.md), and [migration roadmap](../docs/RUST_IDE_MIGRATION.md).
 
+Creating browser games? Follow the [Web export setup guide](IDE/WEB_EXPORT.md) for fresh-install prerequisites, local testing and publishing.
+
 ## Build and run
 
 Rust **1.97.1** is pinned in `rust-toolchain.toml`. Rustup installs the pinned compiler, Rustfmt and Clippy when needed. Windows builds use the MSVC target and the Rust-provided LLD linker. Normal builds and both Rust executables require no Java. Explicit ANTLR regeneration is still a temporary maintainer dependency, tracked for removal.

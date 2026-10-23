@@ -5,12 +5,16 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc, atomic::{AtomicBool, Ordering}},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread,
 };
 mod build;
-pub mod local_server;
 pub(crate) mod launch;
+pub mod local_server;
 
 /// A configuration snapshot used for optimistic conflict detection.
 #[derive(Clone, Debug)]
@@ -104,29 +108,67 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     build::check(cancel)?;
     let (operation, password) = match operation {
-        Operation::BuildWithPassword(snapshot, password) => (Operation::Build(snapshot), Some(password)),
-        operation => (operation, std::env::var("SCENEMAX_MULTIPLAYER_PASSWORD").ok()),
+        Operation::BuildWithPassword(snapshot, password) => {
+            (Operation::Build(snapshot), Some(password))
+        }
+        operation => (
+            operation,
+            std::env::var("SCENEMAX_MULTIPLAYER_PASSWORD").ok(),
+        ),
     };
     match operation {
         Operation::BuildWithPassword(..) => unreachable!("normalized above"),
-        Operation::Load=>Ok(Report {snapshot:load(&root)?,message:"Multiplayer settings loaded. Passwords are kept only for this IDE session.".into(),server:None}),
-        Operation::Save(mut snapshot)=>{save(&root,&mut snapshot)?;Ok(Report {snapshot,message:"Multiplayer settings saved.".into(),server:None})},
-        Operation::Build(mut snapshot)=>{
+        Operation::Load => Ok(Report {
+            snapshot: load(&root)?,
+            message: "Multiplayer settings loaded. Passwords are kept only for this IDE session."
+                .into(),
+            server: None,
+        }),
+        Operation::Save(mut snapshot) => {
+            save(&root, &mut snapshot)?;
+            Ok(Report {
+                snapshot,
+                message: "Multiplayer settings saved.".into(),
+                server: None,
+            })
+        }
+        Operation::Build(mut snapshot) => {
             snapshot.settings.validate()?;
-            let s=&snapshot.settings;
-            let installation=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-            let (mut bytes,origin)=build::prepare(&installation,&s.platform,cancel)?;
+            let s = &snapshot.settings;
+            let installation = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+            let (mut bytes, origin) = build::prepare(&installation, &s.platform, cancel)?;
             build::check(cancel)?;
-            patch(&mut bytes,s,&root,password.as_deref())?;
-            let directory=root.join("multiplayer_server");ensure_directory(&root,&directory)?;
+            patch(&mut bytes, s, &root, password.as_deref())?;
+            let directory = root.join("multiplayer_server");
+            ensure_directory(&root, &directory)?;
             // Unique output prevents overwriting another build or a running server.
-            let mut pending=tempfile::Builder::new().prefix("scenemax-mp-").suffix(if s.platform=="windows-x64"{".exe"}else{""}).tempfile_in(&directory).map_err(|e|e.to_string())?;
-            pending.write_all(&bytes).map_err(|e|e.to_string())?;pending.as_file().sync_all().map_err(|e|e.to_string())?;
-            #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;pending.as_file().set_permissions(fs::Permissions::from_mode(0o700)).map_err(|e|e.to_string())?;}
+            let mut pending = tempfile::Builder::new()
+                .prefix("scenemax-mp-")
+                .suffix(if s.platform == "windows-x64" {
+                    ".exe"
+                } else {
+                    ""
+                })
+                .tempfile_in(&directory)
+                .map_err(|e| e.to_string())?;
+            pending.write_all(&bytes).map_err(|e| e.to_string())?;
+            pending.as_file().sync_all().map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                pending
+                    .as_file()
+                    .set_permissions(fs::Permissions::from_mode(0o700))
+                    .map_err(|e| e.to_string())?;
+            }
             build::check(cancel)?;
-            save(&root,&mut snapshot)?;
-            let (_,path)=pending.keep().map_err(|e|e.to_string())?;
-            Ok(Report {snapshot,message:format!("{origin}. Server created: {}",path.display()),server:Some(path)})
+            save(&root, &mut snapshot)?;
+            let (_, path) = pending.keep().map_err(|e| e.to_string())?;
+            Ok(Report {
+                snapshot,
+                message: format!("{origin}. Server created: {}", path.display()),
+                server: Some(path),
+            })
         }
     }
 }
@@ -187,7 +229,11 @@ fn load(root: &Path) -> Result<Snapshot, String> {
     let installation = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut settings = launch::import(root, &installation.join("projects/projects.json"))?
         .unwrap_or_else(|| Settings {
-            session_name: root.file_name().and_then(|s| s.to_str()).unwrap_or("local").into(),
+            session_name: root
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("local")
+                .into(),
             ..Default::default()
         });
     if settings.project_guid.is_empty() {
@@ -356,9 +402,13 @@ mod tests {
         assert_eq!(&p[12..16], &9123u32.to_le_bytes());
         assert_eq!(&p[400..432], Sha256::digest(b"password").as_slice());
         assert_eq!(&p[432..444], b"fixture-guid");
-        assert!(!bytes.windows(b"password".len()).any(|window| window == b"password"));
+        assert!(
+            !bytes
+                .windows(b"password".len())
+                .any(|window| window == b"password")
+        );
         patch(&mut bytes, &settings, Path::new("fixture"), Some("")).unwrap();
-        assert_eq!(&bytes[begin.len()+400..begin.len()+432], &[0; 32]);
+        assert_eq!(&bytes[begin.len() + 400..begin.len() + 432], &[0; 32]);
         let mut duplicated = bytes.clone();
         duplicated.extend(&bytes);
         assert!(patch(&mut duplicated, &settings, Path::new("fixture"), None).is_err());

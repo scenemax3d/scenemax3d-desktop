@@ -5,12 +5,12 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
 };
-mod files;
-mod optimization;
-pub mod model;
-pub mod sprite;
 pub mod effect;
+mod files;
+pub mod model;
+mod optimization;
 mod picker;
+pub mod sprite;
 struct ImportLock(PathBuf);
 impl Drop for ImportLock {
     fn drop(&mut self) {
@@ -254,9 +254,15 @@ pub fn import(root: &Path, request: &Request) -> io::Result<Outcome> {
         }
         _ => {}
     }
-    if let Some(model) = &request.model && request.kind == Kind::Model {
-        let metadata=scenemax_ide_core::model_import::metadata(model).map_err(error)?;
-        if let Some(fields)=metadata.as_object() {for (k,v) in fields {entry[k]=v.clone();}}
+    if let Some(model) = &request.model
+        && request.kind == Kind::Model
+    {
+        let metadata = scenemax_ide_core::model_import::metadata(model).map_err(error)?;
+        if let Some(fields) = metadata.as_object() {
+            for (k, v) in fields {
+                entry[k] = v.clone();
+            }
+        }
     }
     entries.push(entry);
     let document = if request.kind == Kind::Effect {
@@ -290,7 +296,9 @@ pub fn import(root: &Path, request: &Request) -> io::Result<Outcome> {
             if let Some(settings) = &request.effect {
                 effect["source"]["originalImportPath"] = settings["originalImportPath"].clone();
                 effect["preview"] = settings["settings"].clone();
-                if let Some(fields)=effect["preview"].as_object_mut() {fields.remove("source");}
+                if let Some(fields) = effect["preview"].as_object_mut() {
+                    fields.remove("source");
+                }
                 effect["preview"]["playbackSpeed"] = settings["settings"]["speed"].clone();
             }
             let mut f = tempfile::NamedTempFile::new_in(root.join("scripts"))?;

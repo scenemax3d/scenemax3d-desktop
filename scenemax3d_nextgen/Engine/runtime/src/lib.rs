@@ -1,12 +1,12 @@
-#[cfg(test)]
-mod resource_lifecycle_tests;
-#[cfg(test)]
-mod input_gameplay_tests;
-mod entity_stop;
-mod pool_lifecycle;
 mod animation_range;
 mod animation_rewind;
+mod entity_stop;
+#[cfg(test)]
+mod input_gameplay_tests;
 mod motion_ease;
+mod pool_lifecycle;
+#[cfg(test)]
+mod resource_lifecycle_tests;
 use scenemax_assets::filesystem as fs;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -65,12 +65,12 @@ use scenemax_parser::{
     CharacterModeStatement, CinematicLookAt, CinematicPlayStatement, Condition,
     EffekseerPlayStatement, EntityOptions, KeyEventStatement, KeyTrigger,
     LightDeclarationStatement, LightProbeAddStatement, LightType, LoggerLevel, LoggerMessage,
-    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement,
-    PoolReleaseStatement, PositionExpr, PositionValue, PrintStatement, Program, SceneMaxAxis,
-    SceneMaxBodyKind, SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement,
-    Statement, ThrowMotionApplyStatement, ThrowMotionAsset, ThrowMotionEventStatement,
-    ThrowMotionTarget, ThrowMotionValue, UiEaseDirection, UiTargetPath, WeaponAction,
-    WeaponStatement, WhenEventStatement,
+    LoggerStatement, MoveDirection, MoveToDestination, MoveToStatement, PoolReleaseStatement,
+    PositionExpr, PositionValue, PrintStatement, Program, SceneMaxAxis, SceneMaxBodyKind,
+    SceneMaxCollisionShape, SceneMaxVec3, ScreenMode, SpritePlayStatement, Statement,
+    ThrowMotionApplyStatement, ThrowMotionAsset, ThrowMotionEventStatement, ThrowMotionTarget,
+    ThrowMotionValue, UiEaseDirection, UiTargetPath, WeaponAction, WeaponStatement,
+    WhenEventStatement,
 };
 use scenemax_runtime_script_core::{
     FunctionRuntime, actions_with_parent_continuation, animation_candidate_score,
@@ -87,27 +87,27 @@ use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpati
 use serde::Deserialize;
 
 mod actions;
-mod value_calls;
 mod ambient_light_designer;
 mod animation;
 mod audio;
 mod camera;
-mod effekseer;
 mod effect_commands;
+mod effekseer;
 mod ik;
-mod lighting;
 mod labels;
+mod lighting;
 mod multiplayer;
 mod physics;
 mod retarget_designer;
 mod shader;
 mod shader_designer;
+mod shared_entities;
 mod skybox;
 mod skybox_designer;
 mod sprites;
 mod startup;
-mod shared_entities;
 mod ui;
+mod value_calls;
 
 use actions::*;
 pub use ambient_light_designer::{BevyAmbientLightDesignerLaunch, run_bevy_ambient_light_designer};
@@ -145,6 +145,9 @@ pub struct WindowSettings {
     pub height: u32,
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+mod web_assets;
+
 pub fn run_bevy_projector(launch: ProjectorLaunch) {
     tracing::info!(?launch, "starting SceneMax NextGen projector");
     let project_root = launch.project_root.clone();
@@ -167,13 +170,31 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         asset_root.as_deref(),
     );
     let mut app = App::new();
+    #[cfg(target_arch = "wasm32")]
+    {
+        let root = asset_root.clone().unwrap_or_else(|| "assets".into());
+        app.register_asset_source(
+            bevy::asset::io::AssetSourceId::Default,
+            AssetSourceBuilder::new(move || Box::new(web_assets::MountedAssets(root.clone()))),
+        );
+    }
     multiplayer::initialize(&mut app, project_root.as_deref(), launch.script.as_deref());
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
+        #[cfg(not(target_arch = "wasm32"))]
         let source_path = builtin_asset_root.to_string_lossy().to_string();
+        #[cfg(not(target_arch = "wasm32"))]
         app.register_asset_source(
             "builtin",
             AssetSourceBuilder::platform_default(&source_path, None),
         );
+        #[cfg(target_arch = "wasm32")]
+        {
+            let root = builtin_asset_root.clone();
+            app.register_asset_source(
+                "builtin",
+                AssetSourceBuilder::new(move || Box::new(web_assets::MountedAssets(root.clone()))),
+            );
+        }
         tracing::info!(
             path = %builtin_asset_root.display(),
             "registered SceneMax built-in asset source"
@@ -259,10 +280,31 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .add_plugins(shader::ObjectShaderPlugin)
         .add_plugins(scenemax_ik::IkPlugin)
         .add_systems(Update, (labels::prepare, labels::layout).chain())
-        .add_systems(PostUpdate, labels::billboard.before(bevy::transform::TransformSystems::Propagate))
-        .add_systems(Update, (ui::lists::select, ui::lists::render).chain().after(ui::apply_scenemax_ui_actions))
-        .add_systems(Update, (ui::edits::input, ui::edits::publish_values, ui::edits::render).chain().after(ui::apply_scenemax_ui_actions).before(actions::apply_key_events))
-        .add_systems(PostUpdate, ui::edits::geometry::refresh.after(bevy::ui::UiSystems::Layout))
+        .add_systems(
+            PostUpdate,
+            labels::billboard.before(bevy::transform::TransformSystems::Propagate),
+        )
+        .add_systems(
+            Update,
+            (ui::lists::select, ui::lists::render)
+                .chain()
+                .after(ui::apply_scenemax_ui_actions),
+        )
+        .add_systems(
+            Update,
+            (
+                ui::edits::input,
+                ui::edits::publish_values,
+                ui::edits::render,
+            )
+                .chain()
+                .after(ui::apply_scenemax_ui_actions)
+                .before(actions::apply_key_events),
+        )
+        .add_systems(
+            PostUpdate,
+            ui::edits::geometry::refresh.after(bevy::ui::UiSystems::Layout),
+        )
         .add_systems(Last, attachments::audit)
         .add_systems(
             PostUpdate,
@@ -303,7 +345,10 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
         .add_systems(Update, apply_startup_runs_when_ready)
-        .add_systems(SpawnScene, shader::apply_pending_surfaces.after(SceneSpawnerSystems::SceneSpawn))
+        .add_systems(
+            SpawnScene,
+            shader::apply_pending_surfaces.after(SceneSpawnerSystems::SceneSpawn),
+        )
         .add_systems(
             SpawnScene,
             (
@@ -324,7 +369,11 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
                 update_avian_collision_contacts,
                 apply_key_events,
                 update_virtual_colliders,
-                (animation_rewind::apply_pending, update_current_animation_vars).chain(),
+                (
+                    animation_rewind::apply_pending,
+                    update_current_animation_vars,
+                )
+                    .chain(),
                 restore_inactive_animation_visual_rotations,
                 update_animation_runtime_controllers,
                 sync_collider_hidden_state_for_visibility,
@@ -533,7 +582,9 @@ static PERF_BONE_TARGET_RESOLVES: AtomicU64 = AtomicU64::new(0);
 static PERF_BONE_ALIASES_INSERTED: AtomicU64 = AtomicU64::new(0);
 
 fn update_scenemax_perf_debug(time: Res<Time>, mut perf: ResMut<SceneMaxPerfDebug>) {
-    if !runtime_logging_enabled() { return; }
+    if !runtime_logging_enabled() {
+        return;
+    }
     perf.elapsed_seconds += time.delta_secs();
     perf.frames += 1;
     if perf.elapsed_seconds < 1.0 {
@@ -866,7 +917,11 @@ struct RegisteredRunEveryEvents {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum SceneMaxControllerKey {
-    NetworkAction { entity: u32, slot: u8, sequence: u16 },
+    NetworkAction {
+        entity: u32,
+        slot: u8,
+        sequence: u16,
+    },
     NetworkWhen(Box<SceneMaxControllerKey>, u32),
     Key(usize),
     RegisteredKey(usize),
@@ -962,7 +1017,10 @@ struct SceneMaxRuntimeAssets {
     pending_entity_handles: HashMap<String, Entity>,
     analyzer_records: HashMap<String, ModelAnimationRecords>,
     named_frame_bounds: HashMap<(String, String), Result<(f32, f32), String>>,
-    frame_timelines: HashMap<bevy::asset::AssetId<Gltf>, Result<Vec<scenemax_assets::animation_ranges::Timeline>, String>>,
+    frame_timelines: HashMap<
+        bevy::asset::AssetId<Gltf>,
+        Result<Vec<scenemax_assets::animation_ranges::Timeline>, String>,
+    >,
     asset_server: Option<AssetServer>,
     asset_root: Option<PathBuf>,
     builtin_asset_root: Option<PathBuf>,
@@ -1751,12 +1809,18 @@ struct NetworkAnimationResume {
 impl NetworkAnimationResume {
     fn loop_seek_seconds(&self, duration: f32, speed: f32, now: web_time::Instant) -> f32 {
         let age = f64::from(u32::MAX) / 1000. - self.remaining_seconds
-            + now.saturating_duration_since(self.received_at).as_secs_f64();
+            + now
+                .saturating_duration_since(self.received_at)
+                .as_secs_f64();
         (age.max(0.) * f64::from(speed)).rem_euclid(f64::from(duration.max(0.001))) as f32
     }
 
     fn seek_seconds(&self, duration: f32, speed: f32, now: web_time::Instant) -> f32 {
-        let remaining = (self.remaining_seconds - now.saturating_duration_since(self.received_at).as_secs_f64()).max(0.);
+        let remaining = (self.remaining_seconds
+            - now
+                .saturating_duration_since(self.received_at)
+                .as_secs_f64())
+        .max(0.);
         (duration - (remaining * f64::from(speed.max(0.001))) as f32).clamp(0., duration.max(0.))
     }
 }
@@ -1776,7 +1840,9 @@ struct CurrentAnimation {
 }
 
 #[derive(Debug, Component, Default)]
-struct TimedTurns { turns: Vec<TimedTurn> }
+struct TimedTurns {
+    turns: Vec<TimedTurn>,
+}
 
 #[derive(Debug)]
 struct TimedTurn {
@@ -1898,8 +1964,12 @@ const PHYSICS_LAYER_WEAPON: u32 = 1 << 3;
 static SCENEMAX_RUNTIME_LOG_FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
 static RUNTIME_LOGGING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Enable diagnostic output before starting the projector. Disabled by default.
-pub fn set_runtime_logging(enabled: bool) { RUNTIME_LOGGING.store(enabled, Ordering::Relaxed); }
-fn runtime_logging_enabled() -> bool { RUNTIME_LOGGING.load(Ordering::Relaxed) }
+pub fn set_runtime_logging(enabled: bool) {
+    RUNTIME_LOGGING.store(enabled, Ordering::Relaxed);
+}
+fn runtime_logging_enabled() -> bool {
+    RUNTIME_LOGGING.load(Ordering::Relaxed)
+}
 
 fn setup_placeholder_model(
     mut commands: Commands,
@@ -2229,7 +2299,11 @@ mod tests {
         assert!(log.contains("[DEBUG] 7"));
         set_runtime_logging(false);
         write_runtime_diagnostic_line("disabled probe");
-        assert!(!fs::read_to_string(log_dir.join("scenemax-nextgen-runtime.log")).unwrap().contains("disabled probe"));
+        assert!(
+            !fs::read_to_string(log_dir.join("scenemax-nextgen-runtime.log"))
+                .unwrap()
+                .contains("disabled probe")
+        );
         let _ = fs::remove_dir_all(log_dir);
     }
 
@@ -2334,19 +2408,29 @@ mod tests {
 
     #[test]
     fn ui_sprite_catalog_path_is_selected_case_insensitively() {
-        let widget: SceneMaxUiWidgetDef = serde_json::from_str(
-            r#"{"name":"image","type":"IMAGE","spriteName":"MiXeD"}"#,
-        ).unwrap();
+        let widget: SceneMaxUiWidgetDef =
+            serde_json::from_str(r#"{"name":"image","type":"IMAGE","spriteName":"MiXeD"}"#)
+                .unwrap();
         let mut runtime = SceneMaxUiRuntime::default();
-        runtime.sprite_index.insert("mixed".into(), SceneMaxSpriteAsset {
-            path: "sprites/custom-atlas.png".into(), rows: 2, cols: 3,
-        });
+        runtime.sprite_index.insert(
+            "mixed".into(),
+            SceneMaxSpriteAsset {
+                path: "sprites/custom-atlas.png".into(),
+                rows: 2,
+                cols: 3,
+            },
+        );
         let context = SceneMaxLaunchContext {
-            script_root: None, asset_root: None, builtin_asset_root: None,
-            window_width: 640, window_height: 360,
+            script_root: None,
+            asset_root: None,
+            builtin_asset_root: None,
+            window_width: 640,
+            window_height: 360,
         };
-        assert_eq!(ui_image_asset_candidates(&widget, &context, &runtime)[0],
-            "sprites/custom-atlas.png");
+        assert_eq!(
+            ui_image_asset_candidates(&widget, &context, &runtime)[0],
+            "sprites/custom-atlas.png"
+        );
     }
 
     #[test]
@@ -2437,7 +2521,8 @@ mod tests {
     #[test]
     fn sprite_play_statement_builds_runtime_animation() {
         let animation = sprite_animation_from_statement(&SpritePlayStatement {
-            repeat_count: None, playback_seconds: None,
+            repeat_count: None,
+            playback_seconds: None,
             target: "b".to_owned(),
             from_frame: 0,
             from_frame_value: AssignmentValue::Number(0 as f32),
@@ -3406,7 +3491,7 @@ mod tests {
     #[test]
     fn jump_animation_blocks_long_enough_for_character_jump() {
         let jump_animation = AnimationStatement {
- rewind: None,
+            rewind: None,
             frame_range: None,
             frame_range_name: None,
             target: "player1".to_owned(),
@@ -3417,7 +3502,7 @@ mod tests {
             blocking: true,
         };
         let punch_animation = AnimationStatement {
- rewind: None,
+            rewind: None,
             clip: "CrossPunch".to_owned(),
             speed: 2.5,
             speed_value: AssignmentValue::Number(2.5),
@@ -3434,7 +3519,7 @@ mod tests {
         let mut durations = SceneMaxAnimationDurations::default();
         durations.insert("player2", "HighKick", "Armature|High-Kick", 2.4);
         let animation = AnimationStatement {
- rewind: None,
+            rewind: None,
             frame_range: None,
             frame_range_name: None,
             target: "player2".to_owned(),
@@ -3593,7 +3678,8 @@ mod tests {
     #[test]
     fn sprite_play_blocks_until_non_looping_animation_finishes() {
         let blocking = Statement::SpritePlay(SpritePlayStatement {
-            repeat_count: None, playback_seconds: None,
+            repeat_count: None,
+            playback_seconds: None,
             target: "hit".to_owned(),
             from_frame: 0,
             from_frame_value: AssignmentValue::Number(0.0),
@@ -3604,7 +3690,8 @@ mod tests {
             looped: false,
         });
         let looped = Statement::SpritePlay(SpritePlayStatement {
-            repeat_count: None, playback_seconds: None,
+            repeat_count: None,
+            playback_seconds: None,
             target: "hit".to_owned(),
             from_frame: 0,
             from_frame_value: AssignmentValue::Number(0.0),
@@ -3942,7 +4029,9 @@ mod tests {
 
     #[test]
     fn detects_matching_current_animation_like_gltf_lookup() {
-        let current = CurrentAnimation { rewind: None, identity: None,
+        let current = CurrentAnimation {
+            rewind: None,
+            identity: None,
             controller_owner: None,
             network_lifetime: None,
             playback_graphs: Vec::new(),

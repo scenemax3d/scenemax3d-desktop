@@ -35,13 +35,21 @@ enum Operation {
     Declare(String, Operand),
     Assign(String, Value),
     Broadcast(Operand, Option<Operand>, Option<String>),
-    Handler(u64, Operand, Option<HandlerArgument>, Vec<Statement>, Option<SceneMaxScopeFrame>),
+    Handler(
+        u64,
+        Operand,
+        Option<HandlerArgument>,
+        Vec<Statement>,
+        Option<SceneMaxScopeFrame>,
+    ),
     Join(Operand),
 }
 
 fn message_parameter(raw: &str) -> bool {
     let mut chars = raw.trim().chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, '_' | '$'))
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, '_' | '$'))
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '$'))
 }
 
@@ -57,9 +65,19 @@ fn operand(
     }
     if let Ok(p) = scenemax_parser::parse_program(&format!("var network_argument = {raw}")) {
         if let Some(Statement::Assignment(a)) = p.statements.first() {
-            if let Some(value) = scenemax_runtime_vm_core::references::evaluate(&a.value, vars, scope, guards,
-                &RuntimeVmSpatial { transforms_by_name: Some(transforms), collider_bounds: None }) {
-                return value.snapshot().map_or(Operand::Unsupported, Operand::Value);
+            if let Some(value) = scenemax_runtime_vm_core::references::evaluate(
+                &a.value,
+                vars,
+                scope,
+                guards,
+                &RuntimeVmSpatial {
+                    transforms_by_name: Some(transforms),
+                    collider_bounds: None,
+                },
+            ) {
+                return value
+                    .snapshot()
+                    .map_or(Operand::Unsupported, Operand::Value);
             }
         }
     }
@@ -111,9 +129,9 @@ pub(super) fn capture(
         }) => Operation::Broadcast(
             arg(event),
             message.as_deref().map(arg),
-            Some(
-                scenemax_runtime_vm_core::references::entity_name(recipient, vars, scope),
-            ),
+            Some(scenemax_runtime_vm_core::references::entity_name(
+                recipient, vars, scope,
+            )),
         ),
         Statement::Network(NetworkStatement::Send {
             recipient: None,
@@ -134,11 +152,18 @@ pub(super) fn capture(
             *handler_id,
             arg(event),
             argument.as_ref().map(|argument| {
-                if message_parameter(argument) { return HandlerArgument::Message(argument.trim().to_owned()); }
-                HandlerArgument::Interval(match arg(argument) {
-                    Operand::Value(value) => value.as_f64().or_else(|| value.as_str()?.trim().parse().ok()),
-                    _ => None,
-                }.filter(|n| n.is_finite()))
+                if message_parameter(argument) {
+                    return HandlerArgument::Message(argument.trim().to_owned());
+                }
+                HandlerArgument::Interval(
+                    match arg(argument) {
+                        Operand::Value(value) => value
+                            .as_f64()
+                            .or_else(|| value.as_str()?.trim().parse().ok()),
+                        _ => None,
+                    }
+                    .filter(|n| n.is_finite()),
+                )
             }),
             actions.clone(),
             scope.cloned(),
@@ -148,7 +173,11 @@ pub(super) fn capture(
     };
     if let Operation::EntityData(target, field, Operand::Value(value)) = &operation {
         if field != "shader" {
-            scenemax_runtime_vm_core::typed::store(vars, &format!("{target}.data.{field}"), value.clone());
+            scenemax_runtime_vm_core::typed::store(
+                vars,
+                &format!("{target}.data.{field}"),
+                value.clone(),
+            );
         }
     }
     if let Operation::Declare(name, Operand::Value(value)) = &operation {
@@ -179,7 +208,9 @@ pub(crate) fn retire_entity_data(commands: &mut Commands, name: &str, vars: &mut
     commands.queue(move |world: &mut World| {
         if let Some(mut net) = world.get_resource_mut::<Multiplayer>() {
             // Lifecycle boundaries cannot be dropped behind queued data writes.
-            net.events.operations.push(Operation::RetireEntityData(name));
+            net.events
+                .operations
+                .push(Operation::RetireEntityData(name));
         }
     });
 }
@@ -252,7 +283,9 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                     let name = format!("{target}.data.{field}");
                     // Resolved writes already executed at capture time. Do not
                     // overwrite a newer local-only write during deferred publication.
-                    if unresolved { apply_scalar(world, &name, &value); }
+                    if unresolved {
+                        apply_scalar(world, &name, &value);
+                    }
                     if net.events.values.len() < 2048 {
                         net.events.values.insert(name, value.clone());
                     }
@@ -316,7 +349,9 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                 } else {
                     0
                 };
-                write_runtime_diagnostic_line(format!("NETWORK:EVENT_SEND name={event:?} target={target}"));
+                write_runtime_diagnostic_line(format!(
+                    "NETWORK:EVENT_SEND name={event:?} target={target}"
+                ));
                 Some(Outgoing::Event {
                     target,
                     name: event,
@@ -328,26 +363,45 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                     continue;
                 };
                 let event = event.trim().to_owned();
-                if event.is_empty() { continue; }
+                if event.is_empty() {
+                    continue;
+                }
                 let activation_id = scope.as_ref().map_or(0, |s| s.activation_id);
-                if net.events.handlers.get(&event).is_some_and(|handlers| handlers.iter().any(|h| h.handler_id == handler_id && h.activation_id == activation_id)) { continue; }
+                if net.events.handlers.get(&event).is_some_and(|handlers| {
+                    handlers
+                        .iter()
+                        .any(|h| h.handler_id == handler_id && h.activation_id == activation_id)
+                }) {
+                    continue;
+                }
                 let interval = argument
                     .as_ref()
-                    .and_then(|arg| match arg { HandlerArgument::Interval(value) => *value, _ => None })
+                    .and_then(|arg| match arg {
+                        HandlerArgument::Interval(value) => *value,
+                        _ => None,
+                    })
                     .filter(|n| *n > 0.);
                 if net.events.handlers.values().map(Vec::len).sum::<usize>() >= 256 {
                     continue;
                 }
-                net.events.handlers.entry(event.clone()).or_default().push(RegisteredHandler {
-                    handler_id, activation_id,
-                    function: FunctionRuntime {
-                        params: match argument { Some(HandlerArgument::Message(name)) => vec![name], _ => vec![] },
-                        guard: None,
-                        guard_recheck: false,
-                        actions,
-                    },
-                    scope,
-                });
+                net.events
+                    .handlers
+                    .entry(event.clone())
+                    .or_default()
+                    .push(RegisteredHandler {
+                        handler_id,
+                        activation_id,
+                        function: FunctionRuntime {
+                            params: match argument {
+                                Some(HandlerArgument::Message(name)) => vec![name],
+                                _ => vec![],
+                            },
+                            guard: None,
+                            guard_recheck: false,
+                            actions,
+                        },
+                        scope,
+                    });
                 interval.map(|seconds| {
                     let interval_ms = (seconds * 1000.).clamp(1., u32::MAX as f64) as u32;
                     net.events.timers.insert(event.clone(), interval_ms);
@@ -395,7 +449,9 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                         net.events.join.fail("join request failed");
                         continue;
                     }
-                    net.events.join.begin(selector, client.session_id(), Instant::now());
+                    net.events
+                        .join
+                        .begin(selector, client.session_id(), Instant::now());
                     for (name, interval_ms) in &net.events.timers {
                         if let Err(error) = client.send(
                             None,
@@ -464,7 +520,9 @@ pub(super) fn join_pending(state: &EventState) -> bool {
     joining(state) || state.join.pending()
 }
 
-pub(super) fn join_error(state: &EventState) -> &str { state.join.error() }
+pub(super) fn join_error(state: &EventState) -> &str {
+    state.join.error()
+}
 
 pub(super) fn joining(state: &EventState) -> bool {
     state
@@ -490,7 +548,14 @@ pub(super) fn receive(world: &mut World, net: &mut Multiplayer, message: Incomin
                 queue_remote(
                     net,
                     entity,
-                    format!("{{network_entity}}.shader = {}", Value::String(if value.is_null() { String::new() } else { text(value) })),
+                    format!(
+                        "{{network_entity}}.shader = {}",
+                        Value::String(if value.is_null() {
+                            String::new()
+                        } else {
+                            text(value)
+                        })
+                    ),
                 );
             } else if let Some(name) = net.remotes.get(&entity) {
                 let name = format!("{name}.data.{field}");
@@ -514,10 +579,17 @@ pub(super) fn receive(world: &mut World, net: &mut Multiplayer, message: Incomin
             }
         }
         Incoming::Event { name, message } => {
-            write_runtime_diagnostic_line(format!("NETWORK:EVENT_RECEIVE name={name:?} handlers={}", net.events.handlers.get(name.trim()).map_or(0, Vec::len)));
+            write_runtime_diagnostic_line(format!(
+                "NETWORK:EVENT_RECEIVE name={name:?} handlers={}",
+                net.events.handlers.get(name.trim()).map_or(0, Vec::len)
+            ));
             if let Some(handlers) = net.events.handlers.get(name.trim()) {
                 let text = message.unwrap_or_default();
-                let value = text.trim().parse::<f64>().ok().filter(|n| n.is_finite())
+                let value = text
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| n.is_finite())
                     .map_or_else(|| Value::String(text.clone()), |n| serde_json::json!(n));
                 for handler in handlers {
                     let mut scope = handler.scope.clone().unwrap_or_default();
@@ -530,7 +602,13 @@ pub(super) fn receive(world: &mut World, net: &mut Multiplayer, message: Incomin
                     scope.value_call_failed = false;
                     if let Some(param) = handler.function.params.first() {
                         scope.parameters.insert(param.clone());
-                        scenemax_runtime_vm_core::typed::assign(param, value.clone(), &mut SceneMaxVars::default(), Some(&mut scope), true);
+                        scenemax_runtime_vm_core::typed::assign(
+                            param,
+                            value.clone(),
+                            &mut SceneMaxVars::default(),
+                            Some(&mut scope),
+                            true,
+                        );
                     }
                     enqueue_scoped(world, handler.function.actions.clone(), None, Some(scope));
                 }
@@ -586,41 +664,100 @@ pub(super) fn remove_entity(world: &mut World, net: &mut Multiplayer, id: u32, n
 mod tests {
     #[test]
     fn explicit_recipient_routes_registered_local_remote_and_rejects_unacknowledged_or_unknown() {
-        let (server,peer,mut client)=super::super::joins::tests::connection();
-        super::super::joins::tests::accept(&server,peer,&mut client,1000,"test");
-        let request=client.register(Spawn {archetype:"box".into(),player:"fixture".into(),source_name:"subject".into(),command:"{network_entity} => box".into()}).unwrap();
-        let mut net=Multiplayer {client:Some(client),..Default::default()};
-        net.locals.insert("owned".into(),(Entity::PLACEHOLDER,request));
-        net.owners.insert("remote".into(),2);
-        assert_eq!(recipient_owner(&net,"owned"),None);
-        assert_eq!(recipient_owner(&net,"remote"),Some(2));
-        assert_eq!(recipient_owner(&net,"absent"),None);
-        let mut packet=Vec::new();scenemax_multiplayer::write_header(scenemax_multiplayer::CREATE_ENTITY_ACCEPTED,1,&mut packet);
-        packet.extend(101u32.to_le_bytes());packet.extend(request.to_le_bytes());server.send_to(&packet,peer).unwrap();
-        let deadline=Instant::now()+Duration::from_secs(1);
-        while net.client.as_ref().unwrap().network_id(request).is_none() {net.client.as_mut().unwrap().poll().unwrap();assert!(Instant::now()<deadline);}
-        assert_eq!(recipient_owner(&net,"owned"),Some(1));
-        net.locals.remove("owned");assert_eq!(recipient_owner(&net,"owned"),None);
+        let (server, peer, mut client) = super::super::joins::tests::connection();
+        super::super::joins::tests::accept(&server, peer, &mut client, 1000, "test");
+        let request = client
+            .register(Spawn {
+                archetype: "box".into(),
+                player: "fixture".into(),
+                source_name: "subject".into(),
+                command: "{network_entity} => box".into(),
+            })
+            .unwrap();
+        let mut net = Multiplayer {
+            client: Some(client),
+            ..Default::default()
+        };
+        net.locals
+            .insert("owned".into(), (Entity::PLACEHOLDER, request));
+        net.owners.insert("remote".into(), 2);
+        assert_eq!(recipient_owner(&net, "owned"), None);
+        assert_eq!(recipient_owner(&net, "remote"), Some(2));
+        assert_eq!(recipient_owner(&net, "absent"), None);
+        let mut packet = Vec::new();
+        scenemax_multiplayer::write_header(
+            scenemax_multiplayer::CREATE_ENTITY_ACCEPTED,
+            1,
+            &mut packet,
+        );
+        packet.extend(101u32.to_le_bytes());
+        packet.extend(request.to_le_bytes());
+        server.send_to(&packet, peer).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while net.client.as_ref().unwrap().network_id(request).is_none() {
+            net.client.as_mut().unwrap().poll().unwrap();
+            assert!(Instant::now() < deadline);
+        }
+        assert_eq!(recipient_owner(&net, "owned"), Some(1));
+        net.locals.remove("owned");
+        assert_eq!(recipient_owner(&net, "owned"), None);
     }
 
     use super::*;
     #[test]
     fn handler_parameter_names_do_not_evaluate_globals_or_become_timer_expressions() {
-        for (argument, parameter, timer) in [("received", true, false), ("0", false, false), ("-1", false, false), ("\"0.25\"", false, true), ("\"received\"", false, false)] {
+        for (argument, parameter, timer) in [
+            ("received", true, false),
+            ("0", false, false),
+            ("-1", false, false),
+            ("\"0.25\"", false, true),
+            ("\"received\"", false, false),
+        ] {
             let mut world = World::new();
             world.init_resource::<Multiplayer>();
             world.init_resource::<DelayedActionQueue>();
             let mut vars = SceneMaxVars::default();
             scenemax_runtime_vm_core::typed::store(&mut vars, "received", serde_json::json!(-77));
-            let statement = scenemax_parser::parse_program(&format!("network.on (\"event\", {argument}) = do\nLogger.info received\nend do")).unwrap().statements.remove(0);
-            capture(&mut world.commands(), &statement, &mut vars, None, &HashMap::new(), &HashMap::new());
+            let statement = scenemax_parser::parse_program(&format!(
+                "network.on (\"event\", {argument}) = do\nLogger.info received\nend do"
+            ))
+            .unwrap()
+            .statements
+            .remove(0);
+            capture(
+                &mut world.commands(),
+                &statement,
+                &mut vars,
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            );
             world.flush();
             let mut net = world.remove_resource::<Multiplayer>().unwrap();
             flush(&mut world, &mut net);
             assert_eq!(net.events.timers.contains_key("event"), timer);
-            assert_eq!(!net.events.handlers["event"][0].function.params.is_empty(), parameter);
-            receive(&mut world, &mut net, Incoming::Event { name: "event".into(), message: Some("7".into()) });
-            if parameter { assert_eq!(world.resource::<DelayedActionQueue>().actions[0].scope.as_ref().unwrap().typed["received"], serde_json::json!(7.)); }
+            assert_eq!(
+                !net.events.handlers["event"][0].function.params.is_empty(),
+                parameter
+            );
+            receive(
+                &mut world,
+                &mut net,
+                Incoming::Event {
+                    name: "event".into(),
+                    message: Some("7".into()),
+                },
+            );
+            if parameter {
+                assert_eq!(
+                    world.resource::<DelayedActionQueue>().actions[0]
+                        .scope
+                        .as_ref()
+                        .unwrap()
+                        .typed["received"],
+                    serde_json::json!(7.)
+                );
+            }
             assert_eq!(vars.0["received"], -77.);
         }
     }
@@ -631,31 +768,79 @@ mod tests {
         let mut vars = SceneMaxVars::default();
         scenemax_runtime_vm_core::typed::store(&mut vars, "message", serde_json::json!(99));
         let mut scope = SceneMaxScopeFrame::default();
-        let collection = scenemax_runtime_vm_core::references::Reference::new(serde_json::json!([1]));
-        scenemax_runtime_vm_core::references::assign("items", collection.clone(), &mut vars, Some(&mut scope), true).unwrap();
+        let collection =
+            scenemax_runtime_vm_core::references::Reference::new(serde_json::json!([1]));
+        scenemax_runtime_vm_core::references::assign(
+            "items",
+            collection.clone(),
+            &mut vars,
+            Some(&mut scope),
+            true,
+        )
+        .unwrap();
         let mut net = Multiplayer::default();
-        for value in [2,2,3] {
-            let actions = scenemax_parser::parse_program(&format!("message = message + 1\nitems.push({value})")).unwrap().statements;
-            net.events.operations.push(Operation::Handler(value, Operand::Value(serde_json::json!("event")), Some(HandlerArgument::Message("message".into())), actions, Some(scope.clone())));
+        for value in [2, 2, 3] {
+            let actions = scenemax_parser::parse_program(&format!(
+                "message = message + 1\nitems.push({value})"
+            ))
+            .unwrap()
+            .statements;
+            net.events.operations.push(Operation::Handler(
+                value,
+                Operand::Value(serde_json::json!("event")),
+                Some(HandlerArgument::Message("message".into())),
+                actions,
+                Some(scope.clone()),
+            ));
         }
         flush(&mut world, &mut net);
-        receive(&mut world, &mut net, Incoming::Event { name: "event".into(), message: Some(" 7 ".into()) });
+        receive(
+            &mut world,
+            &mut net,
+            Incoming::Event {
+                name: "event".into(),
+                message: Some(" 7 ".into()),
+            },
+        );
         let pending = std::mem::take(&mut world.resource_mut::<DelayedActionQueue>().actions);
         assert_eq!(pending.len(), 2);
         for pending in pending {
             let mut scope = pending.scope.unwrap();
             assert_eq!(scope.typed["message"], serde_json::json!(7.));
             for action in pending.actions {
-                let Statement::Assignment(assignment) = action else { panic!("assignment"); };
-                scenemax_runtime_vm_core::apply_assignment_with_spatial(&assignment, &mut vars, Some(&mut scope), &HashMap::new(), &scenemax_runtime_vm_core::NoSceneMaxVmSpatial, false).unwrap();
+                let Statement::Assignment(assignment) = action else {
+                    panic!("assignment");
+                };
+                scenemax_runtime_vm_core::apply_assignment_with_spatial(
+                    &assignment,
+                    &mut vars,
+                    Some(&mut scope),
+                    &HashMap::new(),
+                    &scenemax_runtime_vm_core::NoSceneMaxVmSpatial,
+                    false,
+                )
+                .unwrap();
             }
             assert_eq!(scope.vars["message"], 8.);
         }
         assert_eq!(vars.0["message"], 99.);
-        assert!(scenemax_runtime_vm_core::typed::equal(&collection.snapshot().unwrap(), &serde_json::json!([1,2,3])));
-        receive(&mut world, &mut net, Incoming::Event { name: "event".into(), message: None });
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &collection.snapshot().unwrap(),
+            &serde_json::json!([1, 2, 3])
+        ));
+        receive(
+            &mut world,
+            &mut net,
+            Incoming::Event {
+                name: "event".into(),
+                message: None,
+            },
+        );
         for pending in &world.resource::<DelayedActionQueue>().actions {
-            assert_eq!(pending.scope.as_ref().unwrap().typed["message"], serde_json::json!(""));
+            assert_eq!(
+                pending.scope.as_ref().unwrap().typed["message"],
+                serde_json::json!("")
+            );
         }
     }
     #[test]
@@ -665,20 +850,38 @@ mod tests {
         scenemax_runtime_vm_core::typed::store(&mut vars, "shared", serde_json::json!([1]));
         world.insert_resource(vars);
         let mut net = Multiplayer::default();
-        net.events.operations.push(Operation::Declare("shared".into(), Operand::Value(serde_json::json!([]))));
-        net.events.operations.push(Operation::Assign("shared".into(), serde_json::json!([1])));
+        net.events.operations.push(Operation::Declare(
+            "shared".into(),
+            Operand::Value(serde_json::json!([])),
+        ));
+        net.events
+            .operations
+            .push(Operation::Assign("shared".into(), serde_json::json!([1])));
         flush(&mut world, &mut net);
-        assert_eq!(world.resource::<SceneMaxVars>().1["shared"], serde_json::json!([1]));
+        assert_eq!(
+            world.resource::<SceneMaxVars>().1["shared"],
+            serde_json::json!([1])
+        );
         assert_eq!(net.events.values["shared"], serde_json::json!([1]));
         // An existing authoritative value still wins when the declaration arrives.
-        net.events.values.insert("shared".into(), serde_json::json!([9]));
-        net.events.operations.push(Operation::Declare("shared".into(), Operand::Value(serde_json::json!([]))));
+        net.events
+            .values
+            .insert("shared".into(), serde_json::json!([9]));
+        net.events.operations.push(Operation::Declare(
+            "shared".into(),
+            Operand::Value(serde_json::json!([])),
+        ));
         flush(&mut world, &mut net);
-        assert_eq!(world.resource::<SceneMaxVars>().1["shared"], serde_json::json!([9]));
+        assert_eq!(
+            world.resource::<SceneMaxVars>().1["shared"],
+            serde_json::json!([9])
+        );
     }
     #[test]
     fn startup_prepass_does_not_execute_array_commands_past_waits() {
-        let program = scenemax_parser::parse_program("var items = [1]\nwait 2 seconds\nitems.push(2)").unwrap();
+        let program =
+            scenemax_parser::parse_program("var items = [1]\nwait 2 seconds\nitems.push(2)")
+                .unwrap();
         let mut vars = SceneMaxVars::default();
         apply_initial_assignments(&program, &mut vars);
         assert!(scenemax_runtime_vm_core::typed::equal(
@@ -689,8 +892,14 @@ mod tests {
     #[test]
     fn entity_wire_operands_cannot_fall_back_to_stale_named_values() {
         let mut vars = SceneMaxVars::default();
-        scenemax_runtime_vm_core::references::assign("source", scenemax_runtime_vm_core::references::Reference::entity("instance"),
-            &mut vars, None, false).unwrap();
+        scenemax_runtime_vm_core::references::assign(
+            "source",
+            scenemax_runtime_vm_core::references::Reference::entity("instance"),
+            &mut vars,
+            None,
+            false,
+        )
+        .unwrap();
         let value = operand("source", &vars, None, &HashMap::new(), &HashMap::new());
         let mut state = EventState::default();
         state.values.insert("source".into(), serde_json::json!(99));
@@ -702,17 +911,37 @@ mod tests {
         let mut world = World::new();
         world.init_resource::<Multiplayer>();
         let mut vars = SceneMaxVars::default();
-        let write = |field: &str, value: &str| Statement::Network(NetworkStatement::EntityData {
-            target: "subject".into(), field: field.into(), value: value.into(),
-        });
-        capture(&mut world.commands(), &write("old", "[1,2]"), &mut vars, None, &HashMap::new(), &HashMap::new());
+        let write = |field: &str, value: &str| {
+            Statement::Network(NetworkStatement::EntityData {
+                target: "subject".into(),
+                field: field.into(),
+                value: value.into(),
+            })
+        };
+        capture(
+            &mut world.commands(),
+            &write("old", "[1,2]"),
+            &mut vars,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         retire_entity_data(&mut world.commands(), "subject", &mut vars);
         assert!(!vars.1.contains_key("subject.data.old"));
-        capture(&mut world.commands(), &write("fresh", "7"), &mut vars, None, &HashMap::new(), &HashMap::new());
+        capture(
+            &mut world.commands(),
+            &write("fresh", "7"),
+            &mut vars,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         world.insert_resource(vars);
         world.flush();
         let mut net = world.remove_resource::<Multiplayer>().unwrap();
-        net.events.values.insert("subject.data.previous".into(), serde_json::json!(99));
+        net.events
+            .values
+            .insert("subject.data.previous".into(), serde_json::json!(99));
         flush(&mut world, &mut net);
         assert!(!net.events.values.contains_key("subject.data.previous"));
         assert!(!net.events.values.contains_key("subject.data.old"));
@@ -727,11 +956,24 @@ mod tests {
         world.init_resource::<Multiplayer>();
         let mut vars = SceneMaxVars::default();
         let statement = Statement::Network(NetworkStatement::EntityData {
-            target: "subject".into(), field: "score".into(), value: "4".into(),
+            target: "subject".into(),
+            field: "score".into(),
+            value: "4".into(),
         });
-        capture(&mut world.commands(), &statement, &mut vars, None, &HashMap::new(), &HashMap::new());
+        capture(
+            &mut world.commands(),
+            &statement,
+            &mut vars,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
         assert_eq!(vars.0["subject.data.score"], 4.);
-        scenemax_runtime_vm_core::typed::store(&mut vars, "subject.data.score", serde_json::json!(5));
+        scenemax_runtime_vm_core::typed::store(
+            &mut vars,
+            "subject.data.score",
+            serde_json::json!(5),
+        );
         world.insert_resource(vars);
         world.flush();
         let mut net = world.remove_resource::<Multiplayer>().unwrap();
@@ -749,17 +991,41 @@ mod tests {
         let mut scope = SceneMaxScopeFrame::default();
         scope.aliases.insert("recipient".into(), "stale".into());
         for target in ["first", "second"] {
-            scenemax_runtime_vm_core::references::assign("recipient",
+            scenemax_runtime_vm_core::references::assign(
+                "recipient",
                 scenemax_runtime_vm_core::references::Reference::new(serde_json::json!(target)),
-                &mut vars, Some(&mut scope), true).unwrap();
-            capture(&mut world.commands(), &Statement::Network(NetworkStatement::Send {
-                recipient: Some("recipient".into()), event: "\"check\"".into(), message: None,
-            }), &mut vars, Some(&scope), &HashMap::new(), &HashMap::new());
+                &mut vars,
+                Some(&mut scope),
+                true,
+            )
+            .unwrap();
+            capture(
+                &mut world.commands(),
+                &Statement::Network(NetworkStatement::Send {
+                    recipient: Some("recipient".into()),
+                    event: "\"check\"".into(),
+                    message: None,
+                }),
+                &mut vars,
+                Some(&scope),
+                &HashMap::new(),
+                &HashMap::new(),
+            );
         }
         world.flush();
-        let targets = world.resource::<Multiplayer>().events.operations.iter().filter_map(|operation| {
-            if let Operation::Broadcast(_, _, Some(target)) = operation { Some(target.as_str()) } else { None }
-        }).collect::<Vec<_>>();
+        let targets = world
+            .resource::<Multiplayer>()
+            .events
+            .operations
+            .iter()
+            .filter_map(|operation| {
+                if let Operation::Broadcast(_, _, Some(target)) = operation {
+                    Some(target.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
         assert_eq!(targets, ["first", "second"]);
     }
 
@@ -782,24 +1048,45 @@ mod tests {
         world.flush();
         let operations = &world.resource::<Multiplayer>().events.operations;
         assert_eq!(operations.len(), 1);
-        assert!(matches!(&operations[0], Operation::Assign(name, value) if name == "shared" && *value == serde_json::json!([1,99])));
+        assert!(
+            matches!(&operations[0], Operation::Assign(name, value) if name == "shared" && *value == serde_json::json!([1,99]))
+        );
     }
     #[test]
     fn startup_assignments_publish_each_executed_result_in_order() {
         let mut world = World::new();
         world.insert_resource(Multiplayer::default());
         let mut vars = SceneMaxVars::default();
-        let program = scenemax_parser::parse_program("var shared = [1]\nshared.push(2)\nshared[0] = 7\nshared.clear").unwrap();
+        let program = scenemax_parser::parse_program(
+            "var shared = [1]\nshared.push(2)\nshared[0] = 7\nshared.clear",
+        )
+        .unwrap();
         for action in &program.statements {
-            apply_startup_leaf_action(action, &mut world.commands(), &mut vars,
-                &mut SceneMaxObjectPools::default(), &mut SceneMaxCameraSystem::default(),
-                &mut SceneMaxRuntimeAssets::default(), &mut SceneMaxUiActionQueue::default(),
-                &HashMap::new(), &HashMap::new(), &mut HashMap::new(),
-                &HashMap::new(), &HashMap::new(), &mut SceneMaxColliderBounds::default(), 0);
+            apply_startup_leaf_action(
+                action,
+                &mut world.commands(),
+                &mut vars,
+                &mut SceneMaxObjectPools::default(),
+                &mut SceneMaxCameraSystem::default(),
+                &mut SceneMaxRuntimeAssets::default(),
+                &mut SceneMaxUiActionQueue::default(),
+                &HashMap::new(),
+                &HashMap::new(),
+                &mut HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+                &mut SceneMaxColliderBounds::default(),
+                0,
+            );
         }
         world.flush();
         let operations = &world.resource::<Multiplayer>().events.operations;
-        let expected = [serde_json::json!([1]), serde_json::json!([1,2]), serde_json::json!([7,2]), serde_json::json!([])];
+        let expected = [
+            serde_json::json!([1]),
+            serde_json::json!([1, 2]),
+            serde_json::json!([7, 2]),
+            serde_json::json!([]),
+        ];
         assert_eq!(operations.len(), expected.len());
         for (operation, expected) in operations.iter().zip(expected) {
             assert!(matches!(operation, Operation::Assign(name, value)
@@ -811,15 +1098,29 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(Multiplayer::default());
         let mut vars = SceneMaxVars::default();
-        let program = scenemax_parser::parse_program("sample = rnd(1000000)\nnetwork.broadcast (\"sampled\", sample)").unwrap();
+        let program = scenemax_parser::parse_program(
+            "sample = rnd(1000000)\nnetwork.broadcast (\"sampled\", sample)",
+        )
+        .unwrap();
         let mut expected = Vec::new();
         for _ in 0..16 {
             for action in &program.statements {
-                apply_startup_leaf_action(action, &mut world.commands(), &mut vars,
-                    &mut SceneMaxObjectPools::default(), &mut SceneMaxCameraSystem::default(),
-                    &mut SceneMaxRuntimeAssets::default(), &mut SceneMaxUiActionQueue::default(),
-                    &HashMap::new(), &HashMap::new(), &mut HashMap::new(),
-                    &HashMap::new(), &HashMap::new(), &mut SceneMaxColliderBounds::default(), 0);
+                apply_startup_leaf_action(
+                    action,
+                    &mut world.commands(),
+                    &mut vars,
+                    &mut SceneMaxObjectPools::default(),
+                    &mut SceneMaxCameraSystem::default(),
+                    &mut SceneMaxRuntimeAssets::default(),
+                    &mut SceneMaxUiActionQueue::default(),
+                    &HashMap::new(),
+                    &HashMap::new(),
+                    &mut HashMap::new(),
+                    &HashMap::new(),
+                    &HashMap::new(),
+                    &mut SceneMaxColliderBounds::default(),
+                    0,
+                );
             }
             expected.push(scenemax_runtime_vm_core::typed::lookup("sample", &vars, None).unwrap());
         }
@@ -827,8 +1128,12 @@ mod tests {
         let operations = &world.resource::<Multiplayer>().events.operations;
         assert_eq!(operations.len(), 32);
         for (pair, expected) in operations.chunks_exact(2).zip(expected) {
-            assert!(matches!(&pair[0], Operation::Assign(name, value) if name == "sample" && value == &expected));
-            assert!(matches!(&pair[1], Operation::Broadcast(_, Some(Operand::Value(value)), None) if value == &expected));
+            assert!(
+                matches!(&pair[0], Operation::Assign(name, value) if name == "sample" && value == &expected)
+            );
+            assert!(
+                matches!(&pair[1], Operation::Broadcast(_, Some(Operand::Value(value)), None) if value == &expected)
+            );
         }
     }
     #[test]
@@ -838,7 +1143,9 @@ mod tests {
         let mut vars = SceneMaxVars::default();
         scenemax_runtime_vm_core::typed::store(&mut vars, "sequence", serde_json::json!(0));
         world.insert_resource(vars);
-        crate::value_calls::tests::run_in(&mut world, r#"
+        crate::value_calls::tests::run_in(
+            &mut world,
+            r#"
 factory() = {
  var local_value = 9
  sequence = sequence + 1
@@ -847,14 +1154,19 @@ factory() = {
  sequence = 99
 }
 fixtures => Object.Pool(factory, size 2)
-"#);
+"#,
+        );
         let vars = world.resource::<SceneMaxVars>();
         assert!(!vars.0.contains_key("local_value"));
         assert_eq!(vars.0["sequence"], 2.);
         let operations = &world.resource::<Multiplayer>().events.operations;
-        let writes = operations.iter().filter_map(|op| match op {
-            Operation::Assign(name, value) if name == "sequence" => value.as_f64(), _ => None,
-        }).collect::<Vec<_>>();
+        let writes = operations
+            .iter()
+            .filter_map(|op| match op {
+                Operation::Assign(name, value) if name == "sequence" => value.as_f64(),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         assert_eq!(writes, vec![1., 2.]);
     }
     #[test]
@@ -889,7 +1201,9 @@ fixtures => Object.Pool(factory, size 2)
             &HashMap::new(),
             &HashMap::new()
         ));
-        let Statement::Assignment(assignment) = &statement else { panic!() };
+        let Statement::Assignment(assignment) = &statement else {
+            panic!()
+        };
         apply_assignment(assignment, &mut vars, None, &HashMap::new(), None).unwrap();
         assignment_result(&mut world.commands(), &assignment.name, &vars, None);
         world.flush();
@@ -935,7 +1249,10 @@ fixtures => Object.Pool(factory, size 2)
         let mut world = World::new();
         world.init_resource::<DelayedActionQueue>();
         world.init_resource::<SceneMaxVars>();
-        let mut net = Multiplayer { client: Some(client), ..Default::default() };
+        let mut net = Multiplayer {
+            client: Some(client),
+            ..Default::default()
+        };
         remote_spawn(
             &mut world,
             &mut net,
@@ -983,6 +1300,7 @@ fixtures => Object.Pool(factory, size 2)
 pub(super) fn connection_closed(state: &mut EventState) {
     state.operations.clear();
     state.entity_data.clear();
-    if state.join.pending() { state.join.fail("connection unavailable"); }
+    if state.join.pending() {
+        state.join.fail("connection unavailable");
+    }
 }
-

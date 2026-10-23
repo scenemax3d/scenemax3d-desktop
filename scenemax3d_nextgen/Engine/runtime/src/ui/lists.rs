@@ -406,25 +406,46 @@ mod tests {
         use bevy::ecs::system::RunSystemOnce;
         let source = "when key down is pressed once do\nrow = row + 1\nif (row >= sessions.Length) {\nrow = sessions.Length - 1\n}\nUI.layer1.rooms.selected = row\nend do\nwhen key up is pressed once do\nrow = row - 1\nif (row < 0) {\nrow = 0\n}\nUI.layer1.rooms.selected = row\nend do";
         let mut world = crate::input_gameplay_tests::world(source);
-        crate::value_calls::tests::run_in(&mut world, "var row = 0 [0..1];\nvar sessions = [\"First\", \"Second\"]");
+        crate::value_calls::tests::run_in(
+            &mut world,
+            "var row = 0 [0..1];\nvar sessions = [\"First\", \"Second\"]",
+        );
         let mut assets = App::new();
         assets.add_plugins((MinimalPlugins, bevy::asset::AssetPlugin::default()));
         world.insert_resource(assets.world().resource::<AssetServer>().clone());
-        world.insert_resource(SceneMaxLaunchContext { script_root: None, asset_root: None,
-            builtin_asset_root: None, window_width: 800, window_height: 900 });
+        world.insert_resource(SceneMaxLaunchContext {
+            script_root: None,
+            asset_root: None,
+            builtin_asset_root: None,
+            window_width: 800,
+            window_height: 900,
+        });
         let widget: SceneMaxUiWidgetDef = serde_json::from_str(r#"{"name":"rooms","type":"LIST_VIEW","listRows":[["First"],["Second"]],"listSelectedRowIndex":0}"#).unwrap();
         let entity = world.spawn_empty().id();
         insert(&mut world.commands(), entity, &widget, 600., 300., 1.);
         world.flush();
         let mut loaded = LoadedSceneMaxUi::default();
-        loaded.targets.insert(target_key("lobby", "layer1", &["rooms".into()]), SceneMaxUiTarget {
-            entity, text_entity: None, multiplayer: false, widget_type: "LIST_VIEW".into(), ui_scale: 1.,
-        });
+        loaded.targets.insert(
+            target_key("lobby", "layer1", &["rooms".into()]),
+            SceneMaxUiTarget {
+                entity,
+                text_entity: None,
+                multiplayer: false,
+                widget_type: "LIST_VIEW".into(),
+                ui_scale: 1.,
+            },
+        );
         let mut runtime = SceneMaxUiRuntime::default();
         runtime.active_ui_name = Some("lobby".into());
         runtime.loaded.insert("lobby".into(), loaded);
         world.insert_resource(runtime);
-        for (key, expected) in [(KeyCode::ArrowUp, 0), (KeyCode::ArrowDown, 1), (KeyCode::ArrowDown, 1), (KeyCode::ArrowUp, 0), (KeyCode::ArrowUp, 0)] {
+        for (key, expected) in [
+            (KeyCode::ArrowUp, 0),
+            (KeyCode::ArrowDown, 1),
+            (KeyCode::ArrowDown, 1),
+            (KeyCode::ArrowUp, 0),
+            (KeyCode::ArrowUp, 0),
+        ] {
             world.resource_mut::<ButtonInput<KeyCode>>().press(key);
             crate::input_gameplay_tests::input(&mut world);
             world.run_system_once(apply_scenemax_ui_actions).unwrap();

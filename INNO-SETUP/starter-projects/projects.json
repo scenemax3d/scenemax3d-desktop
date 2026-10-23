@@ -1,0 +1,9 @@
+{
+  "projects": [
+    {
+      "name": "Hello World",
+      "path": "projects/Hello World"
+    }
+  ],
+  "selectedProject": "Hello World"
+}

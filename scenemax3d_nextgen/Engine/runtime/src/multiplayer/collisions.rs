@@ -16,18 +16,45 @@ pub(crate) type BoundEvent = (
     Option<SceneMaxScopeFrame>,
 );
 
-pub(crate) fn resolve_local_targets(condition: &Condition, vars: &SceneMaxVars, scope: Option<&SceneMaxScopeFrame>, pools: &SceneMaxObjectPools) -> Condition {
+pub(crate) fn resolve_local_targets(
+    condition: &Condition,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+    pools: &SceneMaxObjectPools,
+) -> Condition {
     let resolve = |name: &str| {
-        if name.starts_with('#') { return name.to_owned(); }
+        if name.starts_with('#') {
+            return name.to_owned();
+        }
         let end = name.find(['.', '[']).unwrap_or(name.len());
-        let target = scenemax_runtime_vm_core::references::entity_name_with_aliases(&name[..end], vars, scope, &pools.aliases);
+        let target = scenemax_runtime_vm_core::references::entity_name_with_aliases(
+            &name[..end],
+            vars,
+            scope,
+            &pools.aliases,
+        );
         format!("{target}{}", &name[end..])
     };
     match condition {
-        Condition::Collision { sources, target } => Condition::Collision { sources:sources.iter().map(|s|resolve(s)).collect(), target:resolve(target) },
-        Condition::And(items) => Condition::And(items.iter().map(|c|resolve_local_targets(c,vars,scope,pools)).collect()),
-        Condition::Or(items) => Condition::Or(items.iter().map(|c|resolve_local_targets(c,vars,scope,pools)).collect()),
-        Condition::Not(item) => Condition::Not(Box::new(resolve_local_targets(item,vars,scope,pools))),
+        Condition::Collision { sources, target } => Condition::Collision {
+            sources: sources.iter().map(|s| resolve(s)).collect(),
+            target: resolve(target),
+        },
+        Condition::And(items) => Condition::And(
+            items
+                .iter()
+                .map(|c| resolve_local_targets(c, vars, scope, pools))
+                .collect(),
+        ),
+        Condition::Or(items) => Condition::Or(
+            items
+                .iter()
+                .map(|c| resolve_local_targets(c, vars, scope, pools))
+                .collect(),
+        ),
+        Condition::Not(item) => {
+            Condition::Not(Box::new(resolve_local_targets(item, vars, scope, pools)))
+        }
         other => other.clone(),
     }
 }
@@ -144,16 +171,50 @@ pub(crate) fn expand(events: Vec<PolledEvent>, network: Option<&Multiplayer>) ->
 mod tests {
     #[test]
     fn registered_remote_collisions_preserve_each_activation_scope_and_capture_joint_identity() {
-        let mut scope=SceneMaxScopeFrame::default();scope.begin_activation();
-        scope.aliases.insert("probe".into(),"captured".into());scope.vars.insert("damage".into(),7.);
-        let condition=Condition::Collision {sources:vec!["probe.\"Joint\"".into()],target:"#source".into()};
-        let resolved=resolve_local_targets(&condition,&SceneMaxVars::default(),Some(&scope),&SceneMaxObjectPools::default());
-        assert!(matches!(&resolved,Condition::Collision{sources,..} if sources==&["captured.\"Joint\""]));
-        let Statement::WhenEvent(mut event)=scenemax_parser::parse_program("when probe collides with #source do\nwait 1 seconds\nnetwork.send \"hit\"\nend do").unwrap().statements.remove(0) else {panic!()};
-        event.condition=resolved;
-        let mut net=Multiplayer::default();net.remotes.insert(1,"remote".into());net.sources.insert(1,"source".into());net.owners.insert("remote".into(),2);
-        let result=expand(vec![(SceneMaxWhenEventKey::Registered(1),"fixture".into(),SceneMaxControllerKey::RegisteredWhen(1),event,Some(scope.clone()))],Some(&net));
-        let captured=result[0].4.as_ref().unwrap();assert_eq!(captured.vars["damage"],7.);assert_eq!(captured.activation_id,scope.activation_id);assert_eq!(captured.network_event_target.as_deref(),Some("remote"));
+        let mut scope = SceneMaxScopeFrame::default();
+        scope.begin_activation();
+        scope.aliases.insert("probe".into(), "captured".into());
+        scope.vars.insert("damage".into(), 7.);
+        let condition = Condition::Collision {
+            sources: vec!["probe.\"Joint\"".into()],
+            target: "#source".into(),
+        };
+        let resolved = resolve_local_targets(
+            &condition,
+            &SceneMaxVars::default(),
+            Some(&scope),
+            &SceneMaxObjectPools::default(),
+        );
+        assert!(
+            matches!(&resolved,Condition::Collision{sources,..} if sources==&["captured.\"Joint\""])
+        );
+        let Statement::WhenEvent(mut event) = scenemax_parser::parse_program(
+            "when probe collides with #source do\nwait 1 seconds\nnetwork.send \"hit\"\nend do",
+        )
+        .unwrap()
+        .statements
+        .remove(0) else {
+            panic!()
+        };
+        event.condition = resolved;
+        let mut net = Multiplayer::default();
+        net.remotes.insert(1, "remote".into());
+        net.sources.insert(1, "source".into());
+        net.owners.insert("remote".into(), 2);
+        let result = expand(
+            vec![(
+                SceneMaxWhenEventKey::Registered(1),
+                "fixture".into(),
+                SceneMaxControllerKey::RegisteredWhen(1),
+                event,
+                Some(scope.clone()),
+            )],
+            Some(&net),
+        );
+        let captured = result[0].4.as_ref().unwrap();
+        assert_eq!(captured.vars["damage"], 7.);
+        assert_eq!(captured.activation_id, scope.activation_id);
+        assert_eq!(captured.network_event_target.as_deref(), Some("remote"));
     }
 
     use super::*;

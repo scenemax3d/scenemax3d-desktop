@@ -25,6 +25,20 @@ pub fn load_catalog(
     search_root: &Path,
     explicit: Option<&Path>,
 ) -> Result<ProjectCatalog, ServiceError> {
+    if explicit.is_none() {
+        let installation = crate::workspace_state::installation_root().or_else(|| {
+            crate::workspace_state::is_installation_root(search_root)
+                .then(|| search_root.to_owned())
+        });
+        if let Some(root) = installation {
+            let catalog = root.join("projects/projects.json");
+            return if catalog.is_file() {
+                load_catalog(&root, Some(&catalog))
+            } else {
+                Ok(ProjectCatalog::default())
+            };
+        }
+    }
     let search_root = io_result(
         search_root,
         "Locate project catalog",
@@ -120,5 +134,31 @@ mod tests {
         let file = dir.path().join("broken.json");
         std::fs::write(&file, b"not json").unwrap();
         assert!(load_catalog(dir.path(), Some(&file)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod installation_tests {
+    #[test]
+    fn installation_does_not_discover_parent_development_catalog() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("projects")).unwrap();
+        let catalog = dir.path().join("projects/projects.json");
+        std::fs::write(&catalog, r#"{"projects":[{"name":"existing","path":"projects/existing"}],"selectedProject":"existing"}"#).unwrap();
+        let installed = dir.path().join("installation");
+        std::fs::create_dir(&installed).unwrap();
+        std::fs::write(installed.join(".scenemax-studio-installation"), "1").unwrap();
+        let empty = super::load_catalog(&installed, None).unwrap();
+        assert!(empty.projects.is_empty());
+        assert!(empty.selected.is_none());
+        std::fs::create_dir_all(installed.join("projects/Starter/scripts")).unwrap();
+        std::fs::write(installed.join("projects/projects.json"),
+            r#"{"projects":[{"name":"Starter","path":"projects/Starter"}],"selectedProject":"Starter"}"#).unwrap();
+        let seeded = super::load_catalog(&installed, None).unwrap();
+        assert_eq!(seeded.projects.len(), 1);
+        assert_eq!(seeded.projects[0].name, "Starter");
+        assert_eq!(seeded.selected, Some(installed.join("projects/Starter").canonicalize().unwrap()));
+
+        assert_eq!(super::load_catalog(&installed, Some(&catalog)).unwrap().projects.len(), 1);
     }
 }

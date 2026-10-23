@@ -1,10 +1,10 @@
-pub mod animation_rewind;
 pub mod animation_range;
-pub mod motion_ease;
-pub mod physics_motion;
-pub mod ik;
-pub mod network;
+pub mod animation_rewind;
 pub mod declaration_values;
+pub mod ik;
+pub mod motion_ease;
+pub mod network;
+pub mod physics_motion;
 use thiserror::Error;
 
 pub mod generated {
@@ -56,7 +56,10 @@ pub enum Statement {
         resource: String,
         options: EntityOptions,
     },
-    LabelText { target: String, value: AssignmentValue },
+    LabelText {
+        target: String,
+        value: AssignmentValue,
+    },
     LightDecl(LightDeclarationStatement),
     LightProbeAdd(LightProbeAddStatement),
     ObjectPool(ObjectPoolStatement),
@@ -75,7 +78,10 @@ pub enum Statement {
     },
     Position(PositionStatement),
     Turn(TurnStatement),
-    RotationReset { target: String, rotation: PositionValue },
+    RotationReset {
+        target: String,
+        rotation: PositionValue,
+    },
     Move(MoveStatement),
     MoveTo(MoveToStatement),
     CharacterMode(CharacterModeStatement),
@@ -84,7 +90,10 @@ pub enum Statement {
     },
     CharacterIgnore(CharacterIgnoreStatement),
     CharacterJump(CharacterJumpStatement),
-    PhysicsMotion { target: String, action: physics_motion::Action },
+    PhysicsMotion {
+        target: String,
+        action: physics_motion::Action,
+    },
     PhysicsImpulse(PhysicsImpulseStatement),
     PhysicsStop {
         target: String,
@@ -138,7 +147,9 @@ pub enum Statement {
     /// Runtime-only boundary restoring the caller after a function body.
     EndFunction,
     /// Lexical block, authored or synthesized by runtime control flow.
-    ScopedBlock { actions: Vec<Statement> },
+    ScopedBlock {
+        actions: Vec<Statement>,
+    },
     /// Runtime-only boundary restoring the lexical parent.
     EndScope,
     ReturnValue {
@@ -335,7 +346,11 @@ pub struct AnimationStatement {
 impl AnimationStatement {
     /// Playback identity distinguishes intervals of the same source clip.
     pub fn playback_name(&self) -> String {
-        format!("{}{}", self.clip, animation_range::selector_key(self.frame_range, self.frame_range_name.as_deref()))
+        format!(
+            "{}{}",
+            self.clip,
+            animation_range::selector_key(self.frame_range, self.frame_range_name.as_deref())
+        )
     }
 }
 
@@ -719,12 +734,21 @@ pub struct AssignmentStatement {
 pub enum AssignmentValue {
     /// Runtime-only reduced value; parsing never creates this variant.
     RuntimeValue(scenemax_script_values::Reference),
-    Call { name: String, args: Vec<AssignmentValue> },
+    Call {
+        name: String,
+        args: Vec<AssignmentValue>,
+    },
     Literal(serde_json::Value),
     Json(Box<AssignmentValue>),
     Array(Vec<AssignmentValue>),
-    ArrayEdit { source: Box<AssignmentValue>, operation: ArrayOperation },
-    Access { value: Box<AssignmentValue>, index: Box<AssignmentValue> },
+    ArrayEdit {
+        source: Box<AssignmentValue>,
+        operation: ArrayOperation,
+    },
+    Access {
+        value: Box<AssignmentValue>,
+        index: Box<AssignmentValue>,
+    },
     Number(f32),
     Symbol(String),
     AnimationController(AnimationControllerValue),
@@ -758,7 +782,6 @@ pub enum ArrayOperation {
     Clear,
     Reset(Box<AssignmentValue>),
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnimationControllerValue {
@@ -1075,8 +1098,13 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
 
         if let Some((actions, next)) = parse_for_block(&logical_lines, index)? {
             if let Some(guard) = pending_guard.take() {
-                statements.push(Statement::Guarded { condition: guard.condition, actions });
-            } else { statements.extend(actions); }
+                statements.push(Statement::Guarded {
+                    condition: guard.condition,
+                    actions,
+                });
+            } else {
+                statements.extend(actions);
+            }
             index = next;
             continue;
         }
@@ -1133,7 +1161,8 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_lexical_block(&logical_lines, index + 1, true)?;
+            let (nested_actions, next_index) =
+                parse_lexical_block(&logical_lines, index + 1, true)?;
             statements.extend(nested_actions);
             pending_guard = None;
             index = next_index;
@@ -1357,7 +1386,8 @@ fn parse_key_event_block(
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_lexical_block(logical_lines, cursor + 1, true)?;
+            let (nested_actions, next_index) =
+                parse_lexical_block(logical_lines, cursor + 1, true)?;
             actions.extend(nested_actions);
             cursor = next_index;
             continue;
@@ -1574,8 +1604,20 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
         return Ok(Some(match value {
             AssignmentValue::Number(value) => Condition::NotEqualsNumber { name, value },
             AssignmentValue::Symbol(value) => Condition::NotEqualsSymbol { name, value },
-            value @ (AssignmentValue::RuntimeValue(_) | AssignmentValue::Literal(_) | AssignmentValue::Json(_) | AssignmentValue::Array(_) | AssignmentValue::Access { .. }) => Condition::NotEqualsValue { left: AssignmentValue::Symbol(name), right: value },
-            value @ (AssignmentValue::Call { .. } | AssignmentValue::Binary { .. } | AssignmentValue::Condition(_)) => Condition::NotEqualsValue { left: AssignmentValue::Symbol(name), right: value },
+            value @ (AssignmentValue::RuntimeValue(_)
+            | AssignmentValue::Literal(_)
+            | AssignmentValue::Json(_)
+            | AssignmentValue::Array(_)
+            | AssignmentValue::Access { .. }) => Condition::NotEqualsValue {
+                left: AssignmentValue::Symbol(name),
+                right: value,
+            },
+            value @ (AssignmentValue::Call { .. }
+            | AssignmentValue::Binary { .. }
+            | AssignmentValue::Condition(_)) => Condition::NotEqualsValue {
+                left: AssignmentValue::Symbol(name),
+                right: value,
+            },
             AssignmentValue::CameraModifier(_)
             | AssignmentValue::AnimationController(_)
             | AssignmentValue::ThrowMotion(_)
@@ -1596,8 +1638,20 @@ fn parse_condition(text: &str) -> Result<Option<Condition>, ParseError> {
         return Ok(Some(match value {
             AssignmentValue::Number(value) => Condition::EqualsNumber { name, value },
             AssignmentValue::Symbol(value) => Condition::EqualsSymbol { name, value },
-            value @ (AssignmentValue::RuntimeValue(_) | AssignmentValue::Literal(_) | AssignmentValue::Json(_) | AssignmentValue::Array(_) | AssignmentValue::Access { .. }) => Condition::EqualsValue { left: AssignmentValue::Symbol(name), right: value },
-            value @ (AssignmentValue::Call { .. } | AssignmentValue::Binary { .. } | AssignmentValue::Condition(_)) => Condition::EqualsValue { left: AssignmentValue::Symbol(name), right: value },
+            value @ (AssignmentValue::RuntimeValue(_)
+            | AssignmentValue::Literal(_)
+            | AssignmentValue::Json(_)
+            | AssignmentValue::Array(_)
+            | AssignmentValue::Access { .. }) => Condition::EqualsValue {
+                left: AssignmentValue::Symbol(name),
+                right: value,
+            },
+            value @ (AssignmentValue::Call { .. }
+            | AssignmentValue::Binary { .. }
+            | AssignmentValue::Condition(_)) => Condition::EqualsValue {
+                left: AssignmentValue::Symbol(name),
+                right: value,
+            },
             AssignmentValue::CameraModifier(_)
             | AssignmentValue::AnimationController(_)
             | AssignmentValue::ThrowMotion(_)
@@ -1810,7 +1864,10 @@ fn parse_collision_condition(text: &str) -> Option<Condition> {
 
 fn normalize_collision_reference(text: &str) -> String {
     let text = text.trim();
-    text.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(text).to_owned()
+    text.strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(text)
+        .to_owned()
 }
 
 fn parse_action_block(
@@ -1967,7 +2024,8 @@ fn parse_action_block_with_stop(
         }
 
         if lower == "do" {
-            let (nested_actions, next_index) = parse_lexical_block(logical_lines, cursor + 1, true)?;
+            let (nested_actions, next_index) =
+                parse_lexical_block(logical_lines, cursor + 1, true)?;
             actions.extend(nested_actions);
             cursor = next_index;
             continue;
@@ -2026,40 +2084,88 @@ fn parse_action_block_with_stop(
 
 // Lower counted loops to the existing resumable, scoped loop executor. The
 // initial test is essential: unlike do/while, a for loop may execute zero times.
-fn parse_for_block(lines: &[String], index: usize) -> Result<Option<(Vec<Statement>, usize)>, ParseError> {
+fn parse_for_block(
+    lines: &[String],
+    index: usize,
+) -> Result<Option<(Vec<Statement>, usize)>, ParseError> {
     let line = lines[index].trim();
-    let Some(rest) = line.get(..3).filter(|s| s.eq_ignore_ascii_case("for")).map(|_| &line[3..]) else { return Ok(None); };
-    if !rest.starts_with(|c: char| c.is_whitespace() || c == '(') { return Ok(None); }
+    let Some(rest) = line
+        .get(..3)
+        .filter(|s| s.eq_ignore_ascii_case("for"))
+        .map(|_| &line[3..])
+    else {
+        return Ok(None);
+    };
+    if !rest.starts_with(|c: char| c.is_whitespace() || c == '(') {
+        return Ok(None);
+    }
     let invalid = || ParseError::InvalidFor(line.to_owned());
     if rest.trim().to_ascii_lowercase().starts_with("each ") {
         let header = rest.trim();
         let open = header.find('(').ok_or_else(invalid)?;
         let close = header.rfind(')').ok_or_else(invalid)?;
-        if !header[..open].trim().eq_ignore_ascii_case("each model") || close <= open
-            || !header[close + 1..].trim().eq_ignore_ascii_case("do") { return Err(invalid()); }
+        if !header[..open].trim().eq_ignore_ascii_case("each model")
+            || close <= open
+            || !header[close + 1..].trim().eq_ignore_ascii_case("do")
+        {
+            return Err(invalid());
+        }
         let variable = header[open + 1..close].trim();
-        if !variable.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            || !variable.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') { return Err(invalid()); }
+        if !variable
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            || !variable
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err(invalid());
+        }
         let (actions, next, stop) = parse_action_block_with_stop(lines, index + 1, false)?;
-        if stop != ActionBlockStop::Closed { return Err(invalid()); }
-        return Ok(Some((vec![Statement::ForEachModel { variable: variable.into(), actions }], next)));
+        if stop != ActionBlockStop::Closed {
+            return Err(invalid());
+        }
+        return Ok(Some((
+            vec![Statement::ForEachModel {
+                variable: variable.into(),
+                actions,
+            }],
+            next,
+        )));
     }
     let header = rest.trim().strip_suffix('{').ok_or_else(invalid)?.trim();
-    let header = header.strip_prefix('(').and_then(|s| s.strip_suffix(')')).ok_or_else(invalid)?;
-    let (init, rest) = split_once_case_insensitive_outside_quotes(header, ";").ok_or_else(invalid)?;
-    let (test, increment) = split_once_case_insensitive_outside_quotes(rest, ";").ok_or_else(invalid)?;
+    let header = header
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(invalid)?;
+    let (init, rest) =
+        split_once_case_insensitive_outside_quotes(header, ";").ok_or_else(invalid)?;
+    let (test, increment) =
+        split_once_case_insensitive_outside_quotes(rest, ";").ok_or_else(invalid)?;
     let parts = [init.trim(), test.trim(), increment.trim()];
     let mut initial = parse_action_statements(parts[0])?;
     let step = parse_action_statements(parts[2])?;
-    let assignment = |s: &Statement| matches!(s, Statement::Assignment(_) | Statement::LocalAssignment(_));
-    if initial.is_empty() || step.len() != 1 || !initial.iter().all(assignment) || !step.iter().all(assignment) { return Err(invalid()); }
+    let assignment =
+        |s: &Statement| matches!(s, Statement::Assignment(_) | Statement::LocalAssignment(_));
+    if initial.is_empty()
+        || step.len() != 1
+        || !initial.iter().all(assignment)
+        || !step.iter().all(assignment)
+    {
+        return Err(invalid());
+    }
     let condition = parse_condition(parts[1])?.ok_or_else(invalid)?;
     let (mut body, next, stop) = parse_action_block_with_stop(lines, index + 1, false)?;
-    if stop != ActionBlockStop::Closed { return Err(invalid()); }
+    if stop != ActionBlockStop::Closed {
+        return Err(invalid());
+    }
     body.extend(step);
     initial.push(Statement::If(IfStatement {
         condition: condition.clone(),
-        actions: vec![Statement::DoWhile { condition, actions: body }],
+        actions: vec![Statement::DoWhile {
+            condition,
+            actions: body,
+        }],
         else_actions: vec![],
     }));
     Ok(Some((initial, next)))
@@ -2132,7 +2238,9 @@ fn parse_guarded_actions_after(
         return Ok((Vec::new(), cursor));
     };
     let lower = line.to_ascii_lowercase();
-    if let Some(result) = parse_for_block(logical_lines, cursor)? { return Ok(result); }
+    if let Some(result) = parse_for_block(logical_lines, cursor)? {
+        return Ok(result);
+    }
     if lower == "do" {
         return parse_lexical_block(logical_lines, cursor + 1, false);
     }
@@ -2414,10 +2522,14 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
     }
 
     if let Some((target, value)) = line.split_once(".text") {
-        if !target.trim().to_ascii_lowercase().starts_with("ui.") && is_variable_name(target.trim()) {
+        if !target.trim().to_ascii_lowercase().starts_with("ui.") && is_variable_name(target.trim())
+        {
             if let Some(value) = value.trim_start().strip_prefix('=') {
                 if let Some(value) = parse_assignment_value(value.trim())? {
-                    return Ok(Statement::LabelText { target: target.trim().to_owned(), value });
+                    return Ok(Statement::LabelText {
+                        target: target.trim().to_owned(),
+                        value,
+                    });
                 }
             }
         }
@@ -2588,7 +2700,8 @@ fn parse_statement(line: &str) -> Result<Statement, ParseError> {
     }
 
     if let Some((target, rest)) = split_dot_command_rest(line)
-        && let Some(action) = physics_motion::parse(&rest).map_err(ParseError::InvalidNumber)? {
+        && let Some(action) = physics_motion::parse(&rest).map_err(ParseError::InvalidNumber)?
+    {
         return Ok(Statement::PhysicsMotion { target, action });
     }
 
@@ -2642,7 +2755,10 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
     let lower = line.to_ascii_lowercase();
     let alias_ease = lower.find(".ease(").is_some_and(|end| {
         let name = line[..end].trim();
-        !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
     });
     if !lower.starts_with("ui.") && !alias_ease {
         return Ok(None);
@@ -2703,9 +2819,12 @@ fn parse_ui_statement(line: &str) -> Result<Option<Statement>, ParseError> {
 
     if let Some(open_index) = lower.find(".ease(") {
         let path_text = &line[..open_index];
-        let target_reference = (!path_text.to_ascii_lowercase().starts_with("ui.")).then(|| path_text.trim().to_owned());
+        let target_reference = (!path_text.to_ascii_lowercase().starts_with("ui."))
+            .then(|| path_text.trim().to_owned());
         let target = parse_ui_target_path(path_text).unwrap_or_else(|| UiTargetPath {
-            ui_name: None, layer: path_text.trim().to_owned(), widget_path: vec![],
+            ui_name: None,
+            layer: path_text.trim().to_owned(),
+            widget_path: vec![],
         });
         let args = parse_call_args(&line[open_index + ".ease".len()..]);
         let Some(easing) = args.first().cloned() else {
@@ -2831,7 +2950,9 @@ fn parse_logger_statement(line: &str) -> Result<Option<LoggerStatement>, ParseEr
     if message_text.is_empty() {
         return Ok(None);
     }
-    let message = if let Ok(text) = serde_json::from_str::<String>(message_text.trim_end_matches(';').trim()) {
+    let message = if let Ok(text) =
+        serde_json::from_str::<String>(message_text.trim_end_matches(';').trim())
+    {
         LoggerMessage::Text(text)
     } else {
         let Some(value) = parse_assignment_value(message_text)? else {
@@ -2965,7 +3086,11 @@ fn parse_call_args_with_quotes(text: &str, preserve: bool) -> Vec<String> {
                 current.push(ch);
             }
             ')' if depth == 0 => {
-                let arg = if preserve { current.trim() } else { clean_call_arg(&current) };
+                let arg = if preserve {
+                    current.trim()
+                } else {
+                    clean_call_arg(&current)
+                };
                 if !arg.is_empty() {
                     args.push(arg.to_owned());
                 }
@@ -2976,7 +3101,11 @@ fn parse_call_args_with_quotes(text: &str, preserve: bool) -> Vec<String> {
                 current.push(ch);
             }
             ',' if depth == 0 => {
-                let arg = if preserve { current.trim() } else { clean_call_arg(&current) };
+                let arg = if preserve {
+                    current.trim()
+                } else {
+                    clean_call_arg(&current)
+                };
                 if !arg.is_empty() {
                     args.push(arg.to_owned());
                 }
@@ -3129,8 +3258,14 @@ fn split_once_case_insensitive_outside_quotes<'a>(
     let mut quote: Option<char> = None;
     let mut escaped = false;
     for (index, value) in text.char_indices() {
-        if escaped { escaped = false; continue; }
-        if value == '\\' && quote.is_some() { escaped = true; continue; }
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if value == '\\' && quote.is_some() {
+            escaped = true;
+            continue;
+        }
         match value {
             '"' | '\'' => {
                 if quote == Some(value) {
@@ -3375,31 +3510,54 @@ fn is_shared_var_line(line: &str) -> bool {
 // `clear character mode` in their existing parsers.
 fn parse_array_command(line: &str) -> Result<Option<AssignmentStatement>, ParseError> {
     let line = line.trim().trim_end_matches(';').trim();
-    let Some((name, method)) = line.split_once('.') else { return Ok(None) };
-    if !is_variable_name(name.trim()) { return Ok(None) }
+    let Some((name, method)) = line.split_once('.') else {
+        return Ok(None);
+    };
+    if !is_variable_name(name.trim()) {
+        return Ok(None);
+    }
     let method = method.trim();
     let operation = if method.eq_ignore_ascii_case("pop") {
         ArrayOperation::Pop
     } else if method.eq_ignore_ascii_case("clear") {
         ArrayOperation::Clear
     } else {
-        let Some((verb, rest)) = method.split_once('(') else { return Ok(None) };
+        let Some((verb, rest)) = method.split_once('(') else {
+            return Ok(None);
+        };
         let verb = verb.trim();
-        if !verb.eq_ignore_ascii_case("push") && !verb.eq_ignore_ascii_case("reset") { return Ok(None) }
-        let Some(raw) = rest.strip_suffix(')') else { return Ok(None) };
-        let Some(value) = parse_assignment_value(raw.trim())? else { return Ok(None) };
-        if verb.eq_ignore_ascii_case("push") { ArrayOperation::Push(Box::new(value)) }
-        else { ArrayOperation::Reset(Box::new(value)) }
+        if !verb.eq_ignore_ascii_case("push") && !verb.eq_ignore_ascii_case("reset") {
+            return Ok(None);
+        }
+        let Some(raw) = rest.strip_suffix(')') else {
+            return Ok(None);
+        };
+        let Some(value) = parse_assignment_value(raw.trim())? else {
+            return Ok(None);
+        };
+        if verb.eq_ignore_ascii_case("push") {
+            ArrayOperation::Push(Box::new(value))
+        } else {
+            ArrayOperation::Reset(Box::new(value))
+        }
     };
     let name = name.trim().to_owned();
-    Ok(Some(AssignmentStatement { name: name.clone(), value: AssignmentValue::ArrayEdit {
-        source: Box::new(AssignmentValue::Symbol(name)), operation,
-    }}))
+    Ok(Some(AssignmentStatement {
+        name: name.clone(),
+        value: AssignmentValue::ArrayEdit {
+            source: Box::new(AssignmentValue::Symbol(name)),
+            operation,
+        },
+    }))
 }
 
 fn parse_assignment_list(line: &str) -> Result<Option<Vec<AssignmentStatement>>, ParseError> {
     let line = line.trim();
-    if line.split_once('=').is_some_and(|(name, _)| name.trim().strip_suffix(".text").is_some_and(is_variable_name)) {
+    if line.split_once('=').is_some_and(|(name, _)| {
+        name.trim()
+            .strip_suffix(".text")
+            .is_some_and(is_variable_name)
+    }) {
         return Ok(None);
     }
     if let Some(assignment) = parse_array_command(line)? {
@@ -3580,19 +3738,45 @@ fn remember_runtime_object_name(names: &mut Vec<String>, name: &str) {
     }
 }
 
-fn parse_animation_controller_action(line: &str) -> Result<Option<AnimationControllerActionStatement>, ParseError> {
-    let Some((controller, rest)) = split_dot_command_rest(line) else { return Ok(None); };
-    if !is_variable_path(&controller) { return Ok(None); }
+fn parse_animation_controller_action(
+    line: &str,
+) -> Result<Option<AnimationControllerActionStatement>, ParseError> {
+    let Some((controller, rest)) = split_dot_command_rest(line) else {
+        return Ok(None);
+    };
+    if !is_variable_path(&controller) {
+        return Ok(None);
+    }
     let rest = rest.trim();
     if let Some(tail) = strip_keyword_prefix(rest, "rewind") {
-        let Some((split, _)) = find_case_insensitive_span(tail, " in ") else { return Err(ParseError::InvalidNumber(rest.into())); };
-        let percent = parse_assignment_value(tail[..split].trim())?.ok_or_else(|| ParseError::InvalidNumber(rest.into()))?;
-        let duration = parse_duration_assignment_value(tail, " in ")?.ok_or_else(|| ParseError::InvalidNumber(rest.into()))?.0;
-        return Ok(Some(AnimationControllerActionStatement { controller, action: AnimationControllerAction::Rewind,
-            rewind: Some(animation_rewind::Request { percent, duration, easing: motion_ease::parse(rest)? }) }));
+        let Some((split, _)) = find_case_insensitive_span(tail, " in ") else {
+            return Err(ParseError::InvalidNumber(rest.into()));
+        };
+        let percent = parse_assignment_value(tail[..split].trim())?
+            .ok_or_else(|| ParseError::InvalidNumber(rest.into()))?;
+        let duration = parse_duration_assignment_value(tail, " in ")?
+            .ok_or_else(|| ParseError::InvalidNumber(rest.into()))?
+            .0;
+        return Ok(Some(AnimationControllerActionStatement {
+            controller,
+            action: AnimationControllerAction::Rewind,
+            rewind: Some(animation_rewind::Request {
+                percent,
+                duration,
+                easing: motion_ease::parse(rest)?,
+            }),
+        }));
     }
-    let action = match rest.to_ascii_lowercase().as_str() { "run" | "run()" => AnimationControllerAction::Run, "stop" | "stop()" => AnimationControllerAction::Stop, _ => return Ok(None) };
-    Ok(Some(AnimationControllerActionStatement { controller, action, rewind: None }))
+    let action = match rest.to_ascii_lowercase().as_str() {
+        "run" | "run()" => AnimationControllerAction::Run,
+        "stop" | "stop()" => AnimationControllerAction::Stop,
+        _ => return Ok(None),
+    };
+    Ok(Some(AnimationControllerActionStatement {
+        controller,
+        action,
+        rewind: None,
+    }))
 }
 
 fn parse_animation_controller_event_block(
@@ -3728,16 +3912,34 @@ fn split_assignment_segments(text: &str) -> Vec<&str> {
 }
 
 fn clean_assignment_value(raw: &str) -> &str {
-    let raw = raw.trim().trim_end_matches(';').trim_end_matches(',').trim();
+    let raw = raw
+        .trim()
+        .trim_end_matches(';')
+        .trim_end_matches(',')
+        .trim();
     let mut quoted = false;
     let mut escaped = false;
-    for (i,c) in raw.char_indices() {
-        if escaped { escaped=false; continue; }
-        if c == '\\' && quoted { escaped=true; continue; }
-        if c == '"' { quoted = !quoted; }
-        if !quoted && raw[i..].starts_with("//") { return raw[..i].trim(); }
-        if !quoted && c == '[' && i > 0 && raw[..i].ends_with(char::is_whitespace)
-            && raw[i..].split(']').next().is_some_and(|s| s.contains("..")) {
+    for (i, c) in raw.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' && quoted {
+            escaped = true;
+            continue;
+        }
+        if c == '"' {
+            quoted = !quoted;
+        }
+        if !quoted && raw[i..].starts_with("//") {
+            return raw[..i].trim();
+        }
+        if !quoted
+            && c == '['
+            && i > 0
+            && raw[..i].ends_with(char::is_whitespace)
+            && raw[i..].split(']').next().is_some_and(|s| s.contains(".."))
+        {
             return raw[..i].trim();
         }
     }
@@ -3753,11 +3955,18 @@ pub fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>
             return Ok(Some(AssignmentValue::Literal(value)));
         }
     }
-    if raw_value.starts_with('[') && raw_value.ends_with(']') && matching_close_bracket_index(&raw_value[1..]) == Some(raw_value.len() - 2) {
+    if raw_value.starts_with('[')
+        && raw_value.ends_with(']')
+        && matching_close_bracket_index(&raw_value[1..]) == Some(raw_value.len() - 2)
+    {
         let mut values = Vec::new();
-        for part in split_top_level_comma(&raw_value[1..raw_value.len()-1]) {
-            if part.trim().is_empty() && raw_value == "[]" { continue; }
-            let Some(value) = parse_assignment_value(part)? else { return Ok(None); };
+        for part in split_top_level_comma(&raw_value[1..raw_value.len() - 1]) {
+            if part.trim().is_empty() && raw_value == "[]" {
+                continue;
+            }
+            let Some(value) = parse_assignment_value(part)? else {
+                return Ok(None);
+            };
             values.push(value);
         }
         return Ok(Some(AssignmentValue::Array(values)));
@@ -3824,16 +4033,20 @@ pub fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>
     }
     // Unary signs bind more tightly than the binary operators handled above.
     if let Some(operand) = raw_value.strip_prefix('-') {
-        return Ok(parse_assignment_value(operand)?.map(|value| AssignmentValue::Binary {
-            left: Box::new(AssignmentValue::Number(0.)),
-            operator: ArithmeticOperator::Subtract,
-            right: Box::new(value),
-        }));
+        return Ok(
+            parse_assignment_value(operand)?.map(|value| AssignmentValue::Binary {
+                left: Box::new(AssignmentValue::Number(0.)),
+                operator: ArithmeticOperator::Subtract,
+                right: Box::new(value),
+            }),
+        );
     }
     if let Some(operand) = raw_value.strip_prefix('+') {
         return parse_assignment_value(operand);
     }
-    if let Some(value) = typed_access(raw_value)? { return Ok(Some(value)); }
+    if let Some(value) = typed_access(raw_value)? {
+        return Ok(Some(value));
+    }
     if raw_value.eq_ignore_ascii_case("true") {
         return Ok(Some(AssignmentValue::Condition(Box::new(
             Condition::Boolean(true),
@@ -3856,32 +4069,52 @@ pub fn parse_assignment_value(raw_value: &str) -> Result<Option<AssignmentValue>
 fn typed_access(raw: &str) -> Result<Option<AssignmentValue>, ParseError> {
     let (mut value, mut rest) = if raw.to_ascii_lowercase().starts_with("json(") {
         let tail = &raw[5..];
-        let Some(close) = matching_close_paren_index(tail) else { return Ok(None); };
-        let Some(inner) = parse_assignment_value(&tail[..close])? else { return Ok(None); };
-        (AssignmentValue::Json(Box::new(inner)), &tail[close+1..])
-    } else if let Some(open) = raw.find('(').filter(|open| is_variable_name(raw[..*open].trim())) {
+        let Some(close) = matching_close_paren_index(tail) else {
+            return Ok(None);
+        };
+        let Some(inner) = parse_assignment_value(&tail[..close])? else {
+            return Ok(None);
+        };
+        (AssignmentValue::Json(Box::new(inner)), &tail[close + 1..])
+    } else if let Some(open) = raw
+        .find('(')
+        .filter(|open| is_variable_name(raw[..*open].trim()))
+    {
         let tail = &raw[open + 1..];
-        let Some(close) = matching_close_paren_index(tail) else { return Ok(None); };
+        let Some(close) = matching_close_paren_index(tail) else {
+            return Ok(None);
+        };
         let name = raw[..open].trim();
         let body = tail[..close].trim();
         let mut args = Vec::new();
         if !body.is_empty() {
             for part in split_top_level_comma(body) {
-                let Some(value) = parse_assignment_value(part)? else { return Ok(None); };
+                let Some(value) = parse_assignment_value(part)? else {
+                    return Ok(None);
+                };
                 args.push(value);
             }
         }
         let rest = &tail[close + 1..];
         let value = if rest.is_empty() {
-            AssignmentValue::Call { name: name.into(), args }
+            AssignmentValue::Call {
+                name: name.into(),
+                args,
+            }
         } else {
-            let Some(value) = parse_assignment_value(&raw[..open + close + 2])? else { return Ok(None); };
+            let Some(value) = parse_assignment_value(&raw[..open + close + 2])? else {
+                return Ok(None);
+            };
             value
         };
         (value, rest)
     } else {
-        let Some(start) = raw.find('[') else { return Ok(None); };
-        if !is_variable_path(&raw[..start]) { return Ok(None); }
+        let Some(start) = raw.find('[') else {
+            return Ok(None);
+        };
+        if !is_variable_path(&raw[..start]) {
+            return Ok(None);
+        }
         (AssignmentValue::Symbol(raw[..start].into()), &raw[start..])
     };
     while !rest.is_empty() {
@@ -3892,38 +4125,81 @@ fn typed_access(raw: &str) -> Result<Option<AssignmentValue>, ParseError> {
             let mut escaped = false;
             let mut close = None;
             for (i, c) in rest.char_indices() {
-                if escaped { escaped = false; continue; }
-                if c == '\\' && quoted { escaped = true; continue; }
-                if c == '"' { quoted = !quoted; }
-                if quoted { continue; }
-                if c == '[' { depth += 1; }
-                if c == ']' { depth -= 1; if depth == 0 { close = Some(i); break; } }
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if c == '\\' && quoted {
+                    escaped = true;
+                    continue;
+                }
+                if c == '"' {
+                    quoted = !quoted;
+                }
+                if quoted {
+                    continue;
+                }
+                if c == '[' {
+                    depth += 1;
+                }
+                if c == ']' {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(i);
+                        break;
+                    }
+                }
             }
-            let Some(close) = close else { return Ok(None); };
-            let Some(parsed) = parse_assignment_value(&rest[1..close])? else { return Ok(None); };
+            let Some(close) = close else {
+                return Ok(None);
+            };
+            let Some(parsed) = parse_assignment_value(&rest[1..close])? else {
+                return Ok(None);
+            };
             index = parsed;
-            rest = &rest[close+1..];
+            rest = &rest[close + 1..];
         } else if let Some(tail) = rest.strip_prefix('.') {
             let end = tail.find(['.', '[']).unwrap_or(tail.len());
-            if !is_variable_name(&tail[..end]) { return Ok(None); }
+            if !is_variable_name(&tail[..end]) {
+                return Ok(None);
+            }
             index = AssignmentValue::Literal(serde_json::Value::String(tail[..end].into()));
             rest = &tail[end..];
-        } else { return Ok(None); }
-        value = AssignmentValue::Access { value: Box::new(value), index: Box::new(index) };
+        } else {
+            return Ok(None);
+        }
+        value = AssignmentValue::Access {
+            value: Box::new(value),
+            index: Box::new(index),
+        };
     }
     Ok(Some(value))
 }
 
-fn parse_animation_controller_value(raw_value: &str) -> Result<Option<AnimationControllerValue>, ParseError> {
-    let Some(reference) = strip_keyword_prefix(raw_value, "animation") else { return Ok(None); };
+fn parse_animation_controller_value(
+    raw_value: &str,
+) -> Result<Option<AnimationControllerValue>, ParseError> {
+    let Some(reference) = strip_keyword_prefix(raw_value, "animation") else {
+        return Ok(None);
+    };
     let reference = reference.trim();
     let parts = animation_range::controller_segments(reference)?;
-    let animation = parse_animation(parts[0])?.ok_or_else(|| ParseError::InvalidNumber(reference.into()))?;
-    let subsequent = parts.iter().skip(1).map(|part| {
-        parse_animation(&format!("{}.{part}", animation.target))?
-            .ok_or_else(|| ParseError::InvalidNumber((*part).into()))
-    }).collect::<Result<Vec<_>, _>>()?;
-    Ok(Some(AnimationControllerValue { target: animation.target.clone(), clip: animation.clip.clone(), animation: Box::new(animation), subsequent }))
+    let animation =
+        parse_animation(parts[0])?.ok_or_else(|| ParseError::InvalidNumber(reference.into()))?;
+    let subsequent = parts
+        .iter()
+        .skip(1)
+        .map(|part| {
+            parse_animation(&format!("{}.{part}", animation.target))?
+                .ok_or_else(|| ParseError::InvalidNumber((*part).into()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(AnimationControllerValue {
+        target: animation.target.clone(),
+        clip: animation.clip.clone(),
+        animation: Box::new(animation),
+        subsequent,
+    }))
 }
 
 fn parse_throw_motion_value(raw_value: &str) -> Result<Option<ThrowMotionValue>, ParseError> {
@@ -4148,7 +4424,9 @@ fn parse_function_assignment_args<'a>(text: &'a str, name: &str) -> Option<Vec<&
     }
     let tail = &trimmed[open_index + 1..];
     let close = matching_close_paren_index(tail)?;
-    if !tail[close + 1..].trim().is_empty() { return None; }
+    if !tail[close + 1..].trim().is_empty() {
+        return None;
+    }
     Some(split_top_level_comma(tail[..close].trim()))
 }
 
@@ -4159,10 +4437,21 @@ fn split_assignment_binary(text: &str) -> Option<(&str, ArithmeticOperator, &str
         let mut escaped = false;
         let mut candidate = None;
         for (index, value) in text.char_indices() {
-            if escaped { escaped = false; continue; }
-            if value == '\\' && quoted { escaped = true; continue; }
-            if value == '"' { quoted = !quoted; continue; }
-            if quoted { continue; }
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if value == '\\' && quoted {
+                escaped = true;
+                continue;
+            }
+            if value == '"' {
+                quoted = !quoted;
+                continue;
+            }
+            if quoted {
+                continue;
+            }
             match value {
                 '(' | '[' => depth += 1,
                 ')' | ']' => depth = depth.saturating_sub(1),
@@ -4182,11 +4471,15 @@ fn split_assignment_binary(text: &str) -> Option<(&str, ArithmeticOperator, &str
                     '%' => ArithmeticOperator::Modulo,
                     _ => unreachable!(),
                 };
-                if left.ends_with(['+', '-', '*', '/', '%']) { continue; }
+                if left.ends_with(['+', '-', '*', '/', '%']) {
+                    continue;
+                }
                 candidate = Some((left, operator, right));
             }
         }
-        if candidate.is_some() { return candidate; }
+        if candidate.is_some() {
+            return candidate;
+        }
     }
     None
 }
@@ -4274,7 +4567,9 @@ fn parse_camera_command(line: &str, command: &str) -> Result<Option<SceneMaxVec3
         return Ok(None);
     }
     // Axis rotations and expression poses belong to the general motion parser.
-    let Some(raw) = values_inside_first_parens(line) else { return Ok(None); };
+    let Some(raw) = values_inside_first_parens(line) else {
+        return Ok(None);
+    };
     let parts = split_top_level_comma(raw);
     if parts.len() != 3 || parts.iter().any(|part| part.trim().parse::<f32>().is_err()) {
         return Ok(None);
@@ -4699,9 +4994,14 @@ fn parse_shader_statement(line: &str) -> Result<Option<Statement>, ParseError> {
 
 fn parse_shader_value(raw_value: &str) -> Result<AssignmentValue, ParseError> {
     let raw_value = clean_assignment_value(raw_value);
-    if let Some(value) = raw_value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
+    if let Some(value) = raw_value
+        .strip_prefix('\'')
+        .and_then(|v| v.strip_suffix('\''))
+    {
         if !value.contains('\'') {
-            return Ok(AssignmentValue::Literal(serde_json::Value::String(value.to_owned())));
+            return Ok(AssignmentValue::Literal(serde_json::Value::String(
+                value.to_owned(),
+            )));
         }
     }
     Ok(parse_assignment_value(raw_value)?
@@ -4710,7 +5010,11 @@ fn parse_shader_value(raw_value: &str) -> Result<AssignmentValue, ParseError> {
 
 fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     let shared = starts_with_keyword(line.trim(), "shared");
-    let line = if shared { line.trim()["shared".len()..].trim_start() } else { line };
+    let line = if shared {
+        line.trim()["shared".len()..].trim_start()
+    } else {
+        line
+    };
     if let Some((name, rest)) = line.split_once("=>") {
         if let Some(mut pool) = parse_object_pool(name.trim(), rest)? {
             pool.shared = shared;
@@ -4724,7 +5028,11 @@ fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
         return Ok(Some(Statement::ModelDecl {
             name: name.trim().to_owned(),
             resource,
-            options: EntityOptions { shared, resource_value: dynamic_resource_value(rest)?, ..parse_entity_options(rest, options_text)? },
+            options: EntityOptions {
+                shared,
+                resource_value: dynamic_resource_value(rest)?,
+                ..parse_entity_options(rest, options_text)?
+            },
         }));
     }
 
@@ -4740,7 +5048,11 @@ fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
         return Ok(Some(Statement::ModelDecl {
             name: name.to_owned(),
             resource,
-            options: EntityOptions { shared, resource_value: dynamic_resource_value(rest)?, ..parse_entity_options(rest, options_text)? },
+            options: EntityOptions {
+                shared,
+                resource_value: dynamic_resource_value(rest)?,
+                ..parse_entity_options(rest, options_text)?
+            },
         }));
     }
 
@@ -4749,7 +5061,11 @@ fn parse_model_decl(line: &str) -> Result<Option<Statement>, ParseError> {
 
 fn parse_light_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     let shared = starts_with_keyword(line.trim(), "shared");
-    let line = if shared { line.trim()["shared".len()..].trim_start() } else { line };
+    let line = if shared {
+        line.trim()["shared".len()..].trim_start()
+    } else {
+        line
+    };
     if let Some((name, rest)) = line.split_once("=>") {
         return parse_light_decl_parts(name.trim(), rest, shared);
     }
@@ -4764,7 +5080,11 @@ fn parse_light_decl(line: &str) -> Result<Option<Statement>, ParseError> {
     Ok(None)
 }
 
-fn parse_light_decl_parts(name: &str, rest: &str, shared: bool) -> Result<Option<Statement>, ParseError> {
+fn parse_light_decl_parts(
+    name: &str,
+    rest: &str,
+    shared: bool,
+) -> Result<Option<Statement>, ParseError> {
     let (resource, options_text) = split_resource_and_options(rest);
     let Some(light_type) = parse_light_resource_type(resource.trim()) else {
         return Ok(None);
@@ -4965,10 +5285,17 @@ fn parse_object_pool(name: &str, rest: &str) -> Result<Option<ObjectPoolStatemen
     if !is_variable_name(&factory) {
         return Ok(None);
     }
-    let size = if let Some(part) = parts.iter().skip(1).find(|part| starts_with_keyword(part.trim(), "size")) {
+    let size = if let Some(part) = parts
+        .iter()
+        .skip(1)
+        .find(|part| starts_with_keyword(part.trim(), "size"))
+    {
         let expression = part.trim()[4..].trim();
-        parse_assignment_value(expression)?.ok_or_else(|| ParseError::InvalidNumber(expression.to_owned()))?
-    } else { AssignmentValue::Number(1.) };
+        parse_assignment_value(expression)?
+            .ok_or_else(|| ParseError::InvalidNumber(expression.to_owned()))?
+    } else {
+        AssignmentValue::Number(1.)
+    };
     Ok(Some(ObjectPoolStatement {
         shared: false,
         name: name.to_owned(),
@@ -5042,7 +5369,8 @@ fn parse_look_at(line: &str) -> Option<Statement> {
 }
 
 fn parse_attach(line: &str) -> Result<Option<AttachStatement>, ParseError> {
-    let Some((target, rest)) = split_once_case_insensitive_outside_quotes(line, ".attach to ") else {
+    let Some((target, rest)) = split_once_case_insensitive_outside_quotes(line, ".attach to ")
+    else {
         return Ok(None);
     };
     let target = target.trim();
@@ -5062,8 +5390,10 @@ fn parse_attach(line: &str) -> Result<Option<AttachStatement>, ParseError> {
     let offset_value = if options_text.is_empty() || parse_vec3_after(options_text, "pos").is_ok() {
         None
     } else {
-        Some(parse_position_value_after(options_text, "pos")?
-            .ok_or_else(|| ParseError::InvalidNumber(options_text.trim().into()))?)
+        Some(
+            parse_position_value_after(options_text, "pos")?
+                .ok_or_else(|| ParseError::InvalidNumber(options_text.trim().into()))?,
+        )
     };
     let offset = parse_vec3_after(options_text, "pos").unwrap_or(SceneMaxVec3 {
         x: 0.0,
@@ -5118,7 +5448,10 @@ fn values_inside_first_parens(text: &str) -> Option<&str> {
 }
 
 fn split_top_level_comma(text: &str) -> Vec<&str> {
-    split_top_level_options(text).into_iter().filter(|part| !part.is_empty()).collect()
+    split_top_level_options(text)
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect()
 }
 
 fn split_top_level_options(text: &str) -> Vec<&str> {
@@ -5329,16 +5662,26 @@ fn parse_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
 }
 
 fn parse_rotation_reset(line: &str) -> Result<Option<Statement>, ParseError> {
-    let Some((target, rest)) = line.split_once(".rotate") else { return Ok(None); };
-    let Some(inner) = rest.trim().strip_prefix('(') else { return Ok(None); };
-    let Some(end) = matching_close_paren_index(inner) else { return Ok(None); };
+    let Some((target, rest)) = line.split_once(".rotate") else {
+        return Ok(None);
+    };
+    let Some(inner) = rest.trim().strip_prefix('(') else {
+        return Ok(None);
+    };
+    let Some(end) = matching_close_paren_index(inner) else {
+        return Ok(None);
+    };
     let parts = split_top_level_comma(&inner[..end]);
     if parts.len() != 3 || target.trim().is_empty() || !inner[end + 1..].trim().is_empty() {
         return Ok(None);
     }
-    let values = parts.into_iter().map(parse_position_expr).collect::<Result<Vec<_>, _>>()?;
+    let values = parts
+        .into_iter()
+        .map(parse_position_expr)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Some(Statement::RotationReset {
-        target: target.trim().into(), rotation: PositionValue::Coordinates(values),
+        target: target.trim().into(),
+        rotation: PositionValue::Coordinates(values),
     }))
 }
 
@@ -5347,25 +5690,43 @@ fn parse_rotate_turn(line: &str) -> Result<Option<TurnStatement>, ParseError> {
         return Ok(None);
     };
     let rest = rest.trim_start();
-    let (absolute, rest) = rest.strip_prefix("to").filter(|tail| tail.starts_with(char::is_whitespace) || tail.starts_with('('))
-        .map(|tail| (true, tail)).unwrap_or((false, rest));
-    let Some(rest) = rest.trim_start().strip_prefix('(') else { return Ok(None); };
+    let (absolute, rest) = rest
+        .strip_prefix("to")
+        .filter(|tail| tail.starts_with(char::is_whitespace) || tail.starts_with('('))
+        .map(|tail| (true, tail))
+        .unwrap_or((false, rest));
+    let Some(rest) = rest.trim_start().strip_prefix('(') else {
+        return Ok(None);
+    };
     let target = target.trim();
     if target.is_empty() {
         return Ok(None);
     }
     let mut depth = 1;
     let Some(end) = rest.char_indices().find_map(|(index, ch)| {
-        match ch { '(' => depth += 1, ')' => depth -= 1, _ => {} }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
         (depth == 0).then_some(index)
-    }) else { return Ok(None); };
+    }) else {
+        return Ok(None);
+    };
     let (inner, after_rotate) = (&rest[..end], &rest[end + 1..]);
-    let Some((axis, degrees_value)) = (if absolute { parse_target_axis_rotation(inner)? } else { parse_relative_axis_delta(inner)? }) else {
+    let Some((axis, degrees_value)) = (if absolute {
+        parse_target_axis_rotation(inner)?
+    } else {
+        parse_relative_axis_delta(inner)?
+    }) else {
         return Ok(None);
     };
     let degrees = static_assignment_number(&degrees_value).unwrap_or(0.0);
     let (duration_value, duration_seconds) = parse_directional_move_duration_value(after_rotate)?
-        .unwrap_or_else(|| { let seconds = if absolute { 1.0 } else { 0.0 }; (AssignmentValue::Number(seconds), seconds) });
+        .unwrap_or_else(|| {
+            let seconds = if absolute { 1.0 } else { 0.0 };
+            (AssignmentValue::Number(seconds), seconds)
+        });
     let loop_condition = parse_loop_while_condition(after_rotate)?;
     Ok(Some(TurnStatement {
         easing: motion_ease::parse(rest)?,
@@ -5388,7 +5749,9 @@ fn parse_loop_while_condition(text: &str) -> Result<Option<Condition>, ParseErro
     parse_condition(condition_text.trim())
 }
 
-fn parse_target_axis_rotation(text: &str) -> Result<Option<(RotationAxis, AssignmentValue)>, ParseError> {
+fn parse_target_axis_rotation(
+    text: &str,
+) -> Result<Option<(RotationAxis, AssignmentValue)>, ParseError> {
     let text = text.trim();
     let axis = match text.chars().next() {
         Some('x' | 'X') => RotationAxis::X,
@@ -5396,11 +5759,15 @@ fn parse_target_axis_rotation(text: &str) -> Result<Option<(RotationAxis, Assign
         Some('z' | 'Z') => RotationAxis::Z,
         _ => return Ok(None),
     };
-    let Some(value) = parse_assignment_value(text[1..].trim())? else { return Ok(None); };
+    let Some(value) = parse_assignment_value(text[1..].trim())? else {
+        return Ok(None);
+    };
     Ok(Some((axis, value)))
 }
 
-fn parse_relative_axis_delta(text: &str) -> Result<Option<(RotationAxis, AssignmentValue)>, ParseError> {
+fn parse_relative_axis_delta(
+    text: &str,
+) -> Result<Option<(RotationAxis, AssignmentValue)>, ParseError> {
     let text = text.trim();
     let axis = match text.chars().next() {
         Some('x' | 'X') => RotationAxis::X,
@@ -5410,11 +5777,22 @@ fn parse_relative_axis_delta(text: &str) -> Result<Option<(RotationAxis, Assignm
     };
     let rest = text[1..].trim_start();
     let negative = match rest.chars().next() {
-        Some('+') => false, Some('-') => true, _ => return Ok(None),
+        Some('+') => false,
+        Some('-') => true,
+        _ => return Ok(None),
     };
     let raw = rest[1..].trim();
-    let Some(value) = parse_assignment_value(raw)? else { return Err(ParseError::InvalidNumber(raw.into())); };
-    Ok(Some((axis, if negative { negate_assignment_value(value) } else { value })))
+    let Some(value) = parse_assignment_value(raw)? else {
+        return Err(ParseError::InvalidNumber(raw.into()));
+    };
+    Ok(Some((
+        axis,
+        if negative {
+            negate_assignment_value(value)
+        } else {
+            value
+        },
+    )))
 }
 
 fn parse_directional_move_distance_text<'a>(
@@ -5437,7 +5815,10 @@ fn parse_directional_move_distance_text<'a>(
 }
 
 fn take_until_move_clause(text: &str) -> &str {
-    take_until_clause(text, &[" in ", " for ", " loop ", " while ", " async", " ease "])
+    take_until_clause(
+        text,
+        &[" in ", " for ", " loop ", " while ", " async", " ease "],
+    )
 }
 
 fn take_until_clause<'a>(text: &'a str, needles: &[&str]) -> &'a str {
@@ -5466,9 +5847,16 @@ fn parse_move(line: &str) -> Result<Option<MoveStatement>, ParseError> {
     };
     let rest = rest.trim();
     let lower = rest.to_ascii_lowercase();
-    if let Some(inner) = lower.strip_prefix("move").and_then(|_| rest[4..].trim_start().strip_prefix('(')) {
-        let Some(end) = matching_close_paren_index(inner) else { return Ok(None); };
-        let Some((axis, distance_value)) = parse_relative_axis_delta(&inner[..end])? else { return Ok(None); };
+    if let Some(inner) = lower
+        .strip_prefix("move")
+        .and_then(|_| rest[4..].trim_start().strip_prefix('('))
+    {
+        let Some(end) = matching_close_paren_index(inner) else {
+            return Ok(None);
+        };
+        let Some((axis, distance_value)) = parse_relative_axis_delta(&inner[..end])? else {
+            return Ok(None);
+        };
         let suffix = &inner[end + 1..];
         let (duration_value, duration_seconds) = parse_directional_move_duration_value(suffix)?
             .unwrap_or((AssignmentValue::Number(1.), 1.));
@@ -5541,9 +5929,18 @@ fn parse_move_to(line: &str) -> Result<Option<MoveToStatement>, ParseError> {
     };
     let destination = if relative {
         let parts = split_top_level_comma(raw_destination);
-        if parts.len() != 3 { return Err(ParseError::InvalidNumber(raw_destination.into())); }
-        MoveToDestination::Delta(PositionValue::Coordinates(parts.into_iter().map(parse_position_expr).collect::<Result<_, _>>()?))
-    } else { parse_move_to_destination(raw_destination)? };
+        if parts.len() != 3 {
+            return Err(ParseError::InvalidNumber(raw_destination.into()));
+        }
+        MoveToDestination::Delta(PositionValue::Coordinates(
+            parts
+                .into_iter()
+                .map(parse_position_expr)
+                .collect::<Result<_, _>>()?,
+        ))
+    } else {
+        parse_move_to_destination(raw_destination)?
+    };
     let (duration_value, duration_seconds) =
         parse_directional_move_duration_value(rest)?.unwrap_or((AssignmentValue::Number(0.0), 0.0));
 
@@ -5805,7 +6202,9 @@ fn parse_animation(line: &str) -> Result<Option<AnimationStatement>, ParseError>
         (stripped[..end].to_owned(), &stripped[end + 1..])
     } else {
         let end = rest
-            .find(|value: char| value.is_whitespace() || value == ':' || value == '(' || value == '[')
+            .find(|value: char| {
+                value.is_whitespace() || value == ':' || value == '(' || value == '['
+            })
             .unwrap_or(rest.len());
         (rest[..end].to_owned(), &rest[end..])
     };
@@ -5820,8 +6219,12 @@ fn parse_animation(line: &str) -> Result<Option<AnimationStatement>, ParseError>
 
     let (frame_range_name, after_clip) = animation_range::parse_name(after_clip)?;
     let (frame_range, after_clip) = animation_range::parse(after_clip)?;
-    if after_clip.trim_start().starts_with('[') || (frame_range_name.is_some() && frame_range.is_some()) {
-        return Err(ParseError::InvalidNumber("Only one animation range selector is allowed".into()));
+    if after_clip.trim_start().starts_with('[')
+        || (frame_range_name.is_some() && frame_range.is_some())
+    {
+        return Err(ParseError::InvalidNumber(
+            "Only one animation range selector is allowed".into(),
+        ));
     }
     let looped = contains_keyword(after_clip, "loop");
     let async_animation = contains_keyword(after_clip, "async");
@@ -5874,14 +6277,19 @@ fn parse_sprite_play(line: &str) -> Result<Option<SpritePlayStatement>, ParseErr
     let to_frame = static_assignment_number(&to_frame_value)
         .unwrap_or(0.0)
         .max(0.0) as usize;
-    let (duration_value, duration_seconds) =
-        parse_duration_assignment_value(rest, " in ")?.unwrap_or((AssignmentValue::Number(1.0), 1.0));
+    let (duration_value, duration_seconds) = parse_duration_assignment_value(rest, " in ")?
+        .unwrap_or((AssignmentValue::Number(1.0), 1.0));
     let duration_seconds = duration_seconds.max(0.001);
-    let repeat_count = lower.split_once("loop").and_then(|(_, tail)| tail.split_whitespace().next()).and_then(|word| word.parse::<u32>().ok());
+    let repeat_count = lower
+        .split_once("loop")
+        .and_then(|(_, tail)| tail.split_whitespace().next())
+        .and_then(|word| word.parse::<u32>().ok());
     let playback_seconds = if let Some((_, tail)) = split_once_case_insensitive(rest, " for ") {
         let value = take_until_clause(tail, &[" seconds", " second", " async"]).trim();
         parse_assignment_value(value)?
-    } else { None };
+    } else {
+        None
+    };
     Ok(Some(SpritePlayStatement {
         target: target.to_owned(),
         from_frame,
@@ -6375,11 +6783,13 @@ fn parse_duration_assignment_value(
         return Ok(None);
     };
     let after = text[marker_end..].trim_start();
-    let end = [" seconds", " second", " loop ", " while ", " async", " ease "]
-        .into_iter()
-        .filter_map(|needle| find_case_insensitive_span(after, needle).map(|(start, _)| start))
-        .min()
-        .unwrap_or(after.len());
+    let end = [
+        " seconds", " second", " loop ", " while ", " async", " ease ",
+    ]
+    .into_iter()
+    .filter_map(|needle| find_case_insensitive_span(after, needle).map(|(start, _)| start))
+    .min()
+    .unwrap_or(after.len());
     let raw = after[..end].trim();
     if raw.is_empty() {
         return Ok(None);
@@ -6396,10 +6806,21 @@ fn resource_options_colon(text: &str) -> Option<usize> {
     let mut quote = false;
     let mut escaped = false;
     for (index, ch) in text.char_indices() {
-        if escaped { escaped = false; continue; }
-        if quote && ch == '\\' { escaped = true; continue; }
-        if ch == '"' { quote = !quote; continue; }
-        if quote { continue; }
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if quote && ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' {
+            quote = !quote;
+            continue;
+        }
+        if quote {
+            continue;
+        }
         match ch {
             '(' | '[' => depth += 1,
             ')' | ']' => depth = depth.saturating_sub(1),
@@ -6413,9 +6834,14 @@ fn resource_options_colon(text: &str) -> Option<usize> {
 fn dynamic_resource_span(source: &str) -> Option<(usize, usize)> {
     let mut rest = source.trim_start();
     for _ in 0..3 {
-        if let Some(next) = ["dynamic", "static", "collider"].iter().find_map(|word| strip_keyword_prefix(rest, word)) {
+        if let Some(next) = ["dynamic", "static", "collider"]
+            .iter()
+            .find_map(|word| strip_keyword_prefix(rest, word))
+        {
             rest = next.trim_start();
-        } else { break; }
+        } else {
+            break;
+        }
     }
     let inside = rest.strip_prefix('(')?;
     let len = matching_close_paren_index(inside)? + 2;
@@ -6423,14 +6849,21 @@ fn dynamic_resource_span(source: &str) -> Option<(usize, usize)> {
 }
 
 fn dynamic_resource_value(source: &str) -> Result<Option<AssignmentValue>, ParseError> {
-    let Some((start, len)) = dynamic_resource_span(source) else { return Ok(None); };
+    let Some((start, len)) = dynamic_resource_span(source) else {
+        return Ok(None);
+    };
     parse_assignment_value(&source[start + 1..start + len - 1])
 }
 
 /// Freeze a resource expression to an escaped literal without changing attributes.
 pub fn evaluated_entity_resource_source(source: &str, resource: &str) -> Option<String> {
     let (start, len) = dynamic_resource_span(source)?;
-    Some(format!("{}({}){}", &source[..start], serde_json::Value::String(resource.into()), &source[start + len..]))
+    Some(format!(
+        "{}({}){}",
+        &source[..start],
+        serde_json::Value::String(resource.into()),
+        &source[start + len..]
+    ))
 }
 
 fn split_resource_and_options(rest: &str) -> (&str, &str) {
@@ -6581,31 +7014,51 @@ fn parse_outer_radius_pair_after(text: &str) -> Result<Option<(f32, f32)>, Parse
 fn parse_entity_options(raw: &str, text: &str) -> Result<EntityOptions, ParseError> {
     let (numeric_text, geometry_values) = declaration_values::extract(text)?;
     let text = numeric_text.as_str();
-    let label = if normalize_resource(split_resource_and_options(raw).0).eq_ignore_ascii_case("label") {
-        let mut label = LabelOptions::default();
-        for attr in split_top_level_comma(text) {
-            let attr = attr.trim();
-            if let Some(value) = strip_keyword_prefix(attr, "text") {
-                label.text = parse_assignment_value(value.trim())?;
-            } else if let Some(value) = strip_keyword_prefix(attr, "transparency") {
-                label.transparency = parse_assignment_value(value.trim())?;
-            } else if let Some(value) = strip_keyword_prefix(attr, "font") {
-                label.font = parse_quoted_strings(value).into_iter().next();
-            } else if let Some(value) = strip_keyword_prefix(attr, "style") {
-                label.style = parse_quoted_strings(value).into_iter().next();
+    let label =
+        if normalize_resource(split_resource_and_options(raw).0).eq_ignore_ascii_case("label") {
+            let mut label = LabelOptions::default();
+            for attr in split_top_level_comma(text) {
+                let attr = attr.trim();
+                if let Some(value) = strip_keyword_prefix(attr, "text") {
+                    label.text = parse_assignment_value(value.trim())?;
+                } else if let Some(value) = strip_keyword_prefix(attr, "transparency") {
+                    label.transparency = parse_assignment_value(value.trim())?;
+                } else if let Some(value) = strip_keyword_prefix(attr, "font") {
+                    label.font = parse_quoted_strings(value).into_iter().next();
+                } else if let Some(value) = strip_keyword_prefix(attr, "style") {
+                    label.style = parse_quoted_strings(value).into_iter().next();
+                }
             }
-        }
-        Some(label)
-    } else { None };
+            Some(label)
+        } else {
+            None
+        };
     // Label text must not accidentally enable options such as hidden/multiplayer.
-    let geometry_options = label.as_ref().map(|_| split_top_level_comma(text).into_iter()
-        .filter(|attr| !["text", "font", "style", "transparency"].iter().any(|name| strip_keyword_prefix(attr.trim(), name).is_some()))
-        .collect::<Vec<_>>().join(", "));
+    let geometry_options = label.as_ref().map(|_| {
+        split_top_level_comma(text)
+            .into_iter()
+            .filter(|attr| {
+                !["text", "font", "style", "transparency"]
+                    .iter()
+                    .any(|name| strip_keyword_prefix(attr.trim(), name).is_some())
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    });
     let text = geometry_options.as_deref().unwrap_or(text);
-    let without_resource_expression = dynamic_resource_span(raw).map(|(start, len)| format!("{} {}", &raw[..start], &raw[start + len..]));
-    let raw_flags = if label.is_some() { text } else { without_resource_expression.as_deref().unwrap_or(raw) };
-    let scale_text = find_scale_option(text).map(|index| &text[index..]).unwrap_or("");
-    let scale = if scale_text.get("scale".len()..).is_some_and(|value| value.trim_start().starts_with('('))
+    let without_resource_expression = dynamic_resource_span(raw)
+        .map(|(start, len)| format!("{} {}", &raw[..start], &raw[start + len..]));
+    let raw_flags = if label.is_some() {
+        text
+    } else {
+        without_resource_expression.as_deref().unwrap_or(raw)
+    };
+    let scale_text = find_scale_option(text)
+        .map(|index| &text[index..])
+        .unwrap_or("");
+    let scale = if scale_text
+        .get("scale".len()..)
+        .is_some_and(|value| value.trim_start().starts_with('('))
     {
         Some(parse_vec3_after(scale_text, "scale")?)
     } else {
@@ -6697,10 +7150,21 @@ fn matching_close_paren_index(text_after_open: &str) -> Option<usize> {
     let mut quoted = false;
     let mut escaped = false;
     for (index, value) in text_after_open.char_indices() {
-        if escaped { escaped = false; continue; }
-        if quoted && value == '\\' { escaped = true; continue; }
-        if value == '"' { quoted = !quoted; continue; }
-        if quoted { continue; }
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if quoted && value == '\\' {
+            escaped = true;
+            continue;
+        }
+        if value == '"' {
+            quoted = !quoted;
+            continue;
+        }
+        if quoted {
+            continue;
+        }
         match value {
             '(' => depth += 1,
             ')' if depth == 0 => return Some(index),
@@ -6808,7 +7272,9 @@ fn parse_scalar_after(text: &str, name: &str) -> Result<Option<f32>, ParseError>
     Ok(raw.parse::<f32>().ok())
 }
 
-fn find_scale_option(text: &str) -> Option<usize> { find_entity_option(text, "scale") }
+fn find_scale_option(text: &str) -> Option<usize> {
+    find_entity_option(text, "scale")
+}
 
 fn find_entity_option(text: &str, name: &str) -> Option<usize> {
     let mut quote = None;
@@ -6816,20 +7282,42 @@ fn find_entity_option(text: &str, name: &str) -> Option<usize> {
     let mut depth = 0usize;
     for (index, ch) in text.char_indices() {
         if let Some(delimiter) = quote {
-            if escaped { escaped = false; }
-            else if ch == '\\' { escaped = true; }
-            else if ch == delimiter { quote = None; }
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == delimiter {
+                quote = None;
+            }
             continue;
         }
         match ch {
-            '"' | '\'' => { quote = Some(ch); continue; }
-            '(' | '[' => { depth += 1; continue; }
-            ')' | ']' => { depth = depth.saturating_sub(1); continue; }
+            '"' | '\'' => {
+                quote = Some(ch);
+                continue;
+            }
+            '(' | '[' => {
+                depth += 1;
+                continue;
+            }
+            ')' | ']' => {
+                depth = depth.saturating_sub(1);
+                continue;
+            }
             _ => {}
         }
-        if depth == 0 && text[index..].get(..name.len()).is_some_and(|s| s.eq_ignore_ascii_case(name))
-            && text[..index].chars().next_back().is_none_or(|c| c.is_whitespace() || c == ',')
-            && text[index+name.len()..].chars().next().is_none_or(|c| c.is_whitespace() || c == '(')
+        if depth == 0
+            && text[index..]
+                .get(..name.len())
+                .is_some_and(|s| s.eq_ignore_ascii_case(name))
+            && text[..index]
+                .chars()
+                .next_back()
+                .is_none_or(|c| c.is_whitespace() || c == ',')
+            && text[index + name.len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| c.is_whitespace() || c == '(')
         {
             return Some(index);
         }
@@ -6840,8 +7328,12 @@ fn find_entity_option(text: &str, name: &str) -> Option<usize> {
 fn scale_expression_span(text: &str) -> Option<(usize, &str)> {
     let index = find_scale_option(text)? + "scale".len();
     let after = text[index..].trim_start();
-    if after.starts_with('(') { return None; }
-    let raw = take_until_clause(after, &[
+    if after.starts_with('(') {
+        return None;
+    }
+    let raw = take_until_clause(
+        after,
+        &[
             ",",
             " rotate",
             " hidden",
@@ -6860,7 +7352,9 @@ fn scale_expression_span(text: &str) -> Option<(usize, &str)> {
             " async",
             " loop",
             " and ",
-        ]).trim();
+        ],
+    )
+    .trim();
     Some((text.len() - after.len(), raw))
 }
 
@@ -6870,8 +7364,17 @@ pub fn evaluated_entity_scale_source(source: &str, scale: SceneMaxVec3) -> Optio
     let (_, options) = split_resource_and_options(source);
     let (start, raw) = scale_expression_span(options)?;
     let start = options.as_ptr() as usize - source.as_ptr() as usize + start;
-    if raw.is_empty() || ![scale.x, scale.y, scale.z].iter().all(|v| v.is_finite()) { return None; }
-    Some(format!("{}({},{},{}){}", &source[..start], scale.x, scale.y, scale.z, &source[start + raw.len()..]))
+    if raw.is_empty() || ![scale.x, scale.y, scale.z].iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    Some(format!(
+        "{}({},{},{}){}",
+        &source[..start],
+        scale.x,
+        scale.y,
+        scale.z,
+        &source[start + raw.len()..]
+    ))
 }
 
 /// Freeze declaration coordinates without changing quoted text or other options.
@@ -6880,14 +7383,30 @@ pub fn evaluated_entity_position_source(source: &str, position: SceneMaxVec3) ->
     let after = options[find_entity_option(options, "pos")? + 3..].trim_start();
     let inside = after.strip_prefix('(')?;
     let length = matching_close_paren_index(inside)? + 2;
-    if ![position.x, position.y, position.z].iter().all(|value| value.is_finite()) { return None; }
+    if ![position.x, position.y, position.z]
+        .iter()
+        .all(|value| value.is_finite())
+    {
+        return None;
+    }
     let start = after.as_ptr() as usize - source.as_ptr() as usize;
-    Some(format!("{}({},{},{}){}", &source[..start], position.x, position.y, position.z, &source[start + length..]))
+    Some(format!(
+        "{}({},{},{}){}",
+        &source[..start],
+        position.x,
+        position.y,
+        position.z,
+        &source[start + length..]
+    ))
 }
 
 fn parse_scale_value_after(text: &str) -> Result<Option<AssignmentValue>, ParseError> {
-    let Some((_, raw)) = scale_expression_span(text) else { return Ok(None); };
-    if raw.is_empty() || raw.parse::<f32>().is_ok() { return Ok(None); }
+    let Some((_, raw)) = scale_expression_span(text) else {
+        return Ok(None);
+    };
+    if raw.is_empty() || raw.parse::<f32>().is_ok() {
+        return Ok(None);
+    }
     parse_assignment_value(raw)?
         .ok_or_else(|| ParseError::InvalidNumber(raw.to_owned()))
         .map(Some)
@@ -7115,10 +7634,19 @@ mod tests {
         let p = parse_program("items.push([1, \"a,b\"])\nitems.pop\nitems.clear\nitems.reset(2 + 3)\nintro.draw clear\nactor.clear character mode").unwrap();
         assert_eq!(p.statements.len(), 6);
         for statement in &p.statements[..4] {
-            assert!(matches!(statement, Statement::Assignment(AssignmentStatement { value: AssignmentValue::ArrayEdit { .. }, .. })));
+            assert!(matches!(
+                statement,
+                Statement::Assignment(AssignmentStatement {
+                    value: AssignmentValue::ArrayEdit { .. },
+                    ..
+                })
+            ));
         }
         assert!(matches!(p.statements[4], Statement::ChannelDraw(_)));
-        assert!(matches!(p.statements[5], Statement::ClearCharacterMode { .. }));
+        assert!(matches!(
+            p.statements[5],
+            Statement::ClearCharacterMode { .. }
+        ));
     }
     use super::*;
 
@@ -7130,7 +7658,9 @@ mod tests {
             program.statements[1],
             Statement::SetShader(SetShaderStatement {
                 target: "hero".to_owned(),
-                shader: AssignmentValue::Literal(serde_json::Value::String("damage_flash".to_owned())),
+                shader: AssignmentValue::Literal(serde_json::Value::String(
+                    "damage_flash".to_owned()
+                )),
             })
         );
     }
@@ -7142,7 +7672,9 @@ mod tests {
         assert_eq!(
             program.statements[0],
             Statement::SetEnvironmentShader {
-                shader: AssignmentValue::Literal(serde_json::Value::String("rainy_evening".to_owned())),
+                shader: AssignmentValue::Literal(serde_json::Value::String(
+                    "rainy_evening".to_owned()
+                )),
             }
         );
     }
@@ -7154,7 +7686,9 @@ mod tests {
         assert_eq!(
             program.statements[0],
             Statement::SetSkybox {
-                skybox: AssignmentValue::Literal(serde_json::Value::String("skybox_morning_atmosphere".to_owned())),
+                skybox: AssignmentValue::Literal(serde_json::Value::String(
+                    "skybox_morning_atmosphere".to_owned()
+                )),
             }
         );
     }
@@ -7172,7 +7706,7 @@ mod tests {
                     options: EntityOptions::default(),
                 },
                 Statement::Animate(AnimationStatement {
- rewind: None,
+                    rewind: None,
                     frame_range: None,
                     frame_range_name: None,
                     target: "d".to_owned(),
@@ -7291,7 +7825,8 @@ mod tests {
                     duration_seconds: 1.0,
                     duration_value: AssignmentValue::Number(1.0),
                     looped: true,
-                    repeat_count: None, playback_seconds: None,
+                    repeat_count: None,
+                    playback_seconds: None,
                 }),
             ]
         );
@@ -7396,7 +7931,7 @@ mod tests {
         assert_eq!(
             program.statements,
             vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                rewind: None,
                 frame_range: None,
                 frame_range_name: None,
                 target: "d".to_owned(),
@@ -7510,7 +8045,7 @@ mod tests {
         assert_eq!(
             program.statements,
             vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                rewind: None,
                 frame_range: None,
                 frame_range_name: None,
                 target: "player1".to_owned(),
@@ -8297,8 +8832,10 @@ run tick(score+10) every tick_time+0.25 seconds
     fn array_literals_do_not_swallow_comparisons_between_arrays() {
         assert!(matches!(parse_assignment_value("[1] == [1]").unwrap(),
             Some(AssignmentValue::Condition(condition)) if matches!(*condition, Condition::EqualsValue { .. })));
-        assert!(matches!(parse_assignment_value(r#"[[1], "bracket]"]"#).unwrap(),
-            Some(AssignmentValue::Array(values)) if values.len() == 2));
+        assert!(
+            matches!(parse_assignment_value(r#"[[1], "bracket]"]"#).unwrap(),
+            Some(AssignmentValue::Array(values)) if values.len() == 2)
+        );
         assert!(parse_assignment_value("[").unwrap().is_none());
     }
 
@@ -8539,21 +9076,39 @@ run tick(score+10) every tick_time+0.25 seconds
     #[test]
     fn relative_axis_rotation_preserves_axis_sign_expressions_and_spacing() {
         for (source, axis, degrees) in [
-            ("subject.rotate (x + 90) in 2 seconds async", RotationAxis::X, 90.),
-            ("subject.rotate(Z - 45) in 2 seconds async", RotationAxis::Z, -45.),
+            (
+                "subject.rotate (x + 90) in 2 seconds async",
+                RotationAxis::X,
+                90.,
+            ),
+            (
+                "subject.rotate(Z - 45) in 2 seconds async",
+                RotationAxis::Z,
+                -45.,
+            ),
         ] {
             let program = parse_program(source).unwrap();
-            let Statement::Turn(turn) = &program.statements[0] else { panic!("rotation not parsed"); };
+            let Statement::Turn(turn) = &program.statements[0] else {
+                panic!("rotation not parsed");
+            };
             assert_eq!(turn.axis, Some(axis));
             assert_eq!(turn.degrees, degrees);
             assert_eq!(turn.duration_seconds, 2.);
             assert!(turn.async_run);
         }
-        let program = parse_program("subject.rotate (x + (angle + 15) * 2) in duration seconds loop while active == 1").unwrap();
-        let Statement::Turn(turn) = &program.statements[0] else { panic!("expression rotation not parsed"); };
+        let program = parse_program(
+            "subject.rotate (x + (angle + 15) * 2) in duration seconds loop while active == 1",
+        )
+        .unwrap();
+        let Statement::Turn(turn) = &program.statements[0] else {
+            panic!("expression rotation not parsed");
+        };
         assert_eq!(turn.axis, Some(RotationAxis::X));
         assert!(turn.loop_condition.is_some());
-        assert_eq!(turn.duration_value, AssignmentValue::Symbol("duration".into()));
+        assert_eq!(
+            turn.duration_value,
+            AssignmentValue::Symbol("duration".into())
+        );
     }
 
     #[test]
@@ -8677,7 +9232,7 @@ run tick(score+10) every tick_time+0.25 seconds
                         async_run: true,
                     }),
                     Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player1".to_owned(),
@@ -8707,7 +9262,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 guard: None,
                 actions: vec![
                     Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player1".to_owned(),
@@ -8745,7 +9300,7 @@ run tick(score+10) every tick_time+0.25 seconds
                                 else_actions: Vec::new(),
                             }),
                             Statement::Animate(AnimationStatement {
- rewind: None,
+                                rewind: None,
                                 frame_range: None,
                                 frame_range_name: None,
                                 target: "player1".to_owned(),
@@ -8757,7 +9312,7 @@ run tick(score+10) every tick_time+0.25 seconds
                             }),
                         ],
                         else_actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                            rewind: None,
                             frame_range: None,
                             frame_range_name: None,
                             target: "player1".to_owned(),
@@ -8793,7 +9348,7 @@ run tick(score+10) every tick_time+0.25 seconds
                         value: 0.0,
                     },
                     actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player2".to_owned(),
@@ -8809,7 +9364,7 @@ run tick(score+10) every tick_time+0.25 seconds
                             value: 1.0,
                         },
                         actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                            rewind: None,
                             frame_range: None,
                             frame_range_name: None,
                             target: "player2".to_owned(),
@@ -8825,7 +9380,7 @@ run tick(score+10) every tick_time+0.25 seconds
                                 value: 2.0,
                             },
                             actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                                rewind: None,
                                 frame_range: None,
                                 frame_range_name: None,
                                 target: "player2".to_owned(),
@@ -8836,7 +9391,7 @@ run tick(score+10) every tick_time+0.25 seconds
                                 blocking: true,
                             })],
                             else_actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                                rewind: None,
                                 frame_range: None,
                                 frame_range_name: None,
                                 target: "player2".to_owned(),
@@ -8926,9 +9481,14 @@ run tick(score+10) every tick_time+0.25 seconds
 
     #[test]
     fn shared_lights_keep_authored_name_and_retention_flag() {
-        for source in ["shared lamp => Lights.point", "Shared lamp is a Lights.spot"] {
+        for source in [
+            "shared lamp => Lights.point",
+            "Shared lamp is a Lights.spot",
+        ] {
             let program = parse_program(source).unwrap();
-            let Statement::LightDecl(light) = &program.statements[0] else { panic!("{program:?}") };
+            let Statement::LightDecl(light) = &program.statements[0] else {
+                panic!("{program:?}")
+            };
             assert_eq!(light.name, "lamp");
             assert!(light.shared);
         }
@@ -8936,9 +9496,14 @@ run tick(score+10) every tick_time+0.25 seconds
 
     #[test]
     fn shared_model_declarations_keep_authored_name_and_retention_flag() {
-        for source in ["shared subject => box: hidden", "Shared subject is a sphere"] {
+        for source in [
+            "shared subject => box: hidden",
+            "Shared subject is a sphere",
+        ] {
             let program = parse_program(source).unwrap();
-            let Statement::ModelDecl { name, options, .. } = &program.statements[0] else { panic!("{program:?}") };
+            let Statement::ModelDecl { name, options, .. } = &program.statements[0] else {
+                panic!("{program:?}")
+            };
             assert_eq!(name, "subject");
             assert!(options.shared);
         }
@@ -9069,17 +9634,19 @@ run tick(score+10) every tick_time+0.25 seconds
                         name: "player1.data.is_jumping".to_owned(),
                         value: 0.0,
                     },
-                    actions: vec![Statement::ScopedBlock { actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
-                        frame_range: None,
-                        frame_range_name: None,
-                        target: "player1".to_owned(),
-                        clip: "flying_kick".to_owned(),
-                        speed: 2.0,
-                        speed_value: AssignmentValue::Number(2.0),
-                        looped: false,
-                        blocking: true,
-                    })] }],
+                    actions: vec![Statement::ScopedBlock {
+                        actions: vec![Statement::Animate(AnimationStatement {
+                            rewind: None,
+                            frame_range: None,
+                            frame_range_name: None,
+                            target: "player1".to_owned(),
+                            clip: "flying_kick".to_owned(),
+                            speed: 2.0,
+                            speed_value: AssignmentValue::Number(2.0),
+                            looped: false,
+                            blocking: true,
+                        })]
+                    }],
                 }],
             })]
         );
@@ -9136,7 +9703,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     ]),
                 ])),
                 actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                    rewind: None,
                     frame_range: None,
                     frame_range_name: None,
                     target: "player1".to_owned(),
@@ -9174,7 +9741,7 @@ run tick(score+10) every tick_time+0.25 seconds
                         ],
                     },
                     Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player1".to_owned(),
@@ -9186,7 +9753,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     }),
                     Statement::Wait { seconds: 1.0 },
                     Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player1".to_owned(),
@@ -9263,7 +9830,7 @@ run tick(score+10) every tick_time+0.25 seconds
                         }],
                     },
                     Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player2".to_owned(),
@@ -9516,7 +10083,7 @@ run tick(score+10) every tick_time+0.25 seconds
                                                 value: AssignmentValue::Number(3.0),
                                             }),
                                             Statement::Animate(AnimationStatement {
- rewind: None,
+                                                rewind: None,
                                                 frame_range: None,
                                                 frame_range_name: None,
                                                 target: "p2".to_owned(),
@@ -9533,7 +10100,7 @@ run tick(score+10) every tick_time+0.25 seconds
                                                 value: AssignmentValue::Number(2.0),
                                             }),
                                             Statement::Animate(AnimationStatement {
- rewind: None,
+                                                rewind: None,
                                                 frame_range: None,
                                                 frame_range_name: None,
                                                 target: "p2".to_owned(),
@@ -9618,7 +10185,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 guard: None,
                 actions: vec![
                     Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player1".to_owned(),
@@ -9661,7 +10228,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 after_condition: None,
                 guard: None,
                 actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                    rewind: None,
                     frame_range: None,
                     frame_range_name: None,
                     target: "player1".to_owned(),
@@ -9721,7 +10288,7 @@ run tick(score+10) every tick_time+0.25 seconds
                 after_condition: None,
                 guard: None,
                 actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                    rewind: None,
                     frame_range: None,
                     frame_range_name: None,
                     target: "player1".to_owned(),
@@ -9757,7 +10324,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     after_condition: None,
                     guard: None,
                     actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player2".to_owned(),
@@ -9782,7 +10349,7 @@ run tick(score+10) every tick_time+0.25 seconds
                             right: AssignmentValue::Number(3.0),
                         },
                         actions: vec![Statement::Animate(AnimationStatement {
- rewind: None,
+                            rewind: None,
                             frame_range: None,
                             frame_range_name: None,
                             target: "player2".to_owned(),
@@ -9983,7 +10550,7 @@ run tick(score+10) every tick_time+0.25 seconds
                             visible: true,
                         },
                         Statement::Animate(AnimationStatement {
- rewind: None,
+                            rewind: None,
                             frame_range: None,
                             frame_range_name: None,
                             target: "boss".to_owned(),
@@ -10172,7 +10739,7 @@ run tick(score+10) every tick_time+0.25 seconds
                             async_run: true,
                         }),
                         Statement::Animate(AnimationStatement {
- rewind: None,
+                            rewind: None,
                             frame_range: None,
                             frame_range_name: None,
                             target: "p2".to_owned(),
@@ -10469,14 +11036,16 @@ run tick(score+10) every tick_time+0.25 seconds
         ));
         assert_eq!(
             program.statements[3],
-            Statement::AnimationControllerAction(AnimationControllerActionStatement { rewind: None,
+            Statement::AnimationControllerAction(AnimationControllerActionStatement {
+                rewind: None,
                 controller: "anim".to_owned(),
                 action: AnimationControllerAction::Run,
             })
         );
         assert_eq!(
             program.statements[4],
-            Statement::AnimationControllerAction(AnimationControllerActionStatement { rewind: None,
+            Statement::AnimationControllerAction(AnimationControllerActionStatement {
+                rewind: None,
                 controller: "anim".to_owned(),
                 action: AnimationControllerAction::Stop,
             })
@@ -10522,7 +11091,8 @@ run tick(score+10) every tick_time+0.25 seconds
         ));
         assert_eq!(
             event.actions[2],
-            Statement::AnimationControllerAction(AnimationControllerActionStatement { rewind: None,
+            Statement::AnimationControllerAction(AnimationControllerActionStatement {
+                rewind: None,
                 controller: "anim".to_owned(),
                 action: AnimationControllerAction::Run,
             })
@@ -10575,7 +11145,8 @@ run tick(score+10) every tick_time+0.25 seconds
         assert_eq!(
             motion_event.actions,
             vec![Statement::AnimationControllerAction(
-                AnimationControllerActionStatement { rewind: None,
+                AnimationControllerActionStatement {
+                    rewind: None,
                     controller: "anim".to_owned(),
                     action: AnimationControllerAction::Stop,
                 },
@@ -10621,11 +11192,16 @@ run tick(score+10) every tick_time+0.25 seconds
 
     #[test]
     fn parses_ui_ease_alias_without_consuming_method_names_inside_text() {
-        let program = parse_program("panel.ease(\"EaseOutBounce\", Right, 2) async\nvar text = \"panel.ease(hello)\"").unwrap();
+        let program = parse_program(
+            "panel.ease(\"EaseOutBounce\", Right, 2) async\nvar text = \"panel.ease(hello)\"",
+        )
+        .unwrap();
         assert!(matches!(&program.statements[0], Statement::UiEase(ease)
             if ease.target_reference.as_deref() == Some("panel") && ease.async_run));
-        assert!(matches!(&program.statements[1], Statement::Assignment(value)
-            if value.value == AssignmentValue::Literal(serde_json::json!("panel.ease(hello)"))));
+        assert!(
+            matches!(&program.statements[1], Statement::Assignment(value)
+            if value.value == AssignmentValue::Literal(serde_json::json!("panel.ease(hello)")))
+        );
     }
 
     #[test]
@@ -10947,7 +11523,7 @@ run tick(score+10) every tick_time+0.25 seconds
                     },
                     Statement::CameraAttachStop,
                     Statement::Animate(AnimationStatement {
- rewind: None,
+                        rewind: None,
                         frame_range: None,
                         frame_range_name: None,
                         target: "player2".to_owned(),
@@ -11072,7 +11648,7 @@ run tick(score+10) every tick_time+0.25 seconds
         assert_eq!(
             program.statements[3],
             Statement::ObjectPool(ObjectPoolStatement {
-                    shared: false,
+                shared: false,
                 name: "rocks".to_owned(),
                 factory: "create_rock".to_owned(),
                 size: AssignmentValue::Number(5.),
@@ -11169,16 +11745,38 @@ mod material_assignment_tests {
             "scale_fixture: size (2,4,6), scale factor + 1, hidden, multiplayer",
             "scale_fixture multiplayer scale factor + 1 hidden",
         ] {
-            let rewritten = evaluated_entity_scale_source(raw, SceneMaxVec3 { x:2., y:3., z:4. }).unwrap();
+            let rewritten = evaluated_entity_scale_source(
+                raw,
+                SceneMaxVec3 {
+                    x: 2.,
+                    y: 3.,
+                    z: 4.,
+                },
+            )
+            .unwrap();
             assert!(rewritten.starts_with("scale_fixture"));
             assert!(!rewritten.contains("factor"));
             let parse = |raw: &str| {
-                let Statement::ModelDecl { options, .. } = parse_program(&format!("subject => {raw}")).unwrap().statements.remove(0) else { panic!() };
+                let Statement::ModelDecl { options, .. } =
+                    parse_program(&format!("subject => {raw}"))
+                        .unwrap()
+                        .statements
+                        .remove(0)
+                else {
+                    panic!()
+                };
                 options
             };
             let before = parse(raw);
             let after = parse(&rewritten);
-            assert_eq!(after.scale, Some(SceneMaxVec3 { x:2., y:3., z:4. }));
+            assert_eq!(
+                after.scale,
+                Some(SceneMaxVec3 {
+                    x: 2.,
+                    y: 3.,
+                    z: 4.
+                })
+            );
             assert!(after.scale_value.is_none());
             assert_eq!(before.material, after.material);
             assert_eq!(before.size, after.size);
@@ -11191,13 +11789,28 @@ mod material_assignment_tests {
     fn quoted_scale_words_do_not_create_or_override_geometry_attributes() {
         for suffix in ["", ", scale 2", ", scale (2,3,4)"] {
             let source = format!(r#"subject => box: material "scale 9 \"scale 8\""{suffix}"#);
-            let Statement::ModelDecl { options, .. } = parse_program(&source).unwrap().statements.remove(0) else { panic!() };
+            let Statement::ModelDecl { options, .. } =
+                parse_program(&source).unwrap().statements.remove(0)
+            else {
+                panic!()
+            };
             assert!(options.scale_value.is_none());
-            assert_eq!(options.scale, match suffix {
-                "" => None,
-                ", scale 2" => Some(SceneMaxVec3 { x:2., y:2., z:2. }),
-                _ => Some(SceneMaxVec3 { x:2., y:3., z:4. }),
-            });
+            assert_eq!(
+                options.scale,
+                match suffix {
+                    "" => None,
+                    ", scale 2" => Some(SceneMaxVec3 {
+                        x: 2.,
+                        y: 2.,
+                        z: 2.
+                    }),
+                    _ => Some(SceneMaxVec3 {
+                        x: 2.,
+                        y: 3.,
+                        z: 4.
+                    }),
+                }
+            );
         }
     }
 
@@ -11222,10 +11835,15 @@ mod label_tests {
     use super::*;
     #[test]
     fn label_text_does_not_enable_geometry_or_network_options() {
-        let p = parse_program(r#"caption => label: text "hidden multiplayer collider sprite, pos (4,5,6)", size (3,1)
+        let p = parse_program(
+            r#"caption => label: text "hidden multiplayer collider sprite, pos (4,5,6)", size (3,1)
 caption.text = "A \"quote\" and \\ path"
-UI.layer.caption.text = "local""#).unwrap();
-        let Statement::ModelDecl { options, .. } = &p.statements[0] else { panic!() };
+UI.layer.caption.text = "local""#,
+        )
+        .unwrap();
+        let Statement::ModelDecl { options, .. } = &p.statements[0] else {
+            panic!()
+        };
         assert!(options.label.is_some());
         assert!(!options.multiplayer && !options.hidden && !options.collider && !options.sprite);
         assert!(options.position.is_none());
@@ -11239,10 +11857,15 @@ mod rotation_reset_tests {
     use super::*;
     #[test]
     fn reset_vectors_support_literals_nested_expressions_and_keep_axis_turns_distinct() {
-        for source in ["subject.rotate (0,0,0)", "subject.rotate ((angle+10)*2,-30,70)"] {
+        for source in [
+            "subject.rotate (0,0,0)",
+            "subject.rotate ((angle+10)*2,-30,70)",
+        ] {
             let p = parse_program(source).unwrap();
-            assert!(matches!(&p.statements[0], Statement::RotationReset { target, rotation: PositionValue::Coordinates(v) }
-                if target == "subject" && v.len() == 3));
+            assert!(
+                matches!(&p.statements[0], Statement::RotationReset { target, rotation: PositionValue::Coordinates(v) }
+                if target == "subject" && v.len() == 3)
+            );
         }
         let p = parse_program("subject.rotate(x+90) in 2 seconds").unwrap();
         assert!(matches!(&p.statements[0], Statement::Turn(_)));
@@ -11257,14 +11880,24 @@ mod rotate_to_tests {
     #[test]
     fn target_axis_supports_expressions_default_duration_and_function_syntax() {
         for axis in ["x", "y", "Z"] {
-            let p = parse_program(&format!("subject.rotate to ({axis} (angle + 5) * 2) in duration seconds async")).unwrap();
-            let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+            let p = parse_program(&format!(
+                "subject.rotate to ({axis} (angle + 5) * 2) in duration seconds async"
+            ))
+            .unwrap();
+            let Statement::Turn(turn) = &p.statements[0] else {
+                panic!();
+            };
             assert!(turn.absolute && turn.async_run);
             assert!(matches!(turn.degrees_value, AssignmentValue::Binary { .. }));
-            assert_eq!(turn.duration_value, AssignmentValue::Symbol("duration".into()));
+            assert_eq!(
+                turn.duration_value,
+                AssignmentValue::Symbol("duration".into())
+            );
         }
         let p = parse_program("subject.rotate to (y -30)").unwrap();
-        let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+        let Statement::Turn(turn) = &p.statements[0] else {
+            panic!();
+        };
         assert_eq!(turn.degrees, -30.);
         assert_eq!(turn.duration_seconds, 1.);
         assert!(turn.absolute);
@@ -11276,20 +11909,39 @@ mod axis_move_tests {
     use super::*;
     #[test]
     fn axis_delta_preserves_sign_expressions_duration_and_directional_syntax() {
-        for (axis, direction) in [("x", MoveDirection::AxisX), ("Y", MoveDirection::AxisY), ("z", MoveDirection::AxisZ)] {
-            let p = parse_program(&format!("subject.move({axis} - (distance + 5) * 2) in duration seconds async")).unwrap();
-            let Statement::Move(movement) = &p.statements[0] else { panic!(); };
+        for (axis, direction) in [
+            ("x", MoveDirection::AxisX),
+            ("Y", MoveDirection::AxisY),
+            ("z", MoveDirection::AxisZ),
+        ] {
+            let p = parse_program(&format!(
+                "subject.move({axis} - (distance + 5) * 2) in duration seconds async"
+            ))
+            .unwrap();
+            let Statement::Move(movement) = &p.statements[0] else {
+                panic!();
+            };
             assert_eq!(movement.direction, direction);
-            assert!(matches!(movement.distance_value, AssignmentValue::Binary { .. }));
-            assert_eq!(movement.duration_value, AssignmentValue::Symbol("duration".into()));
+            assert!(matches!(
+                movement.distance_value,
+                AssignmentValue::Binary { .. }
+            ));
+            assert_eq!(
+                movement.duration_value,
+                AssignmentValue::Symbol("duration".into())
+            );
             assert!(movement.async_run);
         }
         let p = parse_program("subject.move (x + 4) loop while active == 1").unwrap();
-        let Statement::Move(movement) = &p.statements[0] else { panic!(); };
+        let Statement::Move(movement) = &p.statements[0] else {
+            panic!();
+        };
         assert_eq!((movement.distance, movement.duration_seconds), (4., 1.));
         assert!(movement.loop_condition.is_some());
         let p = parse_program("subject.move forward 4 in 2 seconds").unwrap();
-        assert!(matches!(&p.statements[0], Statement::Move(m) if m.direction == MoveDirection::Forward));
+        assert!(
+            matches!(&p.statements[0], Statement::Move(m) if m.direction == MoveDirection::Forward)
+        );
         let p = parse_program("subject.move to (1,2,3) in 2 seconds").unwrap();
         assert!(matches!(&p.statements[0], Statement::MoveTo(_)));
     }
@@ -11305,23 +11957,42 @@ mod attachment_expression_tests {
             r#"child."socket".attach to {network_entity_id:2}:pos (1,2,3)"#,
         ] {
             let program = parse_program(source).unwrap();
-            let Statement::Attach(attach) = &program.statements[0] else { panic!() };
+            let Statement::Attach(attach) = &program.statements[0] else {
+                panic!()
+            };
             assert_eq!(attach.subject, "{network_entity_id:2}");
-            assert_eq!(attach.offset.x, if source.contains(":pos") { 1. } else { 0. });
+            assert_eq!(
+                attach.offset.x,
+                if source.contains(":pos") { 1. } else { 0. }
+            );
         }
     }
 
     #[test]
     fn attachment_offsets_preserve_expressions_and_reject_incomplete_vectors() {
         let program = parse_program("child.attach to anchor: pos (amount + 1,2,-amount)").unwrap();
-        let Statement::Attach(attach) = &program.statements[0] else { panic!() };
-        assert!(matches!(attach.offset_value, Some(PositionValue::Coordinates(_))));
+        let Statement::Attach(attach) = &program.statements[0] else {
+            panic!()
+        };
+        assert!(matches!(
+            attach.offset_value,
+            Some(PositionValue::Coordinates(_))
+        ));
         assert!(parse_program("child.attach to anchor: pos (amount,0)").is_err());
         assert!(parse_program("child.attach to anchor: pos (amount,0,0").is_err());
         let program = parse_program("child.attach to anchor").unwrap();
-        let Statement::Attach(attach) = &program.statements[0] else { panic!() };
+        let Statement::Attach(attach) = &program.statements[0] else {
+            panic!()
+        };
         assert!(attach.offset_value.is_none());
-        assert_eq!(attach.offset, SceneMaxVec3 { x:0., y:0., z:0. });
+        assert_eq!(
+            attach.offset,
+            SceneMaxVec3 {
+                x: 0.,
+                y: 0.,
+                z: 0.
+            }
+        );
     }
 }
 
@@ -11331,41 +12002,80 @@ mod value_call_tests {
 
     #[test]
     fn user_calls_preserve_nested_arguments_and_return_access() {
-        let value = parse_assignment_value(r#"build(choose(2), ["a),b", true, null])[0].name"#).unwrap().unwrap();
-        let AssignmentValue::Access { value, index } = value else { panic!("field access") };
+        let value = parse_assignment_value(r#"build(choose(2), ["a),b", true, null])[0].name"#)
+            .unwrap()
+            .unwrap();
+        let AssignmentValue::Access { value, index } = value else {
+            panic!("field access")
+        };
         assert_eq!(*index, AssignmentValue::Literal(serde_json::json!("name")));
-        let AssignmentValue::Access { value, .. } = *value else { panic!("index access") };
-        let AssignmentValue::Call { name, args } = *value else { panic!("call") };
+        let AssignmentValue::Access { value, .. } = *value else {
+            panic!("index access")
+        };
+        let AssignmentValue::Call { name, args } = *value else {
+            panic!("call")
+        };
         assert_eq!(name, "build");
         assert_eq!(args.len(), 2);
-        assert!(matches!(&args[0], AssignmentValue::Call { name, args } if name == "choose" && args.len() == 1));
+        assert!(
+            matches!(&args[0], AssignmentValue::Call { name, args } if name == "choose" && args.len() == 1)
+        );
         assert!(matches!(&args[1], AssignmentValue::Array(items) if items.len() == 3));
     }
 
     #[test]
     fn calls_work_in_return_arithmetic_conditions_and_zero_argument_forms() {
         let program = parse_program("return total(2, next()) + 1").unwrap();
-        assert!(matches!(&program.statements[0], Statement::ReturnValue { value: AssignmentValue::Binary { left, .. } }
-            if matches!(left.as_ref(), AssignmentValue::Call { name, args } if name == "total" && args.len() == 2)));
-        assert!(matches!(parse_condition("result == next()").unwrap(), Some(Condition::EqualsValue { right: AssignmentValue::Call { args, .. }, .. }) if args.is_empty()));
-        assert!(matches!(parse_assignment_value("next() * 3").unwrap(), Some(AssignmentValue::Binary { .. })));
-        assert!(matches!(parse_assignment_value("rnd(2) + next()").unwrap(), Some(AssignmentValue::Binary { left, right, .. })
-            if matches!(left.as_ref(), AssignmentValue::RandomInt { .. }) && matches!(right.as_ref(), AssignmentValue::Call { .. })));
-        assert!(matches!(parse_assignment_value("round(total(2, 3))").unwrap(), Some(AssignmentValue::Round { value })
-            if matches!(value.as_ref(), AssignmentValue::Call { .. })));
-        assert!(matches!(parse_assignment_value("round(2.5)[0]").unwrap(), Some(AssignmentValue::Access { value, .. })
-            if matches!(value.as_ref(), AssignmentValue::Round { .. })));
+        assert!(
+            matches!(&program.statements[0], Statement::ReturnValue { value: AssignmentValue::Binary { left, .. } }
+            if matches!(left.as_ref(), AssignmentValue::Call { name, args } if name == "total" && args.len() == 2))
+        );
+        assert!(
+            matches!(parse_condition("result == next()").unwrap(), Some(Condition::EqualsValue { right: AssignmentValue::Call { args, .. }, .. }) if args.is_empty())
+        );
+        assert!(matches!(
+            parse_assignment_value("next() * 3").unwrap(),
+            Some(AssignmentValue::Binary { .. })
+        ));
+        assert!(
+            matches!(parse_assignment_value("rnd(2) + next()").unwrap(), Some(AssignmentValue::Binary { left, right, .. })
+            if matches!(left.as_ref(), AssignmentValue::RandomInt { .. }) && matches!(right.as_ref(), AssignmentValue::Call { .. }))
+        );
+        assert!(
+            matches!(parse_assignment_value("round(total(2, 3))").unwrap(), Some(AssignmentValue::Round { value })
+            if matches!(value.as_ref(), AssignmentValue::Call { .. }))
+        );
+        assert!(
+            matches!(parse_assignment_value("round(2.5)[0]").unwrap(), Some(AssignmentValue::Access { value, .. })
+            if matches!(value.as_ref(), AssignmentValue::Round { .. }))
+        );
         assert!(parse_assignment_value("next(1").unwrap().is_none());
         assert!(parse_assignment_value("next(1) stray").unwrap().is_none());
     }
 
     #[test]
     fn quoted_parentheses_do_not_close_function_arguments() {
-        let value = parse_assignment_value(r#"echo("a\"),b(", "c")"#).unwrap().unwrap();
-        let AssignmentValue::Call { args, .. } = value else { panic!("call") };
-        assert_eq!(args, vec![AssignmentValue::Literal(serde_json::json!("a\"),b(")), AssignmentValue::Literal(serde_json::json!("c"))]);
-        assert!(matches!(parse_assignment_value("round(2.5)").unwrap(), Some(AssignmentValue::Round { .. })));
-        assert!(matches!(parse_assignment_value("rnd(10)").unwrap(), Some(AssignmentValue::RandomInt { .. })));
+        let value = parse_assignment_value(r#"echo("a\"),b(", "c")"#)
+            .unwrap()
+            .unwrap();
+        let AssignmentValue::Call { args, .. } = value else {
+            panic!("call")
+        };
+        assert_eq!(
+            args,
+            vec![
+                AssignmentValue::Literal(serde_json::json!("a\"),b(")),
+                AssignmentValue::Literal(serde_json::json!("c"))
+            ]
+        );
+        assert!(matches!(
+            parse_assignment_value("round(2.5)").unwrap(),
+            Some(AssignmentValue::Round { .. })
+        ));
+        assert!(matches!(
+            parse_assignment_value("rnd(10)").unwrap(),
+            Some(AssignmentValue::RandomInt { .. })
+        ));
     }
 }
 
@@ -11376,9 +12086,12 @@ mod for_loop_tests {
     #[test]
     fn counted_loops_parse_in_top_level_functions_guards_and_key_handlers() {
         let body = "for (var i=0;i<3;i=i+1) {\n total = total + i\n}\n";
-        for source in [body.to_owned(), format!("populate = {{\n{body}}}\n"),
+        for source in [
+            body.to_owned(),
+            format!("populate = {{\n{body}}}\n"),
             format!("[enabled == 1]\n{body}"),
-            format!("when key Enter is pressed once do\n{body}end do") ] {
+            format!("when key Enter is pressed once do\n{body}end do"),
+        ] {
             let program = parse_program(&source).unwrap();
             let actions = match &program.statements[0] {
                 Statement::FunctionDef(f) => &f.actions,
@@ -11387,23 +12100,33 @@ mod for_loop_tests {
                 _ => &program.statements,
             };
             assert_eq!(actions.len(), 2, "{source}: {actions:?}");
-            assert!(matches!(&actions[1], Statement::If(IfStatement { actions, .. })
-                if matches!(&actions[0], Statement::DoWhile { .. })), "{source}");
+            assert!(
+                matches!(&actions[1], Statement::If(IfStatement { actions, .. })
+                if matches!(&actions[0], Statement::DoWhile { .. })),
+                "{source}"
+            );
         }
     }
 
     #[test]
     fn malformed_counted_loops_fail_instead_of_silently_skipping() {
         for source in ["for (var i=0;i<2) {\n}\n", "for (var i=0;i<2;i=i+1) {\n"] {
-            assert!(matches!(parse_program(source), Err(ParseError::InvalidFor(_))));
+            assert!(matches!(
+                parse_program(source),
+                Err(ParseError::InvalidFor(_))
+            ));
         }
     }
 
     #[test]
     fn for_each_model_preserves_nested_body_and_following_actions() {
         let program = parse_program("collect = {\nvar matches=[]\nfor each model (m) do\nif (m.network.id > 0 && m.data.slot == 0) {\nmatches.push(m)\n}\nend do\nvar count=matches.length\n}").unwrap();
-        let Statement::FunctionDef(function) = &program.statements[0] else { panic!() };
-        assert!(matches!(&function.actions[1], Statement::ForEachModel { variable, actions } if variable == "m" && matches!(actions[0], Statement::If(_))));
+        let Statement::FunctionDef(function) = &program.statements[0] else {
+            panic!()
+        };
+        assert!(
+            matches!(&function.actions[1], Statement::ForEachModel { variable, actions } if variable == "m" && matches!(actions[0], Statement::If(_)))
+        );
         assert_eq!(function.actions.len(), 3);
         assert!(parse_program("for each model (m) do\nvar x=1").is_err());
     }

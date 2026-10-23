@@ -142,8 +142,11 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
                 let resource = e["resourcePath"].as_str().unwrap_or("");
                 match scenemax_assets::resolve_model_resource(&resources, resource) {
                     Ok(model) => {
-                        item.model_offset_y = model.character_physics.as_ref()
-                            .and_then(|p| p.bevy_visual_offset_y).unwrap_or(0.);
+                        item.model_offset_y = model
+                            .character_physics
+                            .as_ref()
+                            .and_then(|p| p.bevy_visual_offset_y)
+                            .unwrap_or(0.);
                         let path = resources.join(&model.asset_path).canonicalize();
                         match path {
                             Ok(path)
