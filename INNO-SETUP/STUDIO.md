@@ -6,9 +6,8 @@ builds release IDE/projector binaries, compiles a small native launch helper,
 stages a separate distribution and runs Inno Setup. `-SkipBuild` reuses existing
 release binaries; only use it after a successful current release build.
 
-This is independent of the older `build-installer.ps1` and installs under its
-own application ID into the current user's writable Programs directory. It does
-not build or package Java. Output is in a unique
+The installer uses its own application ID and the current user's writable
+Programs directory. Output is in a unique
 `scenemax3d_nextgen/target/studio-installer/<id>/output` directory; adjacent
 `size-report.json` records exact installer/payload bytes, file count and SHA-256.
 
