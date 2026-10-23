@@ -34,11 +34,19 @@ pub fn lookup(
     scope: Option<&SceneMaxScopeFrame>,
 ) -> Option<Value> {
     let resolved = references::entity_path(name, vars, scope);
-    if resolved != name { return lookup(&resolved, vars, scope); }
+    if resolved != name {
+        return lookup(&resolved, vars, scope);
+    }
     if let Some(scope) = scope {
-        if let Some(value) = references::scope_value(name, scope) { return value.snapshot(); }
+        if let Some(value) = references::scope_value(name, scope) {
+            return value.snapshot();
+        }
         if let Some(v) = scope.typed.get(name) {
-            if !scope.vars.contains_key(name) { if let Some(reference) = scope.references.get(name) { return reference.snapshot(); } }
+            if !scope.vars.contains_key(name) {
+                if let Some(reference) = scope.references.get(name) {
+                    return reference.snapshot();
+                }
+            }
             return Some(current(v, scope.vars.get(name)));
         }
         if let Some(v) = scope.vars.get(name) {
@@ -46,7 +54,11 @@ pub fn lookup(
         }
     }
     if let Some(v) = vars.1.get(name) {
-        if !vars.0.contains_key(name) { if let Some(reference) = vars.2.get(name) { return reference.snapshot(); } }
+        if !vars.0.contains_key(name) {
+            if let Some(reference) = vars.2.get(name) {
+                return reference.snapshot();
+            }
+        }
         return Some(current(v, vars.0.get(name)));
     }
     if let Some(v) = vars.0.get(name) {
@@ -72,11 +84,13 @@ fn current(value: &Value, scalar: Option<&f32>) -> Value {
     value.clone()
 }
 pub fn equal(a: &Value, b: &Value) -> bool {
-    if let (Value::Array(a), Value::Array(b)) = (a,b) {
-        return a.len() == b.len() && a.iter().zip(b).all(|(a,b)| equal(a,b));
+    if let (Value::Array(a), Value::Array(b)) = (a, b) {
+        return a.len() == b.len() && a.iter().zip(b).all(|(a, b)| equal(a, b));
     }
-    if let (Value::Object(a), Value::Object(b)) = (a,b) {
-        return a.len() == b.len() && a.iter().all(|(key,a)| b.get(key).is_some_and(|b| equal(a,b)));
+    if let (Value::Object(a), Value::Object(b)) = (a, b) {
+        return a.len() == b.len()
+            && a.iter()
+                .all(|(key, a)| b.get(key).is_some_and(|b| equal(a, b)));
     }
     match (number(a), number(b)) {
         (Some(a), Some(b)) => (a - b).abs() <= f64::from(f32::EPSILON),
@@ -85,7 +99,10 @@ pub fn equal(a: &Value, b: &Value) -> bool {
 }
 fn field(value: &Value, index: &Value) -> Option<Value> {
     if matches!(value, Value::Array(_) | Value::String(_))
-        && index.as_str().is_some_and(|name| name.eq_ignore_ascii_case("length")) {
+        && index
+            .as_str()
+            .is_some_and(|name| name.eq_ignore_ascii_case("length"))
+    {
         return match value {
             Value::Array(a) => Some(serde_json::json!(a.len())),
             Value::String(s) => Some(serde_json::json!(s.encode_utf16().count())),
@@ -119,8 +136,12 @@ pub fn evaluate(
             let previous = evaluate(source, vars, scope, guards, spatial)?;
             let mut items = previous.as_array().cloned().unwrap_or_default();
             match operation {
-                ArrayOperation::Push(value) => items.push(evaluate(value, vars, scope, guards, spatial)?),
-                ArrayOperation::Pop => { items.pop(); }
+                ArrayOperation::Push(value) => {
+                    items.push(evaluate(value, vars, scope, guards, spatial)?)
+                }
+                ArrayOperation::Pop => {
+                    items.pop();
+                }
                 ArrayOperation::Clear => items.clear(),
                 ArrayOperation::Reset(value) => {
                     let value = evaluate(value, vars, scope, guards, spatial)?;
@@ -132,8 +153,12 @@ pub fn evaluate(
         AssignmentValue::RuntimeValue(v) => v.snapshot(),
         AssignmentValue::Literal(v) => Some(v.clone()),
         AssignmentValue::Json(v) => {
-            let v = evaluate(v,vars,scope,guards,spatial)?;
-            match v { Value::String(s) => serde_json::from_str(&s).ok(), Value::Object(_) | Value::Array(_) => Some(v), _ => None }
+            let v = evaluate(v, vars, scope, guards, spatial)?;
+            match v {
+                Value::String(s) => serde_json::from_str(&s).ok(),
+                Value::Object(_) | Value::Array(_) => Some(v),
+                _ => None,
+            }
         }
         AssignmentValue::Number(n) => n
             .to_string()
@@ -141,8 +166,11 @@ pub fn evaluate(
             .ok()
             .filter(|n| n.is_finite())
             .map(|n| serde_json::json!(n)),
-        AssignmentValue::Symbol(name) => lookup(name, vars, scope)
-            .or_else(|| spatial.symbol_value(&references::entity_path(name, vars, scope)).map(|n| serde_json::json!(n))),
+        AssignmentValue::Symbol(name) => lookup(name, vars, scope).or_else(|| {
+            spatial
+                .symbol_value(&references::entity_path(name, vars, scope))
+                .map(|n| serde_json::json!(n))
+        }),
         AssignmentValue::Array(items) => items
             .iter()
             .map(|v| evaluate(v, vars, scope, guards, spatial))
@@ -182,7 +210,10 @@ pub fn evaluate(
 }
 pub fn store(vars: &mut SceneMaxVars, name: &str, value: Value) {
     vars.2.remove(name);
-    if value.is_array() || value.is_object() { vars.2.insert(name.into(), references::Reference::new(value.clone())); }
+    if value.is_array() || value.is_object() {
+        vars.2
+            .insert(name.into(), references::Reference::new(value.clone()));
+    }
     if let Some(n) = number(&value) {
         vars.0.insert(name.into(), n as f32);
     } else {
@@ -197,7 +228,13 @@ pub fn assign(
     scope: Option<&mut SceneMaxScopeFrame>,
     force_local: bool,
 ) {
-    let _ = references::assign(name, references::Reference::new(value), vars, scope, force_local);
+    let _ = references::assign(
+        name,
+        references::Reference::new(value),
+        vars,
+        scope,
+        force_local,
+    );
 }
 #[cfg(test)]
 mod tests {
@@ -211,7 +248,10 @@ mod tests {
         // Java assigns the same List; clearing through items also clears saved.
         assert_eq!(lookup("saved", &vars, None), Some(serde_json::json!([])));
         assert_eq!(lookup("items", &vars, None), Some(serde_json::json!([])));
-        assert!(equal(&lookup("scalar", &vars, None).unwrap(), &serde_json::json!([7])));
+        assert!(equal(
+            &lookup("scalar", &vars, None).unwrap(),
+            &serde_json::json!([7])
+        ));
         assert_eq!(lookup("missing", &vars, None), None);
     }
 
@@ -222,10 +262,26 @@ mod tests {
         let mut scope = SceneMaxScopeFrame::default();
         scope.typed.insert("items".into(), serde_json::json!([]));
         let program = scenemax_parser::parse_program("items.push([\"a,b\", 2 + 3])").unwrap();
-        let Statement::Assignment(a) = &program.statements[0] else { panic!("array assignment") };
-        apply_assignment_with_spatial(a, &mut vars, Some(&mut scope), &HashMap::new(), &NoSceneMaxVmSpatial, false).unwrap();
-        assert!(equal(&lookup("items", &vars, Some(&scope)).unwrap(), &serde_json::json!([["a,b",5]])));
-        assert_eq!(lookup("items", &vars, None), Some(serde_json::json!(["global"])));
+        let Statement::Assignment(a) = &program.statements[0] else {
+            panic!("array assignment")
+        };
+        apply_assignment_with_spatial(
+            a,
+            &mut vars,
+            Some(&mut scope),
+            &HashMap::new(),
+            &NoSceneMaxVmSpatial,
+            false,
+        )
+        .unwrap();
+        assert!(equal(
+            &lookup("items", &vars, Some(&scope)).unwrap(),
+            &serde_json::json!([["a,b", 5]])
+        ));
+        assert_eq!(
+            lookup("items", &vars, None),
+            Some(serde_json::json!(["global"]))
+        );
     }
     fn eval(source: &str, vars: &SceneMaxVars) -> Value {
         let expr = scenemax_parser::parse_assignment_value(source)
@@ -235,7 +291,10 @@ mod tests {
     }
     #[test]
     fn script_arrays_strings_index_updates_and_numeric_projection() {
-        assert!(equal(&serde_json::json!([1, [2]]), &serde_json::json!([1.0, [2.0]])));
+        assert!(equal(
+            &serde_json::json!([1, [2]]),
+            &serde_json::json!([1.0, [2.0]])
+        ));
         let source = "var title = \"hello, //world\"\nvar items = [1, title, [true, null]]\nvar index = 1\nitems[index] = title + \"!\"\nvar count = items.length\nvar flag = items[2][0]";
         let program = scenemax_parser::parse_program(source).unwrap();
         assert_eq!(program.statements.len(), 6, "{:#?}", program.statements);
@@ -267,11 +326,27 @@ mod tests {
             eval("network.state.sessions[0].name", &vars),
             Value::String("other".into())
         );
-        assert_eq!(eval("json(network.state).sessions[0].name", &vars), Value::String("other".into()));
-        assert_eq!(eval("network.state.ready == true", &vars), Value::Bool(true));
-        assert_eq!(eval("network.state.sessions[0].id > 16777216", &vars), Value::Bool(true));
-        store(&mut vars, "encoded", Value::String("{\"name\":\"decoded\"}".into()));
-        assert_eq!(eval("JSON(encoded).name", &vars), Value::String("decoded".into()));
+        assert_eq!(
+            eval("json(network.state).sessions[0].name", &vars),
+            Value::String("other".into())
+        );
+        assert_eq!(
+            eval("network.state.ready == true", &vars),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            eval("network.state.sessions[0].id > 16777216", &vars),
+            Value::Bool(true)
+        );
+        store(
+            &mut vars,
+            "encoded",
+            Value::String("{\"name\":\"decoded\"}".into()),
+        );
+        assert_eq!(
+            eval("JSON(encoded).name", &vars),
+            Value::String("decoded".into())
+        );
         assert_eq!(
             eval("network.state.sessions.length", &vars),
             serde_json::json!(1)

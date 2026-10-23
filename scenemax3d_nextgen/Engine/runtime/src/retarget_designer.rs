@@ -742,7 +742,8 @@ fn replay_retarget_preview(
     } else {
         None
     };
-    commands.entity(root).insert(AnimationToPlay { rewind: None,
+    commands.entity(root).insert(AnimationToPlay {
+        rewind: None,
         frame_range: None,
         frame_range_name: None,
         controller_owner: None,

@@ -144,7 +144,10 @@ pub(crate) fn collect_actions(
     session: Res<Session>,
 ) {
     if input_fields.multiplayer.as_ref().is_some_and(|g| g.open)
-        || input_fields.build_configuration.as_ref().is_some_and(|g| g.open)
+        || input_fields
+            .build_configuration
+            .as_ref()
+            .is_some_and(|g| g.open)
         || input_fields.physics.as_ref().is_some_and(|g| g.open)
         || input_fields.git.as_ref().is_some_and(|g| g.open)
         || input_fields.chrome.as_ref().is_some_and(|m| m.about_open())

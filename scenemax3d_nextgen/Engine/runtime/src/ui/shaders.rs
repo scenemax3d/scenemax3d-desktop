@@ -6,7 +6,12 @@ pub(crate) struct SurfaceShaderPlugin;
 impl Plugin for SurfaceShaderPlugin {
     fn build(&self, app: &mut App) {
         bevy::asset::embedded_asset!(app, "panel_shader.wgsl");
-        app.add_plugins(UiMaterialPlugin::<SurfaceShader>::default()).add_systems(Update,animate).add_systems(PostUpdate,text_shaders::refresh.after(bevy::ui::UiSystems::Layout));
+        app.add_plugins(UiMaterialPlugin::<SurfaceShader>::default())
+            .add_systems(Update, animate)
+            .add_systems(
+                PostUpdate,
+                text_shaders::refresh.after(bevy::ui::UiSystems::Layout),
+            );
     }
 }
 
@@ -31,23 +36,42 @@ impl SurfaceShader {
         Self {
             color: color.to_linear().to_vec4(),
             texture,
-            parameters: Vec4::new(0.,1.,0.,0.01), motion:Vec4::ZERO, uv_rect:Vec4::new(0.,0.,1.,1.), main:color.to_linear().to_vec4(),
+            parameters: Vec4::new(0., 1., 0., 0.01),
+            motion: Vec4::ZERO,
+            uv_rect: Vec4::new(0., 0., 1., 1.),
+            main: color.to_linear().to_vec4(),
         }
     }
 }
 impl SurfaceShader {
-    pub(super) fn configured(name:&str,context:&SceneMaxLaunchContext,texture:Option<Handle<Image>>)->Option<Self> {
-        let config=crate::shader::resolve_ui_effects(name,context)?;
-        let mut material=Self::textured(config.color,texture);
-        material.parameters=config.parameters;material.motion=config.motion;material.main=config.main.to_linear().to_vec4();Some(material)
+    pub(super) fn configured(
+        name: &str,
+        context: &SceneMaxLaunchContext,
+        texture: Option<Handle<Image>>,
+    ) -> Option<Self> {
+        let config = crate::shader::resolve_ui_effects(name, context)?;
+        let mut material = Self::textured(config.color, texture);
+        material.parameters = config.parameters;
+        material.motion = config.motion;
+        material.main = config.main.to_linear().to_vec4();
+        Some(material)
     }
-    pub(super) fn glyph(mut self,rect:Vec4,tint:Color,alpha_mask:bool)->Self {
-        self.uv_rect=rect;self.color*=tint.to_linear().to_vec4();self.motion.w=if alpha_mask {1.}else{0.};self
+    pub(super) fn glyph(mut self, rect: Vec4, tint: Color, alpha_mask: bool) -> Self {
+        self.uv_rect = rect;
+        self.color *= tint.to_linear().to_vec4();
+        self.motion.w = if alpha_mask { 1. } else { 0. };
+        self
     }
 }
-fn animate(time:Res<Time>,mut materials:ResMut<Assets<SurfaceShader>>) {
-    let now=std::env::var("SCENEMAX_UI_SHADER_AUDIT_TIME").ok().and_then(|s|s.parse::<f32>().ok()).filter(|v|v.is_finite()).unwrap_or_else(||time.elapsed_secs());
-    for (_,material) in materials.iter_mut() {material.motion.y=now;}
+fn animate(time: Res<Time>, mut materials: ResMut<Assets<SurfaceShader>>) {
+    let now = std::env::var("SCENEMAX_UI_SHADER_AUDIT_TIME")
+        .ok()
+        .and_then(|s| s.parse::<f32>().ok())
+        .filter(|v| v.is_finite())
+        .unwrap_or_else(|| time.elapsed_secs());
+    for (_, material) in materials.iter_mut() {
+        material.motion.y = now;
+    }
 }
 impl UiMaterial for SurfaceShader {
     fn fragment_shader() -> ShaderRef {
@@ -82,7 +106,9 @@ impl Snapshot {
 }
 
 pub(crate) fn snapshot(world: &World, entity: Entity) -> Option<Snapshot> {
-    if text_shaders::is_text(world,entity) {return text_shaders::snapshot(world,entity);}
+    if text_shaders::is_text(world, entity) {
+        return text_shaders::snapshot(world, entity);
+    }
     let name = world.get::<LastShader>(entity)?.0.clone();
     let original = world.get::<OriginalBackground>(entity);
     Some(Snapshot {
@@ -98,7 +124,10 @@ pub(crate) fn snapshot(world: &World, entity: Entity) -> Option<Snapshot> {
 }
 
 pub(crate) fn restore(world: &mut World, entity: Entity, state: Snapshot) {
-    if text_shaders::is_text(world,entity) {text_shaders::restore(world,entity,state);return;}
+    if text_shaders::is_text(world, entity) {
+        text_shaders::restore(world, entity, state);
+        return;
+    }
     if !state.valid() || world.get_entity(entity).is_err() {
         return;
     }
@@ -134,7 +163,9 @@ pub(crate) fn active(world: &World, entity: Entity) -> bool {
 }
 
 pub(crate) fn apply(world: &mut World, entity: Entity, name: &str) -> bool {
-    if text_shaders::is_text(world,entity) {return text_shaders::apply(world,entity,name);}
+    if text_shaders::is_text(world, entity) {
+        return text_shaders::apply(world, entity, name);
+    }
     if world.get_entity(entity).is_err() {
         return false;
     }
@@ -169,8 +200,14 @@ pub(crate) fn apply(world: &mut World, entity: Entity, name: &str) -> bool {
             .entity_mut(entity)
             .insert(OriginalBackground(original));
     }
-    let Some(definition)=SurfaceShader::configured(name,world.resource::<SceneMaxLaunchContext>(),None) else{return false;};
-    let material=world.resource_mut::<Assets<SurfaceShader>>().add(definition);
+    let Some(definition) =
+        SurfaceShader::configured(name, world.resource::<SceneMaxLaunchContext>(), None)
+    else {
+        return false;
+    };
+    let material = world
+        .resource_mut::<Assets<SurfaceShader>>()
+        .add(definition);
     world
         .entity_mut(entity)
         .remove::<BackgroundColor>()
@@ -185,14 +222,35 @@ mod tests {
 
     #[test]
     fn shader_blocks_keep_authored_parameters_and_invalid_names_are_rejected() {
-        let dir=tempfile::tempdir().unwrap();fs::create_dir(dir.path().join("scripts")).unwrap();
-        let context=SceneMaxLaunchContext {script_root:None,asset_root:Some(dir.path().join("resources")),builtin_asset_root:None,window_width:640,window_height:360};
-        for (block,bit) in [("GLOW",2),("PULSE",4),("DISSOLVE",8),("SCROLL_UV",32),("FLICKER",64),("WATER_WAVES",128),("HOLOGRAM_LINES",256),("TOON_RAMP",512)] {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("scripts")).unwrap();
+        let context = SceneMaxLaunchContext {
+            script_root: None,
+            asset_root: Some(dir.path().join("resources")),
+            builtin_asset_root: None,
+            window_width: 640,
+            window_height: 360,
+        };
+        for (block, bit) in [
+            ("GLOW", 2),
+            ("PULSE", 4),
+            ("DISSOLVE", 8),
+            ("SCROLL_UV", 32),
+            ("FLICKER", 64),
+            ("WATER_WAVES", 128),
+            ("HOLOGRAM_LINES", 256),
+            ("TOON_RAMP", 512),
+        ] {
             fs::write(dir.path().join("scripts/sample.bvshader"),serde_json::json!({"blocks":[block],"glowStrength":0.3,"pulseSpeed":2.5,"edgeWidth":0.04,"scrollSpeed":-1.5,"transparency":0.6}).to_string()).unwrap();
-            let material=SurfaceShader::configured("sample",&context,None).unwrap();
-            assert_eq!(material.motion.z,bit as f32);assert_eq!(material.motion.x,-1.5);
-            assert_eq!(material.parameters,Vec4::new(0.3,2.5,0.6,0.04));
-            if block=="DISSOLVE" {assert_eq!(material.color.w,1.);}else{assert!((material.color.w-0.4).abs()<0.0001);}
+            let material = SurfaceShader::configured("sample", &context, None).unwrap();
+            assert_eq!(material.motion.z, bit as f32);
+            assert_eq!(material.motion.x, -1.5);
+            assert_eq!(material.parameters, Vec4::new(0.3, 2.5, 0.6, 0.04));
+            if block == "DISSOLVE" {
+                assert_eq!(material.color.w, 1.);
+            } else {
+                assert!((material.color.w - 0.4).abs() < 0.0001);
+            }
         }
     }
     #[test]

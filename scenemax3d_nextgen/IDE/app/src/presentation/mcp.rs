@@ -22,10 +22,18 @@ pub(crate) fn update(
     mut udp: Query<&mut Text, (With<UdpStatus>, Without<Log>)>,
     buttons: Query<&Interaction, (With<Toggle>, Changed<Interaction>)>,
 ) {
-    let udp_text = if multiplayer.local_status.is_empty() { "UDP local: stopped" }
-        else if multiplayer.local_status.len() > 75 { "UDP server error · see Project Settings" }
-        else { &multiplayer.local_status };
-    for mut text in &mut udp { if text.0 != udp_text { text.0 = udp_text.to_owned(); } }
+    let udp_text = if multiplayer.local_status.is_empty() {
+        "UDP local: stopped"
+    } else if multiplayer.local_status.len() > 75 {
+        "UDP server error · see Project Settings"
+    } else {
+        &multiplayer.local_status
+    };
+    for mut text in &mut udp {
+        if text.0 != udp_text {
+            text.0 = udp_text.to_owned();
+        }
+    }
     if connections.is_empty() {
         let row = commands
             .spawn((
@@ -41,18 +49,30 @@ pub(crate) fn update(
                 ZIndex(100),
             ))
             .id();
-        let udp_button = commands.spawn((
-            Button,
-            Name::new("Open UDP server settings"),
-            Node { padding: UiRect::axes(px(5.), px(2.)), align_items: AlignItems::Center, ..default() },
-            BackgroundColor(Color::NONE),
-            scenemax_ide_ui::ButtonSurface(Color::NONE),
-            ChildOf(row),
-        )).observe(|_: On<Pointer<Click>>, mut settings: ResMut<crate::application::multiplayer::State>| {
-            if !settings.open {
-                settings.actions.push_back(crate::application::multiplayer::Action::Open);
-            }
-        }).id();
+        let udp_button = commands
+            .spawn((
+                Button,
+                Name::new("Open UDP server settings"),
+                Node {
+                    padding: UiRect::axes(px(5.), px(2.)),
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::NONE),
+                scenemax_ide_ui::ButtonSurface(Color::NONE),
+                ChildOf(row),
+            ))
+            .observe(
+                |_: On<Pointer<Click>>,
+                 mut settings: ResMut<crate::application::multiplayer::State>| {
+                    if !settings.open {
+                        settings
+                            .actions
+                            .push_back(crate::application::multiplayer::Action::Open);
+                    }
+                },
+            )
+            .id();
         commands.spawn((label(udp_text, 12.), UdpStatus, ChildOf(udp_button)));
         button(&mut commands, row, "MCP", Toggle);
         commands.entity(row).insert(Connection);

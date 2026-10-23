@@ -222,7 +222,10 @@ fn script_closure(
             use scenemax_parser::Statement;
             match statement {
                 Statement::SetMaterial(material) => {
-                    if let scenemax_parser::AssignmentValue::Literal(serde_json::Value::String(name)) = &material.material {
+                    if let scenemax_parser::AssignmentValue::Literal(serde_json::Value::String(
+                        name,
+                    )) = &material.material
+                    {
                         if !name.trim().is_empty() {
                             material_requests.insert(name.trim().to_lowercase());
                         }
@@ -295,14 +298,17 @@ fn script_closure(
                 }
                 Statement::KeyEvent(event) => statements.extend(&event.actions),
                 Statement::WhenEvent(event) => statements.extend(&event.actions),
-                Statement::Network(scenemax_parser::network::NetworkStatement::On { actions, .. }) => statements.extend(actions),
+                Statement::Network(scenemax_parser::network::NetworkStatement::On {
+                    actions,
+                    ..
+                }) => statements.extend(actions),
                 Statement::FunctionDef(function) => statements.extend(&function.actions),
                 Statement::AnimationControllerEvent(event) => statements.extend(&event.actions),
                 Statement::ThrowMotionEvent(event) => statements.extend(&event.actions),
                 Statement::Guarded { actions, .. }
                 | Statement::Repeat { actions, .. }
                 | Statement::DoWhile { actions, .. }
-            | Statement::ForEachModel { actions, .. }
+                | Statement::ForEachModel { actions, .. }
                 | Statement::LoopContinue { actions, .. }
                 | Statement::ScopedBlock { actions }
                 | Statement::Async { actions } => statements.extend(actions),
@@ -451,22 +457,29 @@ impl Library {
             let complete = references.iter().all(|(kind, _)| *kind != "Material");
             for (_, reference) in references {
                 let dep = normalized(&path.parent().unwrap_or(&self.root).join(reference));
-                let relative = dep.strip_prefix(&self.root).map_err(|_| {
-                    io::Error::other("Effect dependency escapes resource root")
-                })?;
+                let relative = dep
+                    .strip_prefix(&self.root)
+                    .map_err(|_| io::Error::other("Effect dependency escapes resource root"))?;
                 let dependency = relative.to_string_lossy().replace('\\', "/").to_lowercase();
                 if !self.inventory.contains_key(&dependency) {
                     return Err(io::Error::other(format!(
-                        "Missing effect dependency: {} (from {})", dep.display(), path.display()
+                        "Missing effect dependency: {} (from {})",
+                        dep.display(),
+                        path.display()
                     )));
                 }
-                self.dependencies.entry(key.clone()).or_default().insert(dependency.clone());
+                self.dependencies
+                    .entry(key.clone())
+                    .or_default()
+                    .insert(dependency.clone());
                 self.select(&dependency, names)?;
             }
             // INFO enumerates the built-in renderer's runtime resources. Do not
             // copy editor projects, source models or unrelated sample textures.
             // Custom materials retain the conservative fallback for desktop.
-            if complete { return Ok(()); }
+            if complete {
+                return Ok(());
+            }
         }
         // Binary effect files reference sidecars internally. Preserve that effect's
         // directory, not the entire shared effect collection.
@@ -605,9 +618,12 @@ impl Library {
                 );
                 names.contains(*key)
                     || ((key.ends_with(".efkefc") || key.ends_with(".efk"))
-                        && key.rsplit_once('/')
+                        && key
+                            .rsplit_once('/')
                             .and_then(|(folder, _)| folder.strip_prefix("effects/"))
-                            .is_some_and(|folder| names.contains(&format!("effects.effekseer.{folder}"))))
+                            .is_some_and(|folder| {
+                                names.contains(&format!("effects.effekseer.{folder}"))
+                            }))
                     || (scenemax_ide_core::ik::is_file(path)
                         && read_text(path)
                             .ok()
@@ -994,7 +1010,10 @@ fn snapshot_inner(
 mod foreach_tests {
     use super::*;
     fn context() -> Context {
-        Context { report: std::sync::Arc::new(std::sync::Mutex::new(super::super::Report::default())), cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)) }
+        Context {
+            report: std::sync::Arc::new(std::sync::Mutex::new(super::super::Report::default())),
+            cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
     #[test]
     fn for_each_model_dependencies_are_packaged() {
@@ -1011,10 +1030,16 @@ mod foreach_tests {
     #[test]
     #[ignore = "requires SCENEMAX_DEPLOYMENT_TEST_PROJECT pointing to a local project"]
     fn configured_project_script_graph_compiles() {
-        let root = PathBuf::from(std::env::var_os("SCENEMAX_DEPLOYMENT_TEST_PROJECT").expect("project path"));
+        let root = PathBuf::from(
+            std::env::var_os("SCENEMAX_DEPLOYMENT_TEST_PROJECT").expect("project path"),
+        );
         let context = context();
         let entry = root_entry(&root, &context).unwrap();
         let (scripts, _, _) = script_closure(&root, &entry, &context).unwrap();
-        println!("Compiled {} reachable project documents from {}", scripts.len(), entry.display());
+        println!(
+            "Compiled {} reachable project documents from {}",
+            scripts.len(),
+            entry.display()
+        );
     }
 }

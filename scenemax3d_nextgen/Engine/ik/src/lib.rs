@@ -25,16 +25,25 @@ impl Rig {
     /// Current unscaled activation, for script weight changes during a fade.
     pub fn runtime_weight(&self, layer_id: &str) -> f32 {
         let layer = self.definition["layers"].as_array().and_then(|layers| {
-            layers.iter().find(|l| ["id", "name"].iter().any(|key|
-                l[key].as_str().is_some_and(|s| s.eq_ignore_ascii_case(layer_id))))
+            layers.iter().find(|l| {
+                ["id", "name"].iter().any(|key| {
+                    l[key]
+                        .as_str()
+                        .is_some_and(|s| s.eq_ignore_ascii_case(layer_id))
+                })
+            })
         });
-        let Some(layer) = layer else { return 0.; };
+        let Some(layer) = layer else {
+            return 0.;
+        };
         if n(layer, "blendTime", 0.) > 0. {
             return self.weights.get(s(layer, "id")).copied().unwrap_or(0.);
         }
         if layer["enabled"].as_bool().unwrap_or(true) {
             n(layer, "runtimeWeight", 1.).clamp(0., 1.)
-        } else { 0. }
+        } else {
+            0.
+        }
     }
 
     pub fn new(definition: Value) -> Self {

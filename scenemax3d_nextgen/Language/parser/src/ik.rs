@@ -39,8 +39,7 @@ pub(super) fn parse(line: &str) -> Result<Option<IkStatement>, ParseError> {
     };
     let expr = |s: &str| {
         let value = s.trim();
-        parse_assignment_value(value)
-            .map(|v| v.unwrap_or(AssignmentValue::Symbol(value.into())))
+        parse_assignment_value(value).map(|v| v.unwrap_or(AssignmentValue::Symbol(value.into())))
     };
     if let Some(value) = rest.trim().strip_prefix('=') {
         if value.trim() != "empty" {
@@ -102,7 +101,11 @@ pub(super) fn parse(line: &str) -> Result<Option<IkStatement>, ParseError> {
             "stop" => IkAction::Stop,
             _ => return Ok(None),
         };
-        for option in split_top_level_comma(options).into_iter().map(str::trim).filter(|s| !s.is_empty()) {
+        for option in split_top_level_comma(options)
+            .into_iter()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             if let Some(value) = option.strip_prefix("target ") {
                 cmd.target = Some(value.trim().into());
             } else if let Some(value) = option.strip_prefix("weight ") {
@@ -122,9 +125,16 @@ mod tests {
     use super::*;
     #[test]
     fn layer_control_values_keep_nested_call_arguments_together() {
-        let statement = parse("subject.ik.contact.play: weight amount(0.2,0.3), blend duration(0.1,0.2)").unwrap().unwrap();
-        assert!(matches!(statement.weight, Some(AssignmentValue::Call { args, .. }) if args.len() == 2));
-        assert!(matches!(statement.blend, Some(AssignmentValue::Call { args, .. }) if args.len() == 2));
+        let statement =
+            parse("subject.ik.contact.play: weight amount(0.2,0.3), blend duration(0.1,0.2)")
+                .unwrap()
+                .unwrap();
+        assert!(
+            matches!(statement.weight, Some(AssignmentValue::Call { args, .. }) if args.len() == 2)
+        );
+        assert!(
+            matches!(statement.blend, Some(AssignmentValue::Call { args, .. }) if args.len() == 2)
+        );
     }
     #[test]
     fn parses_ik_in_program() {

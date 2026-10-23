@@ -66,7 +66,9 @@ pub(super) fn enqueue_runtime_primitive(
     options: &EntityOptions,
     runtime_assets: &SceneMaxRuntimeAssets,
 ) {
-    if primitive_kind(resource).is_none() { return; }
+    if primitive_kind(resource).is_none() {
+        return;
+    }
     let resource = resource.to_owned();
     let options = options.clone();
     let root = runtime_assets.asset_root.clone().unwrap_or_default();
@@ -74,13 +76,24 @@ pub(super) fn enqueue_runtime_primitive(
     commands.queue(move |world: &mut World| {
         if world.get_entity(entity).is_err()
             || !world.contains_resource::<Assets<Mesh>>()
-            || !world.contains_resource::<Assets<StandardMaterial>>() {
+            || !world.contains_resource::<Assets<StandardMaterial>>()
+        {
             return;
         }
-        let Some(server) = world.get_resource::<AssetServer>().cloned() else { return; };
+        let Some(server) = world.get_resource::<AssetServer>().cloned() else {
+            return;
+        };
         let primitive = world.resource_scope(|world, mut meshes: Mut<Assets<Mesh>>| {
             let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
-            primitive_mesh(&options, &resource, &server, &root, builtin.as_deref(), &mut meshes, &mut materials)
+            primitive_mesh(
+                &options,
+                &resource,
+                &server,
+                &root,
+                builtin.as_deref(),
+                &mut meshes,
+                &mut materials,
+            )
         });
         if let Some(primitive) = primitive {
             world.entity_mut(entity).insert(primitive);
@@ -827,7 +840,11 @@ pub(super) fn collect_model_declarations(program: &Program) -> Vec<ModelRuntimeD
             else {
                 return None;
             };
-            if options.resource_value.is_some() || !options.geometry_values.is_empty() || cinematic_resource_id(resource).is_some() || !seen.insert(name.clone()) {
+            if options.resource_value.is_some()
+                || !options.geometry_values.is_empty()
+                || cinematic_resource_id(resource).is_some()
+                || !seen.insert(name.clone())
+            {
                 return None;
             }
             Some(ModelRuntimeDecl {
@@ -990,7 +1007,10 @@ pub(super) fn should_fit_model_bounds_collider(
     resource: &str,
     options: &EntityOptions,
 ) -> bool {
-    if should_use_static_mesh_collider(options) || options.size.is_some() || options.radius.is_some() {
+    if should_use_static_mesh_collider(options)
+        || options.size.is_some()
+        || options.radius.is_some()
+    {
         return false;
     }
     let Some(body_kind) = physics_body_kind(options) else {
@@ -2827,7 +2847,12 @@ pub(super) fn apply_pending_character_modes(
     mut scene_queries: ParamSet<(
         Query<(&SceneMaxEntity, &Transform)>,
         Query<(&SceneMaxStageSupport, &Transform)>,
-        Query<(Entity, &mut Transform, &PendingCharacterMode, Option<&SceneMaxGltfVisualOffset>)>,
+        Query<(
+            Entity,
+            &mut Transform,
+            &PendingCharacterMode,
+            Option<&SceneMaxGltfVisualOffset>,
+        )>,
     )>,
 ) {
     let transforms_by_name = scene_queries
@@ -2893,7 +2918,11 @@ pub(super) fn apply_pending_character_modes(
     for (entity, mut transform, pending_mode, visual_offset) in scene_queries.p2().iter_mut() {
         let before_y = transform.translation.y;
         let dimensions = character_dimensions_with_visual_offset(&transform, visual_offset);
-        let snapped = snap_character_transform_to_floor_with_dimensions(&mut transform, &support_surfaces, dimensions);
+        let snapped = snap_character_transform_to_floor_with_dimensions(
+            &mut transform,
+            &support_surfaces,
+            dimensions,
+        );
         write_runtime_diagnostic_line(format!(
             "CHARACTER:PENDING_APPLY target={} gravity={} snapped={} y_before={} y_after={} pos=({},{},{})",
             pending_mode.0.target,
@@ -3567,7 +3596,10 @@ pub(super) fn collision_reference_hidden(
 
 pub(super) fn normalize_collision_reference(reference: &str) -> &str {
     let reference = reference.trim();
-    reference.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(reference)
+    reference
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(reference)
 }
 
 pub(super) fn collision_threshold(source: &str, target: &str) -> f32 {
@@ -3986,7 +4018,8 @@ pub(super) fn timed_turn_from_statement_resolved(
 ) -> TimedTurn {
     let duration = duration_seconds.max(0.001);
     TimedTurn {
-        curve: motion_ease::Curve::literal(&turn.easing),        network_lifetime: None,
+        curve: motion_ease::Curve::literal(&turn.easing),
+        network_lifetime: None,
         controller_owner: None,
         remaining_seconds: duration,
         duration_seconds: duration,
@@ -3999,23 +4032,43 @@ pub(super) fn timed_turn_from_statement_resolved(
 
 /// Read the selected Euler component in the same Y-Z-X convention as reset,
 /// then apply its shortest signed delta in the entity's local axis basis.
-pub(super) fn target_turn_degrees(axis: scenemax_parser::RotationAxis, target: f32, rotation: Quat) -> f32 {
-    if !target.is_finite() || !rotation.is_finite() || rotation.length_squared() < f32::EPSILON { return 0.; }
+pub(super) fn target_turn_degrees(
+    axis: scenemax_parser::RotationAxis,
+    target: f32,
+    rotation: Quat,
+) -> f32 {
+    if !target.is_finite() || !rotation.is_finite() || rotation.length_squared() < f32::EPSILON {
+        return 0.;
+    }
     let (y, z, x) = rotation.normalize().to_euler(EulerRot::YZX);
     let current = match axis {
         scenemax_parser::RotationAxis::X => x,
         scenemax_parser::RotationAxis::Y => y,
         scenemax_parser::RotationAxis::Z => z,
-    }.to_degrees().rem_euclid(360.);
+    }
+    .to_degrees()
+    .rem_euclid(360.);
     let direct = target - current;
     let wrapped = direct.rem_euclid(360.);
-    if wrapped > 180. || (wrapped == 180. && direct < 0.) { wrapped - 360. } else { wrapped }
+    if wrapped > 180. || (wrapped == 180. && direct < 0.) {
+        wrapped - 360.
+    } else {
+        wrapped
+    }
 }
 
-pub(super) fn resolved_turn_degrees(turn: &scenemax_parser::TurnStatement, degrees: f32, rotation: Quat) -> f32 {
+pub(super) fn resolved_turn_degrees(
+    turn: &scenemax_parser::TurnStatement,
+    degrees: f32,
+    rotation: Quat,
+) -> f32 {
     if turn.absolute {
-        turn.axis.map(|axis| target_turn_degrees(axis, degrees, rotation)).unwrap_or(0.)
-    } else { degrees }
+        turn.axis
+            .map(|axis| target_turn_degrees(axis, degrees, rotation))
+            .unwrap_or(0.)
+    } else {
+        degrees
+    }
 }
 
 #[cfg(test)]
@@ -4042,7 +4095,8 @@ pub(super) fn timed_move_from_statement_resolved(
 
     TimedMove {
         character_motion: !movement.direction.is_axis(),
-        curve: motion_ease::Curve::literal(&movement.easing),        network_lifetime: None,
+        curve: motion_ease::Curve::literal(&movement.easing),
+        network_lifetime: None,
         controller_owner: None,
         remaining_seconds: duration,
         duration_seconds: duration,
@@ -4067,9 +4121,14 @@ pub(super) fn directional_move_speed_resolved(distance: f32, duration_seconds: f
 
 pub(super) fn append_timed_turn(commands: &mut Commands, entity: Entity, turn: TimedTurn) {
     commands.queue(move |world: &mut World| {
-        let Ok(mut entity) = world.get_entity_mut(entity) else { return; };
-        if let Some(mut turns) = entity.get_mut::<TimedTurns>() { turns.turns.push(turn); }
-        else { entity.insert(TimedTurns { turns: vec![turn] }); }
+        let Ok(mut entity) = world.get_entity_mut(entity) else {
+            return;
+        };
+        if let Some(mut turns) = entity.get_mut::<TimedTurns>() {
+            turns.turns.push(turn);
+        } else {
+            entity.insert(TimedTurns { turns: vec![turn] });
+        }
     });
 }
 
@@ -4079,7 +4138,10 @@ pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_m
             return;
         };
         if timed_move.character_motion {
-            if let Some(speed) = entity_mut.get::<SceneMaxCharacterController>().map(|c| c.move_speed) {
+            if let Some(speed) = entity_mut
+                .get::<SceneMaxCharacterController>()
+                .map(|c| c.move_speed)
+            {
                 if let Some(mut motor) = entity_mut.get_mut::<SceneMaxCharacterMotor>() {
                     motor.timed_motion = timed_move.velocity / speed.max(0.001);
                     motor.timed_motion_remaining_seconds = timed_move.remaining_seconds;
@@ -4395,9 +4457,9 @@ pub(super) fn resolve_position_value_runtime(
     collider_bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<Vec3> {
     match position {
-        PositionValue::Entity(entity) => {
-            Some(lookup_scoped_subject_transform(entity, vars, scope, transforms_by_name?)?.translation)
-        }
+        PositionValue::Entity(entity) => Some(
+            lookup_scoped_subject_transform(entity, vars, scope, transforms_by_name?)?.translation,
+        ),
         PositionValue::Coordinates(values) if values.len() == 3 => Some(Vec3::new(
             resolve_position_expr_runtime(
                 &values[0],
@@ -4451,7 +4513,8 @@ pub(super) fn resolve_position_expr_runtime(
             axis,
             offset,
         } => {
-            let transform = lookup_scoped_subject_transform(entity, vars, scope, transforms_by_name?)?;
+            let transform =
+                lookup_scoped_subject_transform(entity, vars, scope, transforms_by_name?)?;
             let base = match axis {
                 SceneMaxAxis::X => transform.translation.x,
                 SceneMaxAxis::Y => transform.translation.y,
@@ -4546,26 +4609,49 @@ pub(super) fn update_timed_turns(
     for (entity, mut transform, mut turns, camera) in &mut scene_entities.p1() {
         turns.turns.retain_mut(|turn| {
             let delta = time.delta_secs().min(turn.remaining_seconds);
-            if camera.is_some() { camera::motion::apply_camera_turn(&mut transform, turn, delta); }
-            else { apply_turn_delta(&mut transform, turn, delta); }
+            if camera.is_some() {
+                camera::motion::apply_camera_turn(&mut transform, turn, delta);
+            } else {
+                apply_turn_delta(&mut transform, turn, delta);
+            }
             turn.remaining_seconds -= delta;
-            if turn.remaining_seconds > 0. { return true; }
-            if turn.loop_condition.as_ref().is_some_and(|condition| condition_matches(
-                condition, &vars, &guards_by_name, Some(&transforms_by_name), Some(&collider_bounds))) {
+            if turn.remaining_seconds > 0. {
+                return true;
+            }
+            if turn.loop_condition.as_ref().is_some_and(|condition| {
+                condition_matches(
+                    condition,
+                    &vars,
+                    &guards_by_name,
+                    Some(&transforms_by_name),
+                    Some(&collider_bounds),
+                )
+            }) {
                 turn.remaining_seconds = turn.duration_seconds;
                 if let (Some(axis), Some(target)) = (turn.axis, turn.target_degrees) {
-                    turn.radians_per_second = if camera.is_some() { camera::motion::camera_target_delta(axis, target, transform.rotation) } else { target_turn_degrees(axis, target, transform.rotation) }.to_radians() / turn.duration_seconds;
+                    turn.radians_per_second = if camera.is_some() {
+                        camera::motion::camera_target_delta(axis, target, transform.rotation)
+                    } else {
+                        target_turn_degrees(axis, target, transform.rotation)
+                    }
+                    .to_radians()
+                        / turn.duration_seconds;
                 }
                 return true;
             }
             false
         });
-        if turns.turns.is_empty() { commands.entity(entity).try_remove::<TimedTurns>(); }
+        if turns.turns.is_empty() {
+            commands.entity(entity).try_remove::<TimedTurns>();
+        }
     }
 }
 
 pub(super) fn apply_turn_delta(transform: &mut Transform, turn: &TimedTurn, delta: f32) {
-    let radians = turn.radians_per_second * turn.curve.step(turn.duration_seconds, turn.remaining_seconds, delta);
+    let radians = turn.radians_per_second
+        * turn
+            .curve
+            .step(turn.duration_seconds, turn.remaining_seconds, delta);
     if let Some(axis) = turn.axis {
         let axis = match axis {
             scenemax_parser::RotationAxis::X => Vec3::X,
@@ -4586,8 +4672,12 @@ mod axis_rotation_tests {
     #[test]
     fn relative_axes_use_local_basis_and_timed_completion_releases_lifetime() {
         for (axis, vector) in [("x", Vec3::X), ("y", Vec3::Y), ("z", Vec3::Z)] {
-            let program = scenemax_parser::parse_program(&format!("subject.rotate({axis}+120) in 2 seconds")).unwrap();
-            let Statement::Turn(statement) = &program.statements[0] else { panic!(); };
+            let program =
+                scenemax_parser::parse_program(&format!("subject.rotate({axis}+120) in 2 seconds"))
+                    .unwrap();
+            let Statement::Turn(statement) = &program.statements[0] else {
+                panic!();
+            };
             let mut turn = timed_turn_from_statement(statement);
             let lease = std::sync::Arc::new(());
             let weak = std::sync::Arc::downgrade(&lease);
@@ -4600,15 +4690,34 @@ mod axis_rotation_tests {
             time.advance_by(std::time::Duration::from_secs_f32(0.5));
             world.insert_resource(time);
             let base = Quat::from_rotation_y(0.7) * Quat::from_rotation_x(0.3);
-            let entity = world.spawn((Transform::from_rotation(base), TimedTurns { turns: vec![turn] })).id();
+            let entity = world
+                .spawn((
+                    Transform::from_rotation(base),
+                    TimedTurns { turns: vec![turn] },
+                ))
+                .id();
             world.run_system_once(update_timed_turns).unwrap();
             let expected = base * Quat::from_axis_angle(vector, 30_f32.to_radians());
-            assert!(world.get::<Transform>(entity).unwrap().rotation.abs_diff_eq(expected, 0.0001));
+            assert!(
+                world
+                    .get::<Transform>(entity)
+                    .unwrap()
+                    .rotation
+                    .abs_diff_eq(expected, 0.0001)
+            );
             assert!(weak.upgrade().is_some());
-            world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs(3));
+            world
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs(3));
             world.run_system_once(update_timed_turns).unwrap();
             let expected = base * Quat::from_axis_angle(vector, 120_f32.to_radians());
-            assert!(world.get::<Transform>(entity).unwrap().rotation.abs_diff_eq(expected, 0.0001));
+            assert!(
+                world
+                    .get::<Transform>(entity)
+                    .unwrap()
+                    .rotation
+                    .abs_diff_eq(expected, 0.0001)
+            );
             assert!(world.get::<TimedTurns>(entity).is_none());
             assert!(weak.upgrade().is_none());
         }
@@ -4618,11 +4727,19 @@ mod axis_rotation_tests {
     fn ordinary_turn_keeps_world_y_and_continuous_rotation_uses_axis() {
         let base = Quat::from_rotation_z(0.6);
         for (source, expected) in [
-            ("subject.turn left 90 in 1 seconds", Quat::from_rotation_y(45_f32.to_radians()) * base),
-            ("subject.rotate(x-90) in 1 seconds", base * Quat::from_rotation_x(-45_f32.to_radians())),
+            (
+                "subject.turn left 90 in 1 seconds",
+                Quat::from_rotation_y(45_f32.to_radians()) * base,
+            ),
+            (
+                "subject.rotate(x-90) in 1 seconds",
+                base * Quat::from_rotation_x(-45_f32.to_radians()),
+            ),
         ] {
             let p = scenemax_parser::parse_program(source).unwrap();
-            let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+            let Statement::Turn(turn) = &p.statements[0] else {
+                panic!();
+            };
             let turn = timed_turn_from_statement(turn);
             let mut transform = Transform::from_rotation(base);
             apply_turn_delta(&mut transform, &turn, 0.5);
@@ -4657,7 +4774,10 @@ pub(super) fn update_timed_moves(
         let mut active_moves = Vec::with_capacity(movements.moves.len());
         for mut movement in movements.moves.drain(..) {
             let delta = time.delta_secs().min(movement.remaining_seconds);
-            transform.translation += movement.velocity * movement.curve.step(movement.duration_seconds, movement.remaining_seconds, delta);
+            transform.translation += movement.velocity
+                * movement
+                    .curve
+                    .step(movement.duration_seconds, movement.remaining_seconds, delta);
             movement.remaining_seconds -= delta;
             if movement.remaining_seconds <= 0.0 {
                 if let Some(final_translation) = movement.final_translation {
@@ -4717,19 +4837,36 @@ pub(super) fn feed_tnua_character_controllers(
     )>,
 ) {
     let delta = time.delta_secs();
-    let guards = program.0.as_ref().map(collect_guards_by_name).unwrap_or_default();
-    let transforms = positions.iter().map(|(entity, transform)| (entity.name.clone(), *transform)).collect::<HashMap<_,_>>();
+    let guards = program
+        .0
+        .as_ref()
+        .map(collect_guards_by_name)
+        .unwrap_or_default();
+    let transforms = positions
+        .iter()
+        .map(|(entity, transform)| (entity.name.clone(), *transform))
+        .collect::<HashMap<_, _>>();
     for (settings, mut motor, config_handle, mut controller) in &mut characters {
         controller.initiate_action_feeding();
 
         let mut desired_motion = Vec3::ZERO;
         if motor.timed_motion_remaining_seconds > 0.0 {
             let step = delta.min(motor.timed_motion_remaining_seconds);
-            let curve_delta = motor.timed_motion_curve.step(motor.timed_motion_duration_seconds.max(0.001), motor.timed_motion_remaining_seconds, step);
-            if delta > 0. { desired_motion += motor.timed_motion * (curve_delta / delta); }
-            motor.timed_motion_remaining_seconds = (motor.timed_motion_remaining_seconds - step).max(0.0);
-            if motor.timed_motion_remaining_seconds <= 0. && motor.timed_motion_loop.as_ref().is_some_and(|condition|
-                condition_matches(condition, &vars, &guards, Some(&transforms), None)) {
+            let curve_delta = motor.timed_motion_curve.step(
+                motor.timed_motion_duration_seconds.max(0.001),
+                motor.timed_motion_remaining_seconds,
+                step,
+            );
+            if delta > 0. {
+                desired_motion += motor.timed_motion * (curve_delta / delta);
+            }
+            motor.timed_motion_remaining_seconds =
+                (motor.timed_motion_remaining_seconds - step).max(0.0);
+            if motor.timed_motion_remaining_seconds <= 0.
+                && motor.timed_motion_loop.as_ref().is_some_and(|condition| {
+                    condition_matches(condition, &vars, &guards, Some(&transforms), None)
+                })
+            {
                 motor.timed_motion_remaining_seconds = motor.timed_motion_duration_seconds;
             }
         }
@@ -4787,17 +4924,25 @@ mod static_mesh_collider_tests {
     fn character_ground_clearance_follows_lowered_visual_origin() {
         for scale in [0.5, 1., 3.] {
             let transform = Transform::from_scale(Vec3::splat(scale));
-            let offset = SceneMaxGltfVisualOffset { offset: Vec3::Y * -0.2, applied: true };
+            let offset = SceneMaxGltfVisualOffset {
+                offset: Vec3::Y * -0.2,
+                applied: true,
+            };
             let dimensions = character_dimensions_with_visual_offset(&transform, Some(&offset));
             let visual_y = dimensions.float_height + offset.offset.y * scale;
             let collider_bottom = dimensions.float_height + dimensions.capsule_center_y
-                - character_capsule_half_height(dimensions.capsule_radius, dimensions.capsule_height);
+                - character_capsule_half_height(
+                    dimensions.capsule_radius,
+                    dimensions.capsule_height,
+                );
             assert!((visual_y - DEFAULT_CHARACTER_FLOAT_HEIGHT).abs() < 0.0001);
             assert!((collider_bottom - DEFAULT_CHARACTER_FLOAT_HEIGHT).abs() < 0.0001);
             let local = character_local_collider_shape_for_transform(&transform, dimensions);
             assert!((local.capsule_center_y * scale - dimensions.capsule_center_y).abs() < 0.0001);
-            assert_eq!(character_dimensions_with_visual_offset(&transform, None).float_height,
-                DEFAULT_CHARACTER_FLOAT_HEIGHT);
+            assert_eq!(
+                character_dimensions_with_visual_offset(&transform, None).float_height,
+                DEFAULT_CHARACTER_FLOAT_HEIGHT
+            );
         }
     }
 
@@ -4856,10 +5001,15 @@ mod static_mesh_collider_tests {
         assert!(!should_use_static_mesh_collider(&explicit_box));
         assert!(!should_use_static_mesh_collider(&explicit_size));
         for shape in [SceneMaxCollisionShape::Boxes, SceneMaxCollisionShape::None] {
-            let options = EntityOptions { collision_shape: Some(shape), ..explicit_box.clone() };
+            let options = EntityOptions {
+                collision_shape: Some(shape),
+                ..explicit_box.clone()
+            };
             assert!(!should_use_static_mesh_collider(&options));
-            assert_eq!(should_fit_model_bounds_collider("scenery", "imported_model", &options),
-                shape == SceneMaxCollisionShape::Boxes);
+            assert_eq!(
+                should_fit_model_bounds_collider("scenery", "imported_model", &options),
+                shape == SceneMaxCollisionShape::Boxes
+            );
         }
         assert_eq!(
             model_bounds_collision_shape(
@@ -5084,13 +5234,22 @@ mod static_mesh_collider_tests {
         let mut world = World::new();
         let mut meshes = Assets::<Mesh>::default();
         // Connected floor and walls: a bounds box would fill the walkable interior.
-        let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, vec![
-                [-10.0, 0.0, -10.0], [10.0, 0.0, -10.0],
-                [10.0, 0.0, 10.0], [-10.0, 0.0, 10.0],
-                [-10.0, 20.0, -10.0], [10.0, 20.0, -10.0],
-            ])
-            .with_inserted_indices(Indices::U32(vec![0, 2, 1, 0, 3, 2, 0, 1, 5, 0, 5, 4]));
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![
+                [-10.0, 0.0, -10.0],
+                [10.0, 0.0, -10.0],
+                [10.0, 0.0, 10.0],
+                [-10.0, 0.0, 10.0],
+                [-10.0, 20.0, -10.0],
+                [10.0, 20.0, -10.0],
+            ],
+        )
+        .with_inserted_indices(Indices::U32(vec![0, 2, 1, 0, 3, 2, 0, 1, 5, 0, 5, 4]));
         let handle = meshes.add(mesh);
         let root_transform = Transform::from_xyz(2.0, 3.0, -4.0)
             .with_rotation(Quat::from_rotation_y(0.4))
@@ -5099,20 +5258,44 @@ mod static_mesh_collider_tests {
         let root = world.spawn_empty().id();
         let child = world.spawn((Mesh3d(handle), root_global)).id();
         world.entity_mut(root).add_child(child);
-        let mut state = SystemState::<(Query<&Children>, Query<(&Mesh3d, &GlobalTransform)>)>::new(&mut world);
+        let mut state =
+            SystemState::<(Query<&Children>, Query<(&Mesh3d, &GlobalTransform)>)>::new(&mut world);
         let (children, mesh_entities) = state.get(&world).unwrap();
-        let StaticMeshColliderBuild::Ready { mut collider } = build_static_mesh_collider(
-            root, &root_global, &children, &mesh_entities, &meshes,
-        ) else { panic!("expected imported surface collider"); };
+        let StaticMeshColliderBuild::Ready { mut collider } =
+            build_static_mesh_collider(root, &root_global, &children, &mesh_entities, &meshes)
+        else {
+            panic!("expected imported surface collider");
+        };
         collider.set_scale(root_transform.scale, 10);
         let origin = root_transform.translation + Vec3::Y;
-        let (distance, normal) = collider.cast_ray(
-            root_transform.translation, root_transform.rotation, origin, Vec3::NEG_Y, 2.0, true,
-        ).expect("floor must support the character inside the scenery");
-        assert!((distance - 1.0).abs() < 0.0001, "floor should be at the rendered height: {distance}");
+        let (distance, normal) = collider
+            .cast_ray(
+                root_transform.translation,
+                root_transform.rotation,
+                origin,
+                Vec3::NEG_Y,
+                2.0,
+                true,
+            )
+            .expect("floor must support the character inside the scenery");
+        assert!(
+            (distance - 1.0).abs() < 0.0001,
+            "floor should be at the rendered height: {distance}"
+        );
         assert!(normal.dot(Vec3::Y) > 0.99);
-        assert!(collider.cast_ray(root_transform.translation, root_transform.rotation,
-            origin, Vec3::Y, 0.5, true).is_none(), "open space must not become a solid box");
+        assert!(
+            collider
+                .cast_ray(
+                    root_transform.translation,
+                    root_transform.rotation,
+                    origin,
+                    Vec3::Y,
+                    0.5,
+                    true
+                )
+                .is_none(),
+            "open space must not become a solid box"
+        );
     }
 
     #[test]
@@ -5610,31 +5793,88 @@ mod rotate_to_tests {
     use scenemax_parser::RotationAxis;
     #[test]
     fn shortest_target_turn_wraps_and_preserves_half_turn_direction() {
-        for (axis, vector) in [(RotationAxis::X, Vec3::X), (RotationAxis::Y, Vec3::Y), (RotationAxis::Z, Vec3::Z)] {
-            for (start, target, expected) in [(350_f32, 10., 20.), (10., 350., -20.), (10., -10., -20.), (350., 730., 20.), (10., 10., 0.)] {
-                let actual = target_turn_degrees(axis, target, Quat::from_axis_angle(vector, start.to_radians()));
-                assert!((actual - expected).abs() < 0.001, "{axis:?}: {actual} != {expected}");
+        for (axis, vector) in [
+            (RotationAxis::X, Vec3::X),
+            (RotationAxis::Y, Vec3::Y),
+            (RotationAxis::Z, Vec3::Z),
+        ] {
+            for (start, target, expected) in [
+                (350_f32, 10., 20.),
+                (10., 350., -20.),
+                (10., -10., -20.),
+                (350., 730., 20.),
+                (10., 10., 0.),
+            ] {
+                let actual = target_turn_degrees(
+                    axis,
+                    target,
+                    Quat::from_axis_angle(vector, start.to_radians()),
+                );
+                assert!(
+                    (actual - expected).abs() < 0.001,
+                    "{axis:?}: {actual} != {expected}"
+                );
             }
         }
         assert!((target_turn_degrees(RotationAxis::Y, 180., Quat::IDENTITY) - 180.).abs() < 0.001);
-        assert!((target_turn_degrees(RotationAxis::Y, 0., Quat::from_rotation_y(std::f32::consts::PI)) + 180.).abs() < 0.001);
-        assert_eq!(target_turn_degrees(RotationAxis::Y, -180., Quat::IDENTITY), -180.);
-        assert_eq!(target_turn_degrees(RotationAxis::Y, -540., Quat::IDENTITY), -180.);
-        assert_eq!(target_turn_degrees(RotationAxis::Y, 540., Quat::IDENTITY), 180.);
-        assert_eq!(target_turn_degrees(RotationAxis::Y, f32::NAN, Quat::IDENTITY), 0.);
+        assert!(
+            (target_turn_degrees(
+                RotationAxis::Y,
+                0.,
+                Quat::from_rotation_y(std::f32::consts::PI)
+            ) + 180.)
+                .abs()
+                < 0.001
+        );
+        assert_eq!(
+            target_turn_degrees(RotationAxis::Y, -180., Quat::IDENTITY),
+            -180.
+        );
+        assert_eq!(
+            target_turn_degrees(RotationAxis::Y, -540., Quat::IDENTITY),
+            -180.
+        );
+        assert_eq!(
+            target_turn_degrees(RotationAxis::Y, 540., Quat::IDENTITY),
+            180.
+        );
+        assert_eq!(
+            target_turn_degrees(RotationAxis::Y, f32::NAN, Quat::IDENTITY),
+            0.
+        );
     }
     #[test]
     fn target_turn_uses_current_euler_component_and_local_basis() {
-        let base = rotation_from_degrees(SceneMaxVec3 { x: 30., y: 40., z: 50. });
-        for (axis, vector, start) in [("x", Vec3::X, 30.), ("y", Vec3::Y, 40.), ("z", Vec3::Z, 50.)] {
-            let p = scenemax_parser::parse_program(&format!("subject.rotate to ({axis} {}) in 2 seconds", start + 20.)).unwrap();
-            let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+        let base = rotation_from_degrees(SceneMaxVec3 {
+            x: 30.,
+            y: 40.,
+            z: 50.,
+        });
+        for (axis, vector, start) in [
+            ("x", Vec3::X, 30.),
+            ("y", Vec3::Y, 40.),
+            ("z", Vec3::Z, 50.),
+        ] {
+            let p = scenemax_parser::parse_program(&format!(
+                "subject.rotate to ({axis} {}) in 2 seconds",
+                start + 20.
+            ))
+            .unwrap();
+            let Statement::Turn(turn) = &p.statements[0] else {
+                panic!();
+            };
             let controller = timed_turn_from_statement_resolved(turn, turn.degrees, 2., base);
             let mut transform = Transform::from_rotation(base);
             apply_turn_delta(&mut transform, &controller, 1.);
-            assert!(transform.rotation.abs_diff_eq(base * Quat::from_axis_angle(vector, 10_f32.to_radians()), 0.0001));
+            assert!(transform.rotation.abs_diff_eq(
+                base * Quat::from_axis_angle(vector, 10_f32.to_radians()),
+                0.0001
+            ));
             apply_turn_delta(&mut transform, &controller, 1.);
-            assert!(transform.rotation.abs_diff_eq(base * Quat::from_axis_angle(vector, 20_f32.to_radians()), 0.0001));
+            assert!(transform.rotation.abs_diff_eq(
+                base * Quat::from_axis_angle(vector, 20_f32.to_radians()),
+                0.0001
+            ));
         }
     }
 }
@@ -5646,29 +5886,64 @@ mod rotate_to_lifecycle_tests {
     #[test]
     fn zero_duration_finishes_and_loop_recalculates_from_current_orientation() {
         for looped in [false, true] {
-            let source = if looped { "subject.rotate to (y 10) in 1 seconds loop while active == 1" }
-                else { "subject.rotate to (y 10) in 0 seconds" };
+            let source = if looped {
+                "subject.rotate to (y 10) in 1 seconds loop while active == 1"
+            } else {
+                "subject.rotate to (y 10) in 0 seconds"
+            };
             let p = scenemax_parser::parse_program(source).unwrap();
-            let Statement::Turn(turn) = &p.statements[0] else { panic!(); };
+            let Statement::Turn(turn) = &p.statements[0] else {
+                panic!();
+            };
             let rotation = Quat::from_rotation_y(350_f32.to_radians());
-            let controller = timed_turn_from_statement_resolved(turn, 10., turn.duration_seconds, rotation);
+            let controller =
+                timed_turn_from_statement_resolved(turn, 10., turn.duration_seconds, rotation);
             let mut world = World::new();
             world.init_resource::<SceneMaxVars>();
-            world.resource_mut::<SceneMaxVars>().0.insert("active".into(), 1.);
+            world
+                .resource_mut::<SceneMaxVars>()
+                .0
+                .insert("active".into(), 1.);
             world.init_resource::<SceneMaxStartupProgram>();
             world.init_resource::<SceneMaxColliderBounds>();
             let mut time = Time::<()>::default();
             time.advance_by(std::time::Duration::from_secs(1));
             world.insert_resource(time);
-            let entity = world.spawn((Transform::from_rotation(rotation), TimedTurns { turns: vec![controller] })).id();
+            let entity = world
+                .spawn((
+                    Transform::from_rotation(rotation),
+                    TimedTurns {
+                        turns: vec![controller],
+                    },
+                ))
+                .id();
             world.run_system_once(update_timed_turns).unwrap();
             let expected = Quat::from_rotation_y(10_f32.to_radians());
-            assert!(world.get::<Transform>(entity).unwrap().rotation.dot(expected).abs() > 0.99999);
+            assert!(
+                world
+                    .get::<Transform>(entity)
+                    .unwrap()
+                    .rotation
+                    .dot(expected)
+                    .abs()
+                    > 0.99999
+            );
             assert_eq!(world.get::<TimedTurns>(entity).is_some(), looped);
             if looped {
                 world.run_system_once(update_timed_turns).unwrap();
-                assert!(world.get::<Transform>(entity).unwrap().rotation.dot(expected).abs() > 0.99999);
-                world.resource_mut::<SceneMaxVars>().0.insert("active".into(), 0.);
+                assert!(
+                    world
+                        .get::<Transform>(entity)
+                        .unwrap()
+                        .rotation
+                        .dot(expected)
+                        .abs()
+                        > 0.99999
+                );
+                world
+                    .resource_mut::<SceneMaxVars>()
+                    .0
+                    .insert("active".into(), 0.);
                 world.run_system_once(update_timed_turns).unwrap();
                 assert!(world.get::<TimedTurns>(entity).is_none());
             }
@@ -5683,8 +5958,11 @@ mod axis_move_tests {
     #[test]
     fn axis_moves_ignore_facing_and_scale_and_finish_at_the_requested_delta() {
         for (axis, vector) in [("x", Vec3::X), ("y", Vec3::Y), ("z", Vec3::Z)] {
-            let p = scenemax_parser::parse_program(&format!("subject.move({axis}-8) in 2 seconds")).unwrap();
-            let Statement::Move(movement) = &p.statements[0] else { panic!(); };
+            let p = scenemax_parser::parse_program(&format!("subject.move({axis}-8) in 2 seconds"))
+                .unwrap();
+            let Statement::Move(movement) = &p.statements[0] else {
+                panic!();
+            };
             let original = Transform::from_xyz(1., 2., 3.)
                 .with_rotation(Quat::from_rotation_y(1.2) * Quat::from_rotation_z(0.4))
                 .with_scale(Vec3::splat(3.));
@@ -5700,13 +5978,32 @@ mod axis_move_tests {
             let mut time = Time::<()>::default();
             time.advance_by(std::time::Duration::from_secs_f32(0.5));
             world.insert_resource(time);
-            let entity = world.spawn((original, TimedMoves { moves: vec![movement] })).id();
+            let entity = world
+                .spawn((
+                    original,
+                    TimedMoves {
+                        moves: vec![movement],
+                    },
+                ))
+                .id();
             world.run_system_once(update_timed_moves).unwrap();
-            assert!(world.get::<Transform>(entity).unwrap().translation.abs_diff_eq(original.translation - vector * 2., 0.0001));
-            world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs(4));
+            assert!(
+                world
+                    .get::<Transform>(entity)
+                    .unwrap()
+                    .translation
+                    .abs_diff_eq(original.translation - vector * 2., 0.0001)
+            );
+            world
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs(4));
             world.run_system_once(update_timed_moves).unwrap();
             let actual = world.get::<Transform>(entity).unwrap();
-            assert!(actual.translation.abs_diff_eq(original.translation - vector * 8., 0.0001));
+            assert!(
+                actual
+                    .translation
+                    .abs_diff_eq(original.translation - vector * 8., 0.0001)
+            );
             assert_eq!(actual.rotation, original.rotation);
             assert_eq!(actual.scale, original.scale);
             assert!(world.get::<TimedMoves>(entity).is_none());

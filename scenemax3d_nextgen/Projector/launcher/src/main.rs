@@ -138,7 +138,9 @@ fn run() -> io::Result<i32> {
         .arg(temporary.path())
         .arg("--script")
         .arg(temporary.path().join(script));
-    if runtime_log { command.arg("--runtime-log"); }
+    if runtime_log {
+        command.arg("--runtime-log");
+    }
     // User data must survive disposable extraction; runtime extensions may consume this location.
     command.env("SCENEMAX_DISTRIBUTION_EXE", std::env::current_exe()?);
     command.env_remove("SCENEMAX_BUILTIN_RESOURCES");
@@ -178,10 +180,18 @@ fn runtime_log_requested(args: impl IntoIterator<Item = std::ffi::OsString>) -> 
 }
 fn preserve_runtime_log(root: &Path, executable: &Path) -> io::Result<()> {
     let source = root.join("scenemax-nextgen-runtime.log");
-    if !source.is_file() { return Ok(()); }
+    if !source.is_file() {
+        return Ok(());
+    }
     let destination = executable.with_extension("runtime.log");
-    if fs::copy(&source, &destination).is_ok() { return Ok(()); }
-    let fallback = std::env::temp_dir().join(destination.file_name().ok_or_else(|| io::Error::other("Missing executable filename"))?);
+    if fs::copy(&source, &destination).is_ok() {
+        return Ok(());
+    }
+    let fallback = std::env::temp_dir().join(
+        destination
+            .file_name()
+            .ok_or_else(|| io::Error::other("Missing executable filename"))?,
+    );
     fs::copy(source, fallback)?;
     Ok(())
 }
@@ -190,10 +200,12 @@ fn main() {
         Ok(code) => std::process::exit(code),
         Err(error) => {
             let path = std::env::temp_dir().join("scenemax-launch-error.txt");
-            if runtime_log_requested(std::env::args_os().skip(1)) { let _ = fs::write(
-                &path,
-                format!("SceneMax could not launch this package: {error}\n"),
-            ); }
+            if runtime_log_requested(std::env::args_os().skip(1)) {
+                let _ = fs::write(
+                    &path,
+                    format!("SceneMax could not launch this package: {error}\n"),
+                );
+            }
             eprintln!("{error}");
             std::process::exit(1);
         }
@@ -212,10 +224,18 @@ mod tests {
     fn runtime_log_survives_extraction_cleanup() {
         let extraction = tempfile::tempdir().unwrap();
         let destination = tempfile::tempdir().unwrap();
-        std::fs::write(extraction.path().join("scenemax-nextgen-runtime.log"), "camera diagnostic").unwrap();
-        super::preserve_runtime_log(extraction.path(), &destination.path().join("game.exe")).unwrap();
+        std::fs::write(
+            extraction.path().join("scenemax-nextgen-runtime.log"),
+            "camera diagnostic",
+        )
+        .unwrap();
+        super::preserve_runtime_log(extraction.path(), &destination.path().join("game.exe"))
+            .unwrap();
         extraction.close().unwrap();
-        assert_eq!(std::fs::read_to_string(destination.path().join("game.runtime.log")).unwrap(), "camera diagnostic");
+        assert_eq!(
+            std::fs::read_to_string(destination.path().join("game.runtime.log")).unwrap(),
+            "camera diagnostic"
+        );
     }
     use super::*;
     use std::io::Write;

@@ -2,15 +2,15 @@
 mod files;
 mod preferences;
 pub use preferences::SettingsWriter;
-mod existing;
 mod assets;
+mod existing;
 mod pipeline;
-mod web;
 pub mod preview;
 mod process;
 mod size_report;
 #[cfg(test)]
 mod tests;
+mod web;
 use scenemax_ide_core::deployment::Settings;
 use std::{
     collections::VecDeque,

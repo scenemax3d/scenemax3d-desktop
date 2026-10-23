@@ -58,7 +58,10 @@ impl Deployment {
         let notify = matches!(operation, Operation::Build(_) | Operation::Upload(..));
         let reset_preview = matches!(operation, Operation::Build(_) | Operation::Load(_));
         self.builder.start(operation).map_err(|e| e.to_string())?;
-        if reset_preview { self.preview.stop(); self.preview_status = self.preview.status(); }
+        if reset_preview {
+            self.preview.stop();
+            self.preview_status = self.preview.status();
+        }
         self.notify_job = notify;
         self.notification = None;
         self.busy = true;
@@ -200,8 +203,14 @@ pub(crate) fn update(
                 }
                 Action::DismissResult => state.notification = None,
                 Action::RunWeb => {
-                    if state.busy { return Ok(()); }
-                    let artifact = state.report.web_artifact.clone().ok_or("Build a Web package first.")?;
+                    if state.busy {
+                        return Ok(());
+                    }
+                    let artifact = state
+                        .report
+                        .web_artifact
+                        .clone()
+                        .ok_or("Build a Web package first.")?;
                     state.preview.start(artifact).map_err(|e| e.to_string())?;
                     state.preview_status = state.preview.status();
                 }
@@ -321,7 +330,8 @@ pub(crate) fn update(
     }
     // Save edits even when the user only browses, logs in, publishes, or closes.
     // A dedicated worker drains queued writes on shutdown without blocking frames.
-    if !state.loading && state.project == session.workspace.project().root()
+    if !state.loading
+        && state.project == session.workspace.project().root()
         && let Some(settings) = state.settings.clone()
         && let Ok(json) = serde_json::to_string(&settings)
     {

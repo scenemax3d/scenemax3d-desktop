@@ -33,11 +33,17 @@ impl Plugin for StudioUiPlugin {
         );
         app.add_systems(
             Update,
-            (widgets::button_feedback, panels::reset, panels::layout, password::render).chain(),
+            (
+                widgets::button_feedback,
+                panels::reset,
+                panels::layout,
+                password::render,
+            )
+                .chain(),
         )
         .add_systems(Last, panels::measure)
         .add_systems(PostUpdate, canvas::fit.before(bevy::ui::UiSystems::Prepare));
     }
 }
-pub mod property;
 pub mod password;
+pub mod property;

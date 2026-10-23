@@ -28,7 +28,9 @@ pub struct Playback {
 pub struct PlaybackCompletions(pub Arc<Mutex<std::collections::HashSet<(u64, u64)>>>);
 impl PlaybackCompletions {
     pub fn contains(&self, instance: u64, generation: u64) -> bool {
-        self.0.lock().is_ok_and(|entries| entries.contains(&(instance, generation)))
+        self.0
+            .lock()
+            .is_ok_and(|entries| entries.contains(&(instance, generation)))
     }
 }
 
@@ -47,7 +49,10 @@ pub fn native_duration_seconds(path: &std::path::Path) -> Option<f32> {
         (seconds > 0.).then_some(seconds)
     }
     #[cfg(not(feature = "effekseer_native"))]
-    { let _ = path; None }
+    {
+        let _ = path;
+        None
+    }
 }
 
 /// Optional editor-owned simulation clock; zero freezes particles while orbiting.

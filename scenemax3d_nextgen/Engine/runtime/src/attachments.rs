@@ -20,8 +20,13 @@ struct SourceSocket {
 }
 
 pub(super) fn release_object(world: &mut World, entity: Entity) {
-    let Some(binding) = world.get::<Binding>(entity).cloned() else { return; };
-    world.entity_mut(entity).remove::<Binding>().insert(binding.local);
+    let Some(binding) = world.get::<Binding>(entity).cloned() else {
+        return;
+    };
+    world
+        .entity_mut(entity)
+        .remove::<Binding>()
+        .insert(binding.local);
     if let Some(mut position) = world.get_mut::<AvianPosition>(entity) {
         position.0 = binding.local.translation;
     }
@@ -31,11 +36,18 @@ pub(super) fn release_object(world: &mut World, entity: Entity) {
 }
 
 pub(super) fn prune(world: &mut World, cancelled: impl Fn(Option<&SceneMaxControllerKey>) -> bool) {
-    let entities: Vec<_> = world.query::<(Entity, &Binding)>().iter(world)
-        .filter(|(_, binding)| cancelled(binding.owner.as_ref())).map(|(entity, _)| entity).collect();
+    let entities: Vec<_> = world
+        .query::<(Entity, &Binding)>()
+        .iter(world)
+        .filter(|(_, binding)| cancelled(binding.owner.as_ref()))
+        .map(|(entity, _)| entity)
+        .collect();
     for entity in entities {
-        if world.get::<SourceSocket>(entity).is_some() { world.despawn(entity); }
-        else { release_object(world, entity); }
+        if world.get::<SourceSocket>(entity).is_some() {
+            world.despawn(entity);
+        } else {
+            release_object(world, entity);
+        }
     }
 }
 
@@ -50,24 +62,52 @@ pub(super) fn enqueue_source(
     lifetime: Option<multiplayer::ActionLease>,
 ) {
     let Some(source_joint) = source_joint else {
-        enqueue_with_restore(commands, entity, subject, offset, restore_destination, owner, lifetime);
+        enqueue_with_restore(
+            commands,
+            entity,
+            subject,
+            offset,
+            restore_destination,
+            owner,
+            lifetime,
+        );
         return;
     };
     commands.queue(move |world: &mut World| {
-        let Some(source_owner) = entity.filter(|e| world.get_entity(*e).is_ok()) else { return; };
+        let Some(source_owner) = entity.filter(|e| world.get_entity(*e).is_ok()) else {
+            return;
+        };
         let existing = socket(world, source_owner, &source_joint);
-        let entity = existing.unwrap_or_else(|| world.spawn((
-            SourceSocket { owner: source_owner, joint: source_joint },
-            Transform::default(),
-            ChildOf(source_owner),
-        )).id());
-        enqueue_with_restore(&mut world.commands(), Some(entity), subject, offset, restore_destination, owner, lifetime);
+        let entity = existing.unwrap_or_else(|| {
+            world
+                .spawn((
+                    SourceSocket {
+                        owner: source_owner,
+                        joint: source_joint,
+                    },
+                    Transform::default(),
+                    ChildOf(source_owner),
+                ))
+                .id()
+        });
+        enqueue_with_restore(
+            &mut world.commands(),
+            Some(entity),
+            subject,
+            offset,
+            restore_destination,
+            owner,
+            lifetime,
+        );
     });
 }
 
 fn socket(world: &World, owner: Entity, name: &str) -> Option<Entity> {
-    world.get::<Children>(owner)?.iter().find(|e| world.get::<SourceSocket>(*e)
-        .is_some_and(|s| names_match(&s.joint, name)))
+    world.get::<Children>(owner)?.iter().find(|e| {
+        world
+            .get::<SourceSocket>(*e)
+            .is_some_and(|s| names_match(&s.joint, name))
+    })
 }
 
 pub(super) fn evaluated(
@@ -79,12 +119,20 @@ pub(super) fn evaluated(
     bounds: Option<&SceneMaxColliderBounds>,
 ) -> Option<AttachStatement> {
     let offset = match &attach.offset_value {
-        Some(value) => evaluate_position_value_runtime(value, vars, scope, guards, transforms, bounds)?,
+        Some(value) => {
+            evaluate_position_value_runtime(value, vars, scope, guards, transforms, bounds)?
+        }
         None => vec3_from_scenemax(attach.offset),
     };
-    if !offset.is_finite() { return None; }
+    if !offset.is_finite() {
+        return None;
+    }
     Some(AttachStatement {
-        offset: SceneMaxVec3 { x:offset.x, y:offset.y, z:offset.z },
+        offset: SceneMaxVec3 {
+            x: offset.x,
+            y: offset.y,
+            z: offset.z,
+        },
         offset_value: None,
         ..attach.clone()
     })
@@ -118,10 +166,14 @@ fn enqueue_with_restore(
         // the source model, as a later explicit attach-to-joint command does.
         let (target, target_joint) = crate::ik::split_target(&subject);
         if let Some(target_joint) = target_joint.filter(|_| restore_destination) {
-            let owner = world.query::<(Entity, &SceneMaxEntity)>().iter(world)
+            let owner = world
+                .query::<(Entity, &SceneMaxEntity)>()
+                .iter(world)
                 .find_map(|(e, s)| (s.name == target || s.runtime_name == target).then_some(e));
             if let Some(socket) = owner.and_then(|owner| socket(world, owner, &target_joint)) {
-                if socket != entity { world.despawn(socket); }
+                if socket != entity {
+                    world.despawn(socket);
+                }
             }
         }
         let Some(mut local) = world
@@ -220,30 +272,55 @@ fn source_pose(world: &World, root: Entity, bone: Entity) -> Result<Transform, S
     let mut pending = vec![root];
     let mut mesh_pending = false;
     while let Some(entity) = pending.pop() {
-        if entity != root && world.get::<SceneMaxEntity>(entity).is_some() { continue; }
-        if let Some(index) = world.get::<SkinnedMesh>(entity)
+        if entity != root && world.get::<SceneMaxEntity>(entity).is_some() {
+            continue;
+        }
+        if let Some(index) = world
+            .get::<SkinnedMesh>(entity)
             .and_then(|skin| skin.joints.iter().position(|joint| *joint == bone))
         {
             if let Some(handle) = world.get::<Mesh3d>(entity) {
-                if let Some(mesh) = world.get_resource::<Assets<Mesh>>().and_then(|meshes| meshes.get(&handle.0)) {
-                    if mesh_uses_joint(mesh, index) { return Ok(pose.compute_transform()); }
+                if let Some(mesh) = world
+                    .get_resource::<Assets<Mesh>>()
+                    .and_then(|meshes| meshes.get(&handle.0))
+                {
+                    if mesh_uses_joint(mesh, index) {
+                        return Ok(pose.compute_transform());
+                    }
                 } else {
                     mesh_pending = true;
                 }
             }
         }
-        if let Some(children) = world.get::<Children>(entity) { pending.extend(children.iter()); }
+        if let Some(children) = world.get::<Children>(entity) {
+            pending.extend(children.iter());
+        }
     }
-    if mesh_pending { return Err("Attachment skin geometry is still loading".into()); }
+    if mesh_pending {
+        return Err("Attachment skin geometry is still loading".into());
+    }
     // A joint without an associated skin geometry uses its model-space pose.
-    Ok(Transform::from_matrix(Mat4::from(global(world, root)?.affine().inverse()) * pose.to_matrix()))
+    Ok(Transform::from_matrix(
+        Mat4::from(global(world, root)?.affine().inverse()) * pose.to_matrix(),
+    ))
 }
 fn mesh_uses_joint(mesh: &Mesh, joint: usize) -> bool {
     use bevy::mesh::VertexAttributeValues;
-    let Some(VertexAttributeValues::Uint16x4(indices)) = mesh.attribute(Mesh::ATTRIBUTE_JOINT_INDEX) else { return false; };
-    let Some(VertexAttributeValues::Float32x4(weights)) = mesh.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT) else { return false; };
-    indices.iter().zip(weights).any(|(indices, weights)| indices.iter().zip(weights)
-        .any(|(index, weight)| usize::from(*index) == joint && weight.is_finite() && *weight != 0.))
+    let Some(VertexAttributeValues::Uint16x4(indices)) =
+        mesh.attribute(Mesh::ATTRIBUTE_JOINT_INDEX)
+    else {
+        return false;
+    };
+    let Some(VertexAttributeValues::Float32x4(weights)) =
+        mesh.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT)
+    else {
+        return false;
+    };
+    indices.iter().zip(weights).any(|(indices, weights)| {
+        indices.iter().zip(weights).any(|(index, weight)| {
+            usize::from(*index) == joint && weight.is_finite() && *weight != 0.
+        })
+    })
 }
 
 fn apply(
@@ -332,7 +409,9 @@ fn apply(
                     ));
                 }
             }
-            if let Some(mut current) = world.get_mut::<Binding>(entity) { current.audited = true; }
+            if let Some(mut current) = world.get_mut::<Binding>(entity) {
+                current.audited = true;
+            }
         }
         Ok(())
     })();
@@ -382,14 +461,34 @@ pub(super) fn update(world: &mut World) {
 pub(super) fn audit(
     mut commands: Commands,
     mut frame: Local<u32>,
-    entities: Query<(&SceneMaxEntity, &Transform, Option<&scenemax_ik::Rig>, Option<&Binding>)>,
+    entities: Query<(
+        &SceneMaxEntity,
+        &Transform,
+        Option<&scenemax_ik::Rig>,
+        Option<&Binding>,
+    )>,
     mut exit: MessageWriter<AppExit>,
     cameras: Query<&Transform, (With<Camera3d>, Without<SceneMaxEntity>)>,
-    playbacks: Query<(&SceneMaxEntity, Option<&SceneMaxEffekseerPlayback>, Option<&CurrentAnimation>)>,
-    sprites: Query<(&SceneMaxEntity, &SceneMaxSprite, Option<&SceneMaxSpriteAnimation>, &Visibility)>,
+    playbacks: Query<(
+        &SceneMaxEntity,
+        Option<&SceneMaxEffekseerPlayback>,
+        Option<&CurrentAnimation>,
+    )>,
+    sprites: Query<(
+        &SceneMaxEntity,
+        &SceneMaxSprite,
+        Option<&SceneMaxSpriteAnimation>,
+        &Visibility,
+    )>,
     meshes: Res<Assets<Mesh>>,
     geometry: Query<(&SceneMaxEntity, &Mesh3d)>,
-    physics: Query<(&SceneMaxEntity, &AvianCollider, Option<&avian3d::prelude::Position>, Option<&LinearVelocity>, &Transform)>,
+    physics: Query<(
+        &SceneMaxEntity,
+        &AvianCollider,
+        Option<&avian3d::prelude::Position>,
+        Option<&LinearVelocity>,
+        &Transform,
+    )>,
 ) {
     let Ok(path) = std::env::var("SCENEMAX_ATTACHMENT_AUDIT") else {
         return;
@@ -402,37 +501,101 @@ pub(super) fn audit(
         .max(60);
     if *frame == limit {
         for (name, handle) in &geometry {
-            if let Some(VertexAttributeValues::Float32x3(points)) = meshes.get(&handle.0).and_then(|mesh| mesh.attribute(Mesh::ATTRIBUTE_POSITION)) {
-                let (mut min, mut max) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
-                for point in points { let point = Vec3::from_array(*point); min=min.min(point); max=max.max(point); }
-                write_runtime_diagnostic_line(format!("GEOMETRY_AUDIT {} min={:?} max={:?} vertices={}", name.name, min, max, points.len()));
+            if let Some(VertexAttributeValues::Float32x3(points)) = meshes
+                .get(&handle.0)
+                .and_then(|mesh| mesh.attribute(Mesh::ATTRIBUTE_POSITION))
+            {
+                let (mut min, mut max) =
+                    (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+                for point in points {
+                    let point = Vec3::from_array(*point);
+                    min = min.min(point);
+                    max = max.max(point);
+                }
+                write_runtime_diagnostic_line(format!(
+                    "GEOMETRY_AUDIT {} min={:?} max={:?} vertices={}",
+                    name.name,
+                    min,
+                    max,
+                    points.len()
+                ));
             }
         }
         for (name, sheet, playback, visibility) in &sprites {
-            let frame = meshes.get(&sheet.mesh).and_then(|mesh| mesh.attribute(Mesh::ATTRIBUTE_UV_0))
-                .and_then(|uv| if let VertexAttributeValues::Float32x2(uv) = uv { uv.first() } else { None })
-                .map(|uv| (uv[0] * sheet.cols as f32).round() as usize
-                    + ((uv[1] * sheet.rows as f32).round() as usize).saturating_sub(1) * sheet.cols);
-            write_runtime_diagnostic_line(format!("SPRITE_AUDIT {} frame={frame:?} frames={} active={} visible={}",
-                name.name, sheet.frame_count, playback.is_some(), !matches!(visibility, Visibility::Hidden)));
+            let frame = meshes
+                .get(&sheet.mesh)
+                .and_then(|mesh| mesh.attribute(Mesh::ATTRIBUTE_UV_0))
+                .and_then(|uv| {
+                    if let VertexAttributeValues::Float32x2(uv) = uv {
+                        uv.first()
+                    } else {
+                        None
+                    }
+                })
+                .map(|uv| {
+                    (uv[0] * sheet.cols as f32).round() as usize
+                        + ((uv[1] * sheet.rows as f32).round() as usize).saturating_sub(1)
+                            * sheet.cols
+                });
+            write_runtime_diagnostic_line(format!(
+                "SPRITE_AUDIT {} frame={frame:?} frames={} active={} visible={}",
+                name.name,
+                sheet.frame_count,
+                playback.is_some(),
+                !matches!(visibility, Visibility::Hidden)
+            ));
         }
         for (name, effect, animation) in &playbacks {
-            if let Some(p) = effect { write_runtime_diagnostic_line(format!("EFFECT_AUDIT {} loop={} speed={} inputs={:?}", name.name, p.looped, p.playback_speed, p.dynamic_inputs)); }
-            if let Some(a) = animation { write_runtime_diagnostic_line(format!("ANIMATION_AUDIT {} clip={} loop={} elapsed={}", name.name, a.clip, a.looped, a.elapsed_seconds)); }
+            if let Some(p) = effect {
+                write_runtime_diagnostic_line(format!(
+                    "EFFECT_AUDIT {} loop={} speed={} inputs={:?}",
+                    name.name, p.looped, p.playback_speed, p.dynamic_inputs
+                ));
+            }
+            if let Some(a) = animation {
+                write_runtime_diagnostic_line(format!(
+                    "ANIMATION_AUDIT {} clip={} loop={} elapsed={}",
+                    name.name, a.clip, a.looped, a.elapsed_seconds
+                ));
+            }
         }
         for (name, collider, position, velocity, transform) in &physics {
             let bounds = collider.shape_scaled().compute_local_aabb();
-            write_runtime_diagnostic_line(format!("PHYSICS_AUDIT {} scale={:?} local_min={:?} local_max={:?} position={:?} velocity={:?}",
-                name.name, collider.scale(), bounds.mins, bounds.maxs, position, velocity));
+            write_runtime_diagnostic_line(format!(
+                "PHYSICS_AUDIT {} scale={:?} local_min={:?} local_max={:?} position={:?} velocity={:?}",
+                name.name,
+                collider.scale(),
+                bounds.mins,
+                bounds.maxs,
+                position,
+                velocity
+            ));
             for (other, _, other_position, _, _) in &physics {
-                if other.name == name.name { continue; }
+                if other.name == name.name {
+                    continue;
+                }
                 if let Some(origin) = other_position {
-                    let hit = collider.cast_ray(transform.translation, transform.rotation, origin.0 + Vec3::Y * 10.0, Vec3::NEG_Y, 20.0, false);
-                    write_runtime_diagnostic_line(format!("PHYSICS_SUPPORT_AUDIT {} under={} ray_hit={:?}", name.name, other.name, hit));
+                    let hit = collider.cast_ray(
+                        transform.translation,
+                        transform.rotation,
+                        origin.0 + Vec3::Y * 10.0,
+                        Vec3::NEG_Y,
+                        20.0,
+                        false,
+                    );
+                    write_runtime_diagnostic_line(format!(
+                        "PHYSICS_SUPPORT_AUDIT {} under={} ray_hit={:?}",
+                        name.name, other.name, hit
+                    ));
                 }
             }
         }
-        for t in &cameras { write_runtime_diagnostic_line(format!("CAMERA_AUDIT pos={:?} rot={:?}", t.translation, t.rotation)); }
+        for t in &cameras {
+            write_runtime_diagnostic_line(format!(
+                "CAMERA_AUDIT pos={:?} rot={:?}",
+                t.translation, t.rotation
+            ));
+        }
         for (name, t, rig, binding) in &entities {
             write_runtime_diagnostic_line(format!(
                 "ATTACHMENT_AUDIT {} pos={:?} rot={:?} scale={:?} ik={:?}",
@@ -465,10 +628,26 @@ pub(crate) mod tests {
     fn source_socket_retirement_is_owned_by_the_current_network_generation() {
         let mut world = World::new();
         let root = object(&mut world, "source", Transform::default());
-        let key = |sequence| SceneMaxControllerKey::NetworkAction { entity: 10, slot: 64, sequence };
+        let key = |sequence| SceneMaxControllerKey::NetworkAction {
+            entity: 10,
+            slot: 64,
+            sequence,
+        };
         for sequence in [1, 2] {
-            enqueue_source(&mut world.commands(), Some(root), Some("socket".into()),
-                "destination".into(), SceneMaxVec3 { x:0., y:0., z:0. }, true, Some(key(sequence)), None);
+            enqueue_source(
+                &mut world.commands(),
+                Some(root),
+                Some("socket".into()),
+                "destination".into(),
+                SceneMaxVec3 {
+                    x: 0.,
+                    y: 0.,
+                    z: 0.,
+                },
+                true,
+                Some(key(sequence)),
+                None,
+            );
             world.flush();
         }
         prune(&mut world, |owner| owner == Some(&key(1)));
@@ -482,25 +661,50 @@ pub(crate) mod tests {
         use bevy::mesh::VertexAttributeValues;
         world.init_resource::<Assets<Mesh>>();
         let mut mesh = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, default());
-        mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_INDEX, VertexAttributeValues::Uint16x4(vec![[0,0,0,0]]));
-        mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, vec![[weight,0.,0.,0.]]);
+        mesh.insert_attribute(
+            Mesh::ATTRIBUTE_JOINT_INDEX,
+            VertexAttributeValues::Uint16x4(vec![[0, 0, 0, 0]]),
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, vec![[weight, 0., 0., 0.]]);
         let handle = world.resource_mut::<Assets<Mesh>>().add(mesh);
-        world.spawn((Mesh3d(handle.clone()), SkinnedMesh { joints: vec![bone], inverse_bindposes: default() }, ChildOf(root)));
+        world.spawn((
+            Mesh3d(handle.clone()),
+            SkinnedMesh {
+                joints: vec![bone],
+                inverse_bindposes: default(),
+            },
+            ChildOf(root),
+        ));
         handle
     }
 
     #[test]
     fn source_pose_ignores_zero_influences_and_waits_for_missing_meshes() {
         let mut world = World::new();
-        let root = object(&mut world, "source", Transform::from_xyz(7.,0.,0.));
-        let bone = world.spawn((Transform::from_xyz(0.,2.,0.), ChildOf(root))).id();
+        let root = object(&mut world, "source", Transform::from_xyz(7., 0., 0.));
+        let bone = world
+            .spawn((Transform::from_xyz(0., 2., 0.), ChildOf(root)))
+            .id();
         let handle = skin(&mut world, root, bone, 0.);
-        assert_eq!(source_pose(&world, root, bone).unwrap().translation, Vec3::new(0.,2.,0.));
-        world.resource_mut::<Assets<Mesh>>().get_mut(&handle).unwrap()
-            .insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, vec![[0.,0.,0.5,0.]]);
-        assert_eq!(source_pose(&world, root, bone).unwrap().translation, Vec3::new(7.,2.,0.));
+        assert_eq!(
+            source_pose(&world, root, bone).unwrap().translation,
+            Vec3::new(0., 2., 0.)
+        );
+        world
+            .resource_mut::<Assets<Mesh>>()
+            .get_mut(&handle)
+            .unwrap()
+            .insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, vec![[0., 0., 0.5, 0.]]);
+        assert_eq!(
+            source_pose(&world, root, bone).unwrap().translation,
+            Vec3::new(7., 2., 0.)
+        );
         world.resource_mut::<Assets<Mesh>>().remove(handle.id());
-        assert!(source_pose(&world, root, bone).unwrap_err().contains("still loading"));
+        assert!(
+            source_pose(&world, root, bone)
+                .unwrap_err()
+                .contains("still loading")
+        );
     }
 
     #[test]
@@ -512,17 +716,34 @@ pub(crate) mod tests {
         world.init_resource::<SceneMaxColliderBounds>();
         world.init_resource::<DelayedActionQueue>();
         let parent = object(&mut world, "anchor", Transform::from_xyz(10., 0., 0.));
-        let child = object(&mut world, "member", Transform::from_scale(Vec3::splat(0.5)));
-        world.entity_mut(child).insert((Visibility::Inherited, AvianPosition(Vec3::ZERO), AvianRotation::default()));
-        world.resource_mut::<SceneMaxObjectPools>().pools.insert("items".into(), ObjectPoolRuntime {
-            members: HashSet::from(["member".into()]),
-            in_use: HashSet::from(["member".into()]),
-            ..default()
-        });
-        world.resource_mut::<SceneMaxObjectPools>().aliases.insert("selected".into(), "member".into());
+        let child = object(
+            &mut world,
+            "member",
+            Transform::from_scale(Vec3::splat(0.5)),
+        );
+        world.entity_mut(child).insert((
+            Visibility::Inherited,
+            AvianPosition(Vec3::ZERO),
+            AvianRotation::default(),
+        ));
+        world.resource_mut::<SceneMaxObjectPools>().pools.insert(
+            "items".into(),
+            ObjectPoolRuntime {
+                members: HashSet::from(["member".into()]),
+                in_use: HashSet::from(["member".into()]),
+                ..default()
+            },
+        );
+        world
+            .resource_mut::<SceneMaxObjectPools>()
+            .aliases
+            .insert("selected".into(), "member".into());
         bind(&mut world, child, "anchor", Vec3::X);
         update(&mut world);
-        assert_eq!(world.get::<Transform>(child).unwrap().translation, Vec3::new(11., 0., 0.));
+        assert_eq!(
+            world.get::<Transform>(child).unwrap().translation,
+            Vec3::new(11., 0., 0.)
+        );
         let program = scenemax_parser::parse_program("items.release selected").unwrap();
         crate::pool_lifecycle::tests::execute_batch(&mut world, program.statements);
         assert!(world.get::<Binding>(child).is_none());
@@ -533,22 +754,48 @@ pub(crate) mod tests {
         world.get_mut::<Transform>(parent).unwrap().translation.x = 20.;
         update(&mut world);
         assert_eq!(world.get::<Transform>(child).unwrap().translation, Vec3::X);
-        assert_eq!(world.get::<Transform>(child).unwrap().scale, Vec3::splat(0.5));
-        assert!(world.resource::<SceneMaxObjectPools>().pools["items"].in_use.contains("member"));
+        assert_eq!(
+            world.get::<Transform>(child).unwrap().scale,
+            Vec3::splat(0.5)
+        );
+        assert!(
+            world.resource::<SceneMaxObjectPools>().pools["items"]
+                .in_use
+                .contains("member")
+        );
     }
 
     #[test]
     fn unskinned_source_socket_uses_model_space_and_owner_deletion_cleans_it_up() {
         let mut world = World::new();
         let source = object(&mut world, "source", Transform::from_xyz(7., 0., 0.));
-        world.spawn((Name::new("socket"), Transform::from_xyz(0., 2., 0.), ChildOf(source)));
+        world.spawn((
+            Name::new("socket"),
+            Transform::from_xyz(0., 2., 0.),
+            ChildOf(source),
+        ));
         object(&mut world, "destination", Transform::from_xyz(10., 0., 0.));
-        enqueue_source(&mut world.commands(), Some(source), Some("socket".into()),
-            "destination".into(), SceneMaxVec3 { x:0., y:0., z:0. }, true, None, None);
+        enqueue_source(
+            &mut world.commands(),
+            Some(source),
+            Some("socket".into()),
+            "destination".into(),
+            SceneMaxVec3 {
+                x: 0.,
+                y: 0.,
+                z: 0.,
+            },
+            true,
+            None,
+            None,
+        );
         world.flush();
         update(&mut world);
         let attachment = socket(&world, source, "socket").unwrap();
-        assert_eq!(global(&world, attachment).unwrap().translation(), Vec3::new(10., 2., 0.));
+        assert_eq!(
+            global(&world, attachment).unwrap().translation(),
+            Vec3::new(10., 2., 0.)
+        );
         world.despawn(source);
         assert!(world.get_entity(attachment).is_err());
     }
@@ -558,13 +805,35 @@ pub(crate) mod tests {
         let mut world = World::new();
         let pose = Transform::from_xyz(7., 0., 0.);
         let source = object(&mut world, "source", pose);
-        world.spawn((Name::new("socket"), Transform::from_xyz(0., 2., 0.), ChildOf(source)));
-        enqueue_source(&mut world.commands(), Some(source), Some("socket".into()),
-            "source".into(), SceneMaxVec3 { x:0., y:0., z:0. }, true, None, None);
+        world.spawn((
+            Name::new("socket"),
+            Transform::from_xyz(0., 2., 0.),
+            ChildOf(source),
+        ));
+        enqueue_source(
+            &mut world.commands(),
+            Some(source),
+            Some("socket".into()),
+            "source".into(),
+            SceneMaxVec3 {
+                x: 0.,
+                y: 0.,
+                z: 0.,
+            },
+            true,
+            None,
+            None,
+        );
         world.flush();
         update(&mut world);
         let attachment = socket(&world, source, "socket").unwrap();
-        assert!(world.get::<Binding>(attachment).unwrap().diagnostic.is_some());
+        assert!(
+            world
+                .get::<Binding>(attachment)
+                .unwrap()
+                .diagnostic
+                .is_some()
+        );
         assert_eq!(*world.get::<Transform>(source).unwrap(), pose);
     }
 
@@ -578,29 +847,59 @@ pub(crate) mod tests {
         world.init_resource::<DelayedActionQueue>();
         let source_pose = Transform::from_xyz(2., 0., 0.);
         let source = object(&mut world, "source", source_pose);
-        let bone = world.spawn((Name::new("socket"), Transform::from_xyz(0., 1., 0.), ChildOf(source))).id();
+        let bone = world
+            .spawn((
+                Name::new("socket"),
+                Transform::from_xyz(0., 1., 0.),
+                ChildOf(source),
+            ))
+            .id();
         skin(&mut world, source, bone, 1.);
-        object(&mut world, "destination", Transform::from_xyz(10., 0., 0.).with_scale(Vec3::splat(4.)));
-        let carried = object(&mut world, "carried", Transform::from_scale(Vec3::splat(0.5)));
+        object(
+            &mut world,
+            "destination",
+            Transform::from_xyz(10., 0., 0.).with_scale(Vec3::splat(4.)),
+        );
+        let carried = object(
+            &mut world,
+            "carried",
+            Transform::from_scale(Vec3::splat(0.5)),
+        );
         bind(&mut world, carried, "source.\"socket\"", Vec3::X);
-        let actions = scenemax_parser::parse_program(
-            "source.\"socket\".attach to destination: pos (9,0,0)"
-        ).unwrap().statements;
+        let actions =
+            scenemax_parser::parse_program("source.\"socket\".attach to destination: pos (9,0,0)")
+                .unwrap()
+                .statements;
         crate::pool_lifecycle::tests::execute_batch(&mut world, actions);
         update(&mut world);
         assert!(socket(&world, source, "socket").is_some());
-        let lifetime = std::sync::Arc::downgrade(world.get::<Binding>(
-            socket(&world, source, "socket").unwrap()).unwrap()._lifetime.as_ref().unwrap());
+        let lifetime = std::sync::Arc::downgrade(
+            world
+                .get::<Binding>(socket(&world, source, "socket").unwrap())
+                .unwrap()
+                ._lifetime
+                .as_ref()
+                .unwrap(),
+        );
         assert_eq!(*world.get::<Transform>(source).unwrap(), source_pose);
         assert_eq!(world.get::<ChildOf>(bone).unwrap().parent(), source);
         assert_eq!(world.get::<Transform>(bone).unwrap().translation, Vec3::Y);
         // The animation update replaces the transient attach offset with the
         // joint/geometry ancestry, matching a reparented attachment node.
-        assert_eq!(world.get::<Transform>(carried).unwrap().translation, Vec3::new(13., 1., 0.));
-        assert_eq!(world.get::<Transform>(carried).unwrap().scale, Vec3::splat(0.5));
+        assert_eq!(
+            world.get::<Transform>(carried).unwrap().translation,
+            Vec3::new(13., 1., 0.)
+        );
+        assert_eq!(
+            world.get::<Transform>(carried).unwrap().scale,
+            Vec3::splat(0.5)
+        );
         world.get_mut::<Transform>(bone).unwrap().translation.y = 3.;
         update(&mut world);
-        assert_eq!(world.get::<Transform>(carried).unwrap().translation, Vec3::new(13., 3., 0.));
+        assert_eq!(
+            world.get::<Transform>(carried).unwrap().translation,
+            Vec3::new(13., 3., 0.)
+        );
         // Explicitly attaching to that source socket again restores its model
         // ownership, including objects already attached to the same socket.
         let other = object(&mut world, "other", Transform::default());
@@ -608,8 +907,14 @@ pub(crate) mod tests {
         update(&mut world);
         assert!(socket(&world, source, "socket").is_none());
         assert_eq!(lifetime.strong_count(), 0);
-        assert_eq!(world.get::<Transform>(carried).unwrap().translation, Vec3::new(3., 3., 0.));
-        assert_eq!(world.get::<Transform>(other).unwrap().translation, Vec3::new(2., 3., 0.));
+        assert_eq!(
+            world.get::<Transform>(carried).unwrap().translation,
+            Vec3::new(3., 3., 0.)
+        );
+        assert_eq!(
+            world.get::<Transform>(other).unwrap().translation,
+            Vec3::new(2., 3., 0.)
+        );
     }
 
     fn object(world: &mut World, name: &str, transform: Transform) -> Entity {
@@ -644,7 +949,10 @@ pub(crate) mod tests {
         let attached = object(&mut world, "attached", Transform::default());
         let descendant = object(&mut world, "descendant", Transform::default());
         let missing = object(&mut world, "missing", Transform::default());
-        world.resource_mut::<SceneMaxObjectPools>().shared_entities.insert("persistent".into());
+        world
+            .resource_mut::<SceneMaxObjectPools>()
+            .shared_entities
+            .insert("persistent".into());
         bind(&mut world, attached, "persistent", Vec3::ZERO);
         bind(&mut world, descendant, "attached", Vec3::ZERO);
         bind(&mut world, missing, "persistent.unknown_joint", Vec3::ZERO);
@@ -654,7 +962,12 @@ pub(crate) mod tests {
         assert!(!names.contains("missing"));
         release_object(&mut world, attached);
         update(&mut world);
-        assert!(world.resource::<SceneMaxObjectPools>().shared_entities.contains("attached"));
+        assert!(
+            world
+                .resource::<SceneMaxObjectPools>()
+                .shared_entities
+                .contains("attached")
+        );
     }
 
     #[test]
@@ -668,15 +981,26 @@ pub(crate) mod tests {
         object(&mut world, "anchor", Transform::from_xyz(10., 0., 0.));
         let child = object(&mut world, "child", Transform::default());
         let program = scenemax_parser::parse_program(
-            "amount = 2\nchild.attach to anchor: pos (amount + 1,amount * 2,-amount)\namount = 99"
-        ).unwrap();
+            "amount = 2\nchild.attach to anchor: pos (amount + 1,amount * 2,-amount)\namount = 99",
+        )
+        .unwrap();
         crate::pool_lifecycle::tests::execute_batch(&mut world, program.statements);
         update(&mut world);
-        assert_eq!(world.get::<Transform>(child).unwrap().translation, Vec3::new(13., 4., -2.));
-        assert_eq!(world.get::<Binding>(child).unwrap().local.translation, Vec3::new(3., 4., -2.));
-        let invalid = scenemax_parser::parse_program("child.attach to anchor: pos (missing,0,0)").unwrap();
+        assert_eq!(
+            world.get::<Transform>(child).unwrap().translation,
+            Vec3::new(13., 4., -2.)
+        );
+        assert_eq!(
+            world.get::<Binding>(child).unwrap().local.translation,
+            Vec3::new(3., 4., -2.)
+        );
+        let invalid =
+            scenemax_parser::parse_program("child.attach to anchor: pos (missing,0,0)").unwrap();
         crate::pool_lifecycle::tests::execute_batch(&mut world, invalid.statements);
-        assert_eq!(world.get::<Binding>(child).unwrap().local.translation, Vec3::new(3., 4., -2.));
+        assert_eq!(
+            world.get::<Binding>(child).unwrap().local.translation,
+            Vec3::new(3., 4., -2.)
+        );
     }
 
     #[test]

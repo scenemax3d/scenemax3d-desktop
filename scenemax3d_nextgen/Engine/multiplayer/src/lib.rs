@@ -92,9 +92,9 @@ mod tests {
         assert_eq!(bytes, vec![0x53, 0x58, 0x4d, 0x50, 1, 4, 42, 0]);
     }
 }
+pub mod client;
 /// Java/Zig-compatible SceneMax UDP protocol.
 pub mod protocol;
-pub mod client;
 #[cfg(test)]
 #[path = "tests.rs"]
 mod protocol_tests;

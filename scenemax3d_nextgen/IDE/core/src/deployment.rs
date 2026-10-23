@@ -104,8 +104,12 @@ pub struct WebLoading {
 }
 impl Default for WebLoading {
     fn default() -> Self {
-        Self { background: String::new(), header: "Loading game".into(),
-            message: "Loading files".into(), footer: "powered by SceneMax3D".into() }
+        Self {
+            background: String::new(),
+            header: "Loading game".into(),
+            message: "Loading files".into(),
+            footer: "powered by SceneMax3D".into(),
+        }
     }
 }
 

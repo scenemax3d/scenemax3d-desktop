@@ -895,7 +895,9 @@ fn resolve_project_root(launch: &BevySkyboxDesignerLaunch) -> PathBuf {
     }
     let mut current = launch.skybox.parent();
     while let Some(path) = current {
-        if scenemax_assets::filesystem::is_dir(&path.join("resources")) && scenemax_assets::filesystem::is_dir(&path.join("scripts")) {
+        if scenemax_assets::filesystem::is_dir(&path.join("resources"))
+            && scenemax_assets::filesystem::is_dir(&path.join("scripts"))
+        {
             return path.to_path_buf();
         }
         current = path.parent();

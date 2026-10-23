@@ -16,9 +16,16 @@ struct BitmapMaterial {
     name: String,
 }
 pub(super) fn is_text(world: &World, entity: Entity) -> bool {
-    if let Some(target) = world.get_resource::<SceneMaxUiRuntime>().and_then(|runtime| {
-        runtime.loaded.values().flat_map(|loaded| loaded.targets.values()).find(|target| target.entity == entity)
-    }) {
+    if let Some(target) = world
+        .get_resource::<SceneMaxUiRuntime>()
+        .and_then(|runtime| {
+            runtime
+                .loaded
+                .values()
+                .flat_map(|loaded| loaded.targets.values())
+                .find(|target| target.entity == entity)
+        })
+    {
         return target.widget_type == "TEXT_VIEW";
     }
     world.get::<Text>(entity).is_some() || world.get::<SceneMaxUiBitmapText>(entity).is_some()

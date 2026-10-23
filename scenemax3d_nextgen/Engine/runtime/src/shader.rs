@@ -1,7 +1,7 @@
 use super::*;
 mod object;
-pub(crate) use object::ObjectShaderPlugin;
 use bevy::{math::Affine2, pbr::ParallaxMappingMethod, render::render_resource::Face};
+pub(crate) use object::ObjectShaderPlugin;
 
 const DEFAULT_AMBIENT_BRIGHTNESS: f32 = 220.0;
 const DEFAULT_DIRECTIONAL_ILLUMINANCE: f32 = 24_000.0;
@@ -77,23 +77,34 @@ pub(super) struct SceneMaxShaderApplied;
 pub(super) struct SceneMaxEnvironmentDirectionalLight;
 
 enum SurfaceCommand {
-    Material { name: String, binding: scenemax_materials::MaterialBinding },
+    Material {
+        name: String,
+        binding: scenemax_materials::MaterialBinding,
+    },
     ClearMaterial,
-    Shader { name: String, shader: Option<SceneMaxObjectShader> },
+    Shader {
+        name: String,
+        shader: Option<SceneMaxObjectShader>,
+    },
 }
 
 #[derive(Component, Default)]
 struct PendingSurfaces(Vec<SurfaceCommand>);
 
 pub(super) fn entity_scene_ready(world: &World, target: Entity) -> bool {
-    if world.get::<SceneMaxGltf>(target).is_none() { return true; }
-    world.get::<bevy::world_serialization::WorldInstance>(target)
+    if world.get::<SceneMaxGltf>(target).is_none() {
+        return true;
+    }
+    world
+        .get::<bevy::world_serialization::WorldInstance>(target)
         .zip(world.get_resource::<bevy::world_serialization::WorldInstanceSpawner>())
         .is_some_and(|(instance, spawner)| spawner.instance_is_ready(**instance))
 }
 
 fn submit_surface(world: &mut World, target: Entity, command: SurfaceCommand) {
-    if world.get_entity(target).is_err() { return; }
+    if world.get_entity(target).is_err() {
+        return;
+    }
     if !entity_scene_ready(world, target) || world.get::<PendingSurfaces>(target).is_some() {
         if world.get::<PendingSurfaces>(target).is_none() {
             world.entity_mut(target).insert(PendingSurfaces::default());
@@ -110,11 +121,18 @@ fn submit_surface(world: &mut World, target: Entity, command: SurfaceCommand) {
 }
 
 pub(super) fn apply_pending_surfaces(world: &mut World) {
-    let ready: Vec<Entity> = world.query_filtered::<Entity, With<PendingSurfaces>>()
-        .iter(world).filter(|entity| entity_scene_ready(world, *entity)).collect();
+    let ready: Vec<Entity> = world
+        .query_filtered::<Entity, With<PendingSurfaces>>()
+        .iter(world)
+        .filter(|entity| entity_scene_ready(world, *entity))
+        .collect();
     for entity in ready {
-        let Some(pending) = world.entity_mut(entity).take::<PendingSurfaces>() else { continue; };
-        for command in pending.0 { execute_surface(world, entity, command); }
+        let Some(pending) = world.entity_mut(entity).take::<PendingSurfaces>() else {
+            continue;
+        };
+        for command in pending.0 {
+            execute_surface(world, entity, command);
+        }
     }
 }
 
@@ -133,7 +151,11 @@ fn execute_surface(world: &mut World, target: Entity, command: SurfaceCommand) {
         SurfaceCommand::Shader { name, shader } => {
             let mut targets = Vec::new();
             collect_entity_and_descendants(world, target, &mut targets);
-            if shader.is_some() && !targets.iter().any(|entity| object::current(world,*entity).is_some()) {
+            if shader.is_some()
+                && !targets
+                    .iter()
+                    .any(|entity| object::current(world, *entity).is_some())
+            {
                 return;
             }
             if let Some(shader) = shader {
@@ -141,7 +163,10 @@ fn execute_surface(world: &mut World, target: Entity, command: SurfaceCommand) {
                 clear_native_material_world(world, target);
                 apply_object_shader_to_entities(world, &targets, &shader);
             } else {
-                if targets.iter().any(|entity| world.get::<SceneMaxOriginalMaterial>(*entity).is_some()) {
+                if targets
+                    .iter()
+                    .any(|entity| world.get::<SceneMaxOriginalMaterial>(*entity).is_some())
+                {
                     clear_native_material_world(world, target);
                 }
                 restore_original_materials(world, &targets);
@@ -191,7 +216,9 @@ pub(super) fn apply_entity_material(
         find_source_shader_document(material_name.trim(), ".smmat", asset_root.as_deref())
     {
         commands.queue(move |world: &mut World| {
-            if world.get_entity(target).is_err() { return; }
+            if world.get_entity(target).is_err() {
+                return;
+            }
             let surface = world.resource_scope(
                 |world, mut textures: Mut<scenemax_materials::TextureCache>| {
                     let server = world.resource::<AssetServer>().clone();
@@ -211,16 +238,22 @@ pub(super) fn apply_entity_material(
                     let material = world
                         .resource_mut::<Assets<StandardMaterial>>()
                         .add(surface);
-                    submit_surface(world, target, SurfaceCommand::Material {
-                        name: material_name,
-                        binding: scenemax_materials::MaterialBinding {
-                            material,
-                            slot: value["targetSlot"].as_str().unwrap_or_default().into(),
+                    submit_surface(
+                        world,
+                        target,
+                        SurfaceCommand::Material {
+                            name: material_name,
+                            binding: scenemax_materials::MaterialBinding {
+                                material,
+                                slot: value["targetSlot"].as_str().unwrap_or_default().into(),
+                            },
                         },
-                    });
+                    );
                 }
                 Err(error) => {
-                    write_runtime_diagnostic_line(format!("MATERIAL:INVALID name={material_name} error={error}"));
+                    write_runtime_diagnostic_line(format!(
+                        "MATERIAL:INVALID name={material_name} error={error}"
+                    ));
                     tracing::warn!(%error, "Invalid material document");
                 }
             }
@@ -262,7 +295,14 @@ pub(super) fn apply_entity_shader(
     };
 
     commands.queue(move |world: &mut World| {
-        submit_surface(world, target, SurfaceCommand::Shader { name: shader_name, shader });
+        submit_surface(
+            world,
+            target,
+            SurfaceCommand::Shader {
+                name: shader_name,
+                shader,
+            },
+        );
     });
 }
 
@@ -324,8 +364,12 @@ fn collect_entity_and_descendants(world: &World, entity: Entity, output: &mut Ve
 // in the same frame, before MaterialsPlugin updates mesh handles.
 fn remember_original_materials(world: &mut World, targets: &[Entity]) {
     for &entity in targets {
-        if world.get::<SceneMaxOriginalMaterial>(entity).is_some() { continue; }
-        let Some(current) = world.get::<MeshMaterial3d<StandardMaterial>>(entity) else { continue; };
+        if world.get::<SceneMaxOriginalMaterial>(entity).is_some() {
+            continue;
+        }
+        let Some(current) = world.get::<MeshMaterial3d<StandardMaterial>>(entity) else {
+            continue;
+        };
         let mut ancestor = Some(entity);
         let mut binding = None;
         while let Some(node) = ancestor {
@@ -335,14 +379,22 @@ fn remember_original_materials(world: &mut World, targets: &[Entity]) {
             }
             ancestor = world.get::<ChildOf>(node).map(|parent| parent.parent());
         }
-        let original = if let Some(binding) = binding.filter(|binding| binding.slot.is_empty()
-            || world.get::<bevy::gltf::GltfMaterialName>(entity).is_some_and(|name| name.0 == binding.slot)) {
+        let original = if let Some(binding) = binding.filter(|binding| {
+            binding.slot.is_empty()
+                || world
+                    .get::<bevy::gltf::GltfMaterialName>(entity)
+                    .is_some_and(|name| name.0 == binding.slot)
+        }) {
             binding.material.clone()
         } else {
-            world.get::<scenemax_materials::OriginalMaterial>(entity)
-                .map(|original| original.0.clone()).unwrap_or_else(|| current.0.clone())
+            world
+                .get::<scenemax_materials::OriginalMaterial>(entity)
+                .map(|original| original.0.clone())
+                .unwrap_or_else(|| current.0.clone())
         };
-        world.entity_mut(entity).insert(SceneMaxOriginalMaterial(original));
+        world
+            .entity_mut(entity)
+            .insert(SceneMaxOriginalMaterial(original));
     }
 }
 
@@ -353,8 +405,7 @@ fn apply_object_shader_to_entities(
 ) {
     let mut applied = 0usize;
     for entity in targets {
-        let Some(current_material) = object::current(world,*entity)
-        else {
+        let Some(current_material) = object::current(world, *entity) else {
             continue;
         };
         let original_material = world
@@ -377,7 +428,13 @@ fn apply_object_shader_to_entities(
         world
             .entity_mut(*entity)
             .insert((MeshMaterial3d(shader_handle.clone()), SceneMaxShaderApplied));
-        object::install(world,*entity,shader,shader_handle,source_material.as_ref());
+        object::install(
+            world,
+            *entity,
+            shader,
+            shader_handle,
+            source_material.as_ref(),
+        );
         applied += 1;
     }
     write_runtime_diagnostic_line(format!(
@@ -398,7 +455,7 @@ fn restore_original_materials(world: &mut World, targets: &[Entity]) {
         let Some(original) = world.get::<SceneMaxOriginalMaterial>(*entity).cloned() else {
             continue;
         };
-        object::remove(world,*entity);
+        object::remove(world, *entity);
         world.entity_mut(*entity).insert(MeshMaterial3d(original.0));
         // The reference remembers the first pre-shader material for the lifetime
         // of this geometry, including subsequent apply/reset cycles.
@@ -596,7 +653,9 @@ fn resolve_object_shader(
     builtin_asset_root: Option<&Path>,
 ) -> Option<SceneMaxObjectShader> {
     let name = name.trim();
-    if name.is_empty() { return None; }
+    if name.is_empty() {
+        return None;
+    }
     resolve_shader_document(name, "shaders", "shaders-ext.json", "shaders", asset_root)
         .or_else(|| resolve_shader_document(name, "shaders", "shaders.json", "shaders", asset_root))
         .or_else(|| {
@@ -631,25 +690,79 @@ fn resolve_object_shader(
 /// Shared numeric definition for native UI surfaces and glyph materials.
 #[derive(Debug, Clone)]
 pub(crate) struct UiEffects {
-    pub color: Color, pub main: Color, pub inherit: bool, pub parameters: Vec4, pub motion: Vec4,
+    pub color: Color,
+    pub main: Color,
+    pub inherit: bool,
+    pub parameters: Vec4,
+    pub motion: Vec4,
 }
-pub(crate) fn resolve_ui_effects(name:&str,context:&SceneMaxLaunchContext)->Option<UiEffects> {
-    let shader=resolve_object_shader(name,context.asset_root.as_deref(),context.builtin_asset_root.as_deref())?;
-    let names=["TINT","GLOW","PULSE","DISSOLVE","RIM_LIGHT","SCROLL_UV","FLICKER","WATER_WAVES","HOLOGRAM_LINES","TOON_RAMP","TRANSPARENCY"];
-    if shader.blocks.iter().any(|b|!names.contains(&b.as_str())) {return None;}
-    let flags=names.iter().enumerate().fold(0u32,|bits,(i,name)|bits|if shader.blocks.contains(*name){1<<i}else{0});
-    let rgb=if flags&1!=0 {shader.main_color}else{[1.;4]};
-    let opacity=if flags&8!=0 {1.}else{1.-shader.transparency.clamp(0.,1.)};
+pub(crate) fn resolve_ui_effects(name: &str, context: &SceneMaxLaunchContext) -> Option<UiEffects> {
+    let shader = resolve_object_shader(
+        name,
+        context.asset_root.as_deref(),
+        context.builtin_asset_root.as_deref(),
+    )?;
+    let names = [
+        "TINT",
+        "GLOW",
+        "PULSE",
+        "DISSOLVE",
+        "RIM_LIGHT",
+        "SCROLL_UV",
+        "FLICKER",
+        "WATER_WAVES",
+        "HOLOGRAM_LINES",
+        "TOON_RAMP",
+        "TRANSPARENCY",
+    ];
+    if shader.blocks.iter().any(|b| !names.contains(&b.as_str())) {
+        return None;
+    }
+    let flags = names.iter().enumerate().fold(0u32, |bits, (i, name)| {
+        bits | if shader.blocks.contains(*name) {
+            1 << i
+        } else {
+            0
+        }
+    });
+    let rgb = if flags & 1 != 0 {
+        shader.main_color
+    } else {
+        [1.; 4]
+    };
+    let opacity = if flags & 8 != 0 {
+        1.
+    } else {
+        1. - shader.transparency.clamp(0., 1.)
+    };
     Some(UiEffects {
-        color:Color::srgba(rgb[0].clamp(0.,1.),rgb[1].clamp(0.,1.),rgb[2].clamp(0.,1.),(shader.main_color[3]*opacity).clamp(0.,1.)),
-        main:Color::srgba(shader.main_color[0],shader.main_color[1],shader.main_color[2],shader.main_color[3]),
-        inherit:shader.use_original_texture,
-        parameters:Vec4::new(shader.glow_strength.max(0.),shader.pulse_speed.max(0.05),shader.transparency.clamp(0.,1.),shader.edge_width.max(0.01)),
-        motion:Vec4::new(shader.scroll_speed,0.,flags as f32,0.),
+        color: Color::srgba(
+            rgb[0].clamp(0., 1.),
+            rgb[1].clamp(0., 1.),
+            rgb[2].clamp(0., 1.),
+            (shader.main_color[3] * opacity).clamp(0., 1.),
+        ),
+        main: Color::srgba(
+            shader.main_color[0],
+            shader.main_color[1],
+            shader.main_color[2],
+            shader.main_color[3],
+        ),
+        inherit: shader.use_original_texture,
+        parameters: Vec4::new(
+            shader.glow_strength.max(0.),
+            shader.pulse_speed.max(0.05),
+            shader.transparency.clamp(0., 1.),
+            shader.edge_width.max(0.01),
+        ),
+        motion: Vec4::new(shader.scroll_speed, 0., flags as f32, 0.),
     })
 }
-pub(crate) fn resolve_ui_surface_color(name:&str,context:&SceneMaxLaunchContext)->Option<(Color,bool)> {
-    resolve_ui_effects(name,context).map(|effect|(effect.color,effect.inherit))
+pub(crate) fn resolve_ui_surface_color(
+    name: &str,
+    context: &SceneMaxLaunchContext,
+) -> Option<(Color, bool)> {
+    resolve_ui_effects(name, context).map(|effect| (effect.color, effect.inherit))
 }
 
 fn resolve_environment_shader(
@@ -715,9 +828,9 @@ impl ShaderDocumentSource {
                     .to_owned(),
                 main_color: rgba_array(value.get("mainColor"), [1.0, 1.0, 1.0, 1.0]),
                 glow_strength: f32_field(&value, "glowStrength", 0.15),
-                pulse_speed: f32_field(&value,"pulseSpeed",1.8),
-                edge_width: f32_field(&value,"edgeWidth",0.08),
-                scroll_speed: f32_field(&value,"scrollSpeed",0.5),
+                pulse_speed: f32_field(&value, "pulseSpeed", 1.8),
+                edge_width: f32_field(&value, "edgeWidth", 0.08),
+                scroll_speed: f32_field(&value, "scrollSpeed", 0.5),
                 transparency: f32_field(&value, "transparency", 0.0),
                 alpha_mode: string_field(&value, "alphaMode", "AUTO"),
                 alpha_cutoff: f32_field(&value, "alphaCutoff", 0.5),
@@ -785,11 +898,18 @@ fn resolve_shader_document(
     })?;
     let path = entry.get("path").and_then(serde_json::Value::as_str)?;
     let path = root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
-    if path.extension().and_then(|value| value.to_str()).is_some_and(|extension|
-        extension.eq_ignore_ascii_case("bvshader") || extension.eq_ignore_ascii_case("json")) {
+    if path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("bvshader") || extension.eq_ignore_ascii_case("json")
+        })
+    {
         let source = fs::read_to_string(&path).ok()?;
         let value: serde_json::Value = serde_json::from_str(&source).ok()?;
-        return value.is_object().then_some(ShaderDocumentSource::Json(value));
+        return value
+            .is_object()
+            .then_some(ShaderDocumentSource::Json(value));
     }
     let json_path = if folder == "environment_shaders" {
         path.parent().map(|parent| parent.join("environment.json"))
@@ -851,7 +971,9 @@ fn parse_j3m_object_shader(source: &str, fallback_name: &str) -> SceneMaxObjectS
         name: fallback_name.to_owned(),
         main_color: [1.0, 1.0, 1.0, 1.0],
         glow_strength: 0.15,
-        pulse_speed: 1.8, edge_width: 0.08, scroll_speed: 0.5,
+        pulse_speed: 1.8,
+        edge_width: 0.08,
+        scroll_speed: 0.5,
         transparency: 0.0,
         alpha_mode: "AUTO".to_owned(),
         alpha_cutoff: 0.5,
@@ -890,7 +1012,9 @@ fn parse_j3m_object_shader(source: &str, fallback_name: &str) -> SceneMaxObjectS
         match key.trim() {
             "PulseSpeed" => shader.pulse_speed = value.trim().parse().unwrap_or(shader.pulse_speed),
             "EdgeWidth" => shader.edge_width = value.trim().parse().unwrap_or(shader.edge_width),
-            "ScrollSpeed" => shader.scroll_speed = value.trim().parse().unwrap_or(shader.scroll_speed),
+            "ScrollSpeed" => {
+                shader.scroll_speed = value.trim().parse().unwrap_or(shader.scroll_speed)
+            }
             "MainColor" => shader.main_color = parse_float_array(value, shader.main_color),
             "GlowStrength" => {
                 shader.glow_strength = value.trim().parse().unwrap_or(shader.glow_strength)
@@ -1115,20 +1239,40 @@ mod tests {
         let resources = files.path().join("resources");
         let folder = resources.join("shaders");
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("surface.bvshader"), r#"{"mainColor":[0.2,0.3,0.4,0.5],"blocks":["TINT"]}"#).unwrap();
+        fs::write(
+            folder.join("surface.bvshader"),
+            r#"{"mainColor":[0.2,0.3,0.4,0.5],"blocks":["TINT"]}"#,
+        )
+        .unwrap();
         fs::write(folder.join("bad.json"), "null").unwrap();
-        fs::write(folder.join("shaders-ext.json"), r#"{"shaders":[
+        fs::write(
+            folder.join("shaders-ext.json"),
+            r#"{"shaders":[
             {"name":"Named surface","path":"shaders/surface.bvshader"},
-            {"name":"bad","path":"shaders/bad.json"}] }"#).unwrap();
+            {"name":"bad","path":"shaders/bad.json"}] }"#,
+        )
+        .unwrap();
         let shader = resolve_object_shader("  NAMED SURFACE  ", Some(&resources), None).unwrap();
-        assert_eq!(shader.main_color, [0.2,0.3,0.4,0.5]);
+        assert_eq!(shader.main_color, [0.2, 0.3, 0.4, 0.5]);
         assert!(shader.blocks.contains("TINT"));
         assert!(resolve_object_shader("bad", Some(&resources), None).is_none());
         assert!(resolve_object_shader("absent", Some(&resources), None).is_none());
         assert!(resolve_object_shader(" ", Some(&resources), None).is_none());
-        for value in [serde_json::json!(null), serde_json::json!([]), serde_json::json!(42)] {
-            assert!(ShaderDocumentSource::Json(value.clone()).into_object_shader("bad").is_none());
-            assert!(ShaderDocumentSource::Json(value).into_environment_shader("bad").is_none());
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!([]),
+            serde_json::json!(42),
+        ] {
+            assert!(
+                ShaderDocumentSource::Json(value.clone())
+                    .into_object_shader("bad")
+                    .is_none()
+            );
+            assert!(
+                ShaderDocumentSource::Json(value)
+                    .into_environment_shader("bad")
+                    .is_none()
+            );
         }
     }
 
@@ -1136,39 +1280,101 @@ mod tests {
     fn native_shader_source_can_resolve_from_builtin_root() {
         let files = tempfile::tempdir().unwrap();
         fs::create_dir(files.path().join("scripts")).unwrap();
-        fs::write(files.path().join("scripts/fixture.bvshader"), r#"{"mainColor":[1,0,0,1]}"#).unwrap();
-        assert_eq!(resolve_object_shader("FIXTURE", None, Some(&files.path().join("resources"))).unwrap().main_color, [1.,0.,0.,1.]);
+        fs::write(
+            files.path().join("scripts/fixture.bvshader"),
+            r#"{"mainColor":[1,0,0,1]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_object_shader("FIXTURE", None, Some(&files.path().join("resources")))
+                .unwrap()
+                .main_color,
+            [1., 0., 0., 1.]
+        );
     }
 
     #[test]
     fn pending_surface_commands_preserve_first_shader_base_and_drop_with_entity() {
         let files = tempfile::tempdir().unwrap();
         fs::create_dir(files.path().join("scripts")).unwrap();
-        fs::write(files.path().join("scripts/finish.bvshader"), r#"{"mainColor":[0,1,0,1]}"#).unwrap();
-        let shader = resolve_object_shader("finish", Some(&files.path().join("resources")), None).unwrap();
+        fs::write(
+            files.path().join("scripts/finish.bvshader"),
+            r#"{"mainColor":[0,1,0,1]}"#,
+        )
+        .unwrap();
+        let shader =
+            resolve_object_shader("finish", Some(&files.path().join("resources")), None).unwrap();
         let mut world = World::new();
         world.init_resource::<Assets<StandardMaterial>>();
-        let first = world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial::default());
-        let later = world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial::default());
-        let entity = world.spawn((SceneMaxGltf { gltf: Handle::default(), animation_names: Vec::new() },
-            MeshMaterial3d(Handle::<StandardMaterial>::default()))).id();
+        let first = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let later = world
+            .resource_mut::<Assets<StandardMaterial>>()
+            .add(StandardMaterial::default());
+        let entity = world
+            .spawn((
+                SceneMaxGltf {
+                    gltf: Handle::default(),
+                    animation_names: Vec::new(),
+                },
+                MeshMaterial3d(Handle::<StandardMaterial>::default()),
+            ))
+            .id();
         for command in [
-            SurfaceCommand::Material { name: "first".into(), binding: scenemax_materials::MaterialBinding { material: first.clone(), slot: String::new() } },
-            SurfaceCommand::Shader { name: "finish".into(), shader: Some(shader) },
-            SurfaceCommand::Material { name: "later".into(), binding: scenemax_materials::MaterialBinding { material: later, slot: String::new() } },
-            SurfaceCommand::Shader { name: String::new(), shader: None },
-        ] { submit_surface(&mut world, entity, command); }
+            SurfaceCommand::Material {
+                name: "first".into(),
+                binding: scenemax_materials::MaterialBinding {
+                    material: first.clone(),
+                    slot: String::new(),
+                },
+            },
+            SurfaceCommand::Shader {
+                name: "finish".into(),
+                shader: Some(shader),
+            },
+            SurfaceCommand::Material {
+                name: "later".into(),
+                binding: scenemax_materials::MaterialBinding {
+                    material: later,
+                    slot: String::new(),
+                },
+            },
+            SurfaceCommand::Shader {
+                name: String::new(),
+                shader: None,
+            },
+        ] {
+            submit_surface(&mut world, entity, command);
+        }
         apply_pending_surfaces(&mut world);
         assert_eq!(world.get::<PendingSurfaces>(entity).unwrap().0.len(), 4);
-        assert!(world.get::<scenemax_materials::MaterialBinding>(entity).is_none());
+        assert!(
+            world
+                .get::<scenemax_materials::MaterialBinding>(entity)
+                .is_none()
+        );
         // Model readiness itself is exercised by the native glTF gate. Removing
         // the asynchronous marker here lets the queue executor run deterministically.
         world.entity_mut(entity).remove::<SceneMaxGltf>();
         apply_pending_surfaces(&mut world);
         assert!(world.get::<PendingSurfaces>(entity).is_none());
-        assert_eq!(world.get::<MeshMaterial3d<StandardMaterial>>(entity).unwrap().0, first);
-        let waiting = world.spawn(SceneMaxGltf { gltf: Handle::default(), animation_names: Vec::new() }).id();
-        for _ in 0..257 { submit_surface(&mut world, waiting, SurfaceCommand::ClearMaterial); }
+        assert_eq!(
+            world
+                .get::<MeshMaterial3d<StandardMaterial>>(entity)
+                .unwrap()
+                .0,
+            first
+        );
+        let waiting = world
+            .spawn(SceneMaxGltf {
+                gltf: Handle::default(),
+                animation_names: Vec::new(),
+            })
+            .id();
+        for _ in 0..257 {
+            submit_surface(&mut world, waiting, SurfaceCommand::ClearMaterial);
+        }
         assert_eq!(world.get::<PendingSurfaces>(waiting).unwrap().0.len(), 256);
         world.despawn(waiting);
         apply_pending_surfaces(&mut world);
@@ -1179,33 +1385,85 @@ mod tests {
     fn shader_reset_retains_first_material_base_across_cycles_and_pending_slots() {
         let files = tempfile::tempdir().unwrap();
         fs::create_dir(files.path().join("scripts")).unwrap();
-        fs::write(files.path().join("scripts/finish.bvshader"), r#"{"mainColor":[0,1,0,1]}"#).unwrap();
-        let assets = SceneMaxRuntimeAssets { asset_root: Some(files.path().join("resources")), ..default() };
+        fs::write(
+            files.path().join("scripts/finish.bvshader"),
+            r#"{"mainColor":[0,1,0,1]}"#,
+        )
+        .unwrap();
+        let assets = SceneMaxRuntimeAssets {
+            asset_root: Some(files.path().join("resources")),
+            ..default()
+        };
         for slot in ["", "Paint", "Other"] {
             let mut world = World::new();
             world.init_resource::<Assets<StandardMaterial>>();
             let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
             let imported = materials.add(StandardMaterial::default());
-            let authored = materials.add(StandardMaterial { base_color: Color::srgb(1.,0.,0.), ..default() });
-            let later = materials.add(StandardMaterial { base_color: Color::srgb(0.,0.,1.), ..default() });
-            let root = world.spawn(scenemax_materials::MaterialBinding { material: authored.clone(), slot: slot.into() }).id();
-            let mesh = world.spawn((MeshMaterial3d(imported.clone()), bevy::gltf::GltfMaterialName("Paint".into()), ChildOf(root))).id();
-            let expected = if slot == "Other" { imported.clone() } else { authored.clone() };
+            let authored = materials.add(StandardMaterial {
+                base_color: Color::srgb(1., 0., 0.),
+                ..default()
+            });
+            let later = materials.add(StandardMaterial {
+                base_color: Color::srgb(0., 0., 1.),
+                ..default()
+            });
+            let root = world
+                .spawn(scenemax_materials::MaterialBinding {
+                    material: authored.clone(),
+                    slot: slot.into(),
+                })
+                .id();
+            let mesh = world
+                .spawn((
+                    MeshMaterial3d(imported.clone()),
+                    bevy::gltf::GltfMaterialName("Paint".into()),
+                    ChildOf(root),
+                ))
+                .id();
+            let expected = if slot == "Other" {
+                imported.clone()
+            } else {
+                authored.clone()
+            };
             // No material-plugin update: shader capture must resolve the pending binding.
             apply_entity_shader(&mut world.commands(), root, "finish".into(), &assets);
             world.flush();
-            assert_eq!(world.get::<SceneMaxOriginalMaterial>(mesh).unwrap().0, expected, "{slot}");
+            assert_eq!(
+                world.get::<SceneMaxOriginalMaterial>(mesh).unwrap().0,
+                expected,
+                "{slot}"
+            );
             apply_entity_shader(&mut world.commands(), root, String::new(), &assets);
             world.flush();
-            assert_eq!(world.get::<MeshMaterial3d<StandardMaterial>>(mesh).unwrap().0, expected);
+            assert_eq!(
+                world
+                    .get::<MeshMaterial3d<StandardMaterial>>(mesh)
+                    .unwrap()
+                    .0,
+                expected
+            );
             // A new native material between cycles must not replace the first base.
-            world.entity_mut(root).insert(scenemax_materials::MaterialBinding { material: later, slot: String::new() });
+            world
+                .entity_mut(root)
+                .insert(scenemax_materials::MaterialBinding {
+                    material: later,
+                    slot: String::new(),
+                });
             apply_entity_shader(&mut world.commands(), root, "finish".into(), &assets);
             world.flush();
             apply_entity_shader(&mut world.commands(), root, String::new(), &assets);
             world.flush();
-            assert_eq!(world.get::<MeshMaterial3d<StandardMaterial>>(mesh).unwrap().0, expected);
-            assert_eq!(world.get::<SceneMaxOriginalMaterial>(mesh).unwrap().0, expected);
+            assert_eq!(
+                world
+                    .get::<MeshMaterial3d<StandardMaterial>>(mesh)
+                    .unwrap()
+                    .0,
+                expected
+            );
+            assert_eq!(
+                world.get::<SceneMaxOriginalMaterial>(mesh).unwrap().0,
+                expected
+            );
         }
     }
 

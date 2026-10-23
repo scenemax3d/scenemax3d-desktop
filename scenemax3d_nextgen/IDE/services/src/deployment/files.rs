@@ -106,7 +106,9 @@ fn import_java_defaults(root: &Path, settings: &mut Settings) {
 }
 pub(super) fn save_settings(root: &Path, settings: &Settings) -> io::Result<()> {
     static WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = WRITES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _guard = WRITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let folder = root.join(".scenemax-studio");
     fs::create_dir_all(&folder)?;
     let canonical = folder.canonicalize()?;

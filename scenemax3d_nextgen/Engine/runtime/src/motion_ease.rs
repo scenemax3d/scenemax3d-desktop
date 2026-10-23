@@ -69,7 +69,15 @@ impl Curve {
     }
 
     pub(super) fn literal_spec(&self) -> Option<MotionEase> {
-        self.spec.clone().map(|mut spec| { spec.params = self.params.iter().copied().map(AssignmentValue::Number).collect(); spec })
+        self.spec.clone().map(|mut spec| {
+            spec.params = self
+                .params
+                .iter()
+                .copied()
+                .map(AssignmentValue::Number)
+                .collect();
+            spec
+        })
     }
 
     pub(super) fn wire(&self) -> String {

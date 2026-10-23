@@ -196,7 +196,7 @@ mod tests {
         doc.replace_text(serde_json::to_string_pretty(&draft).unwrap());
         crate::Filesystem::save_document(&mut doc).unwrap();
         let reopened = open_draft(root.path()).unwrap();
-        assert_eq!(reopened.text(),doc.text());
+        assert_eq!(reopened.text(), doc.text());
         assert!(!root.path().join("resources").exists());
     }
     fn package(root: &Path, names: &[&str]) -> PathBuf {

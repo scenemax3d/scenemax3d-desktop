@@ -68,11 +68,19 @@ fn apply(world: &mut World, entity: Entity, property: &str, value: &str) {
         let frame = if let Some(state) = world.get::<ImageState>(entity).cloned() {
             let runtime = world.resource::<SceneMaxUiRuntime>();
             let sprite = state.0.sprite_name.as_deref().and_then(|name| {
-                runtime.sprite_index.get(name)
+                runtime
+                    .sprite_index
+                    .get(name)
                     .or_else(|| runtime.sprite_index.get(&name.to_ascii_lowercase()))
             });
             if let Some(sprite) = sprite {
-                frame.min(sprite.cols.max(1).saturating_mul(sprite.rows.max(1)).saturating_sub(1))
+                frame.min(
+                    sprite
+                        .cols
+                        .max(1)
+                        .saturating_mul(sprite.rows.max(1))
+                        .saturating_sub(1),
+                )
             } else {
                 render(world, entity, state);
                 return;
@@ -89,7 +97,10 @@ fn apply(world: &mut World, entity: Entity, property: &str, value: &str) {
                 sheet.image_height,
             );
             world.get_mut::<ImageNode>(entity).unwrap().rect = Some(rect);
-            let mut display = world.get::<image_shaders::DisplayState>(entity).copied().unwrap_or_default();
+            let mut display = world
+                .get::<image_shaders::DisplayState>(entity)
+                .copied()
+                .unwrap_or_default();
             display.position = Some(frame);
             world.entity_mut(entity).insert(display);
         }
@@ -152,7 +163,9 @@ pub(crate) fn update_failed(
         let failed = image.image.clone();
         let (replacement, sheet) = ui_image_node_for_widget(&state.0, &server, &context, &runtime);
         *image = replacement;
-        if shader.is_some() { image.color = Color::NONE; }
+        if shader.is_some() {
+            image.color = Color::NONE;
+        }
         if let Some(mut failures) = failures {
             if failures.0.len() < 2 && !failures.0.contains(&failed) {
                 failures.0.push(failed);
@@ -178,11 +191,17 @@ mod tests {
         app.add_plugins((MinimalPlugins, bevy::asset::AssetPlugin::default()));
         let world = app.world_mut();
         world.init_resource::<SceneMaxUiRuntime>();
-        world.resource_mut::<SceneMaxUiRuntime>().sprite_index.insert(
-            "fixture".into(), SceneMaxSpriteAsset {
-                path: "sprites/fixture.png".into(), rows: 1, cols: 4,
-            },
-        );
+        world
+            .resource_mut::<SceneMaxUiRuntime>()
+            .sprite_index
+            .insert(
+                "fixture".into(),
+                SceneMaxSpriteAsset {
+                    path: "sprites/fixture.png".into(),
+                    rows: 1,
+                    cols: 4,
+                },
+            );
         world.insert_resource(SceneMaxLaunchContext {
             script_root: None,
             asset_root: None,
@@ -213,17 +232,34 @@ mod tests {
         );
         // Current resource has two frames, but shader reset restored a four-
         // frame material. Position clamps to one using the current resource.
-        world.resource_mut::<SceneMaxUiRuntime>().sprite_index.get_mut("fixture").unwrap().cols = 2;
+        world
+            .resource_mut::<SceneMaxUiRuntime>()
+            .sprite_index
+            .get_mut("fixture")
+            .unwrap()
+            .cols = 2;
         apply(world, entity, "frame", "3");
-        assert_eq!(world.get::<ImageNode>(entity).unwrap().rect,
-            Some(ui_sprite_frame_rect(1, 4, 1, 128, 32)));
+        assert_eq!(
+            world.get::<ImageNode>(entity).unwrap().rect,
+            Some(ui_sprite_frame_rect(1, 4, 1, 128, 32))
+        );
         assert_eq!(world.get::<ImageState>(entity).unwrap().0.sprite_frame, 3);
         // A larger current resource can address outside the restored atlas.
         // The reference shader keeps column one and samples beyond its last row.
-        world.resource_mut::<SceneMaxUiRuntime>().sprite_index.get_mut("fixture").unwrap().cols = 8;
+        world
+            .resource_mut::<SceneMaxUiRuntime>()
+            .sprite_index
+            .get_mut("fixture")
+            .unwrap()
+            .cols = 8;
         apply(world, entity, "frame", "5");
-        assert_eq!(world.get::<ImageNode>(entity).unwrap().rect,
-            Some(Rect { min: Vec2::new(32., 32.), max: Vec2::new(64., 64.) }));
+        assert_eq!(
+            world.get::<ImageNode>(entity).unwrap().rect,
+            Some(Rect {
+                min: Vec2::new(32., 32.),
+                max: Vec2::new(64., 64.)
+            })
+        );
         // A direct image has no active sprite: frame rebuilds its authored
         // image even if reset left an old sprite material on the widget.
         {
@@ -233,7 +269,10 @@ mod tests {
         }
         apply(world, entity, "frame", "2.9");
         assert!(world.get::<SceneMaxUiSpriteSheet>(entity).is_none());
-        assert_eq!(world.get::<ImageNode>(entity).unwrap().color, Color::srgba(1., 0., 1., 1.));
+        assert_eq!(
+            world.get::<ImageNode>(entity).unwrap().color,
+            Color::srgba(1., 0., 1., 1.)
+        );
         apply(world, entity, "sprite", "missing");
         assert!(matches!(
             world.get::<ImageNode>(entity).unwrap().image_mode,

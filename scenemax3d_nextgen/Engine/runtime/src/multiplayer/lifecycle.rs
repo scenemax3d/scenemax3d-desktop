@@ -89,29 +89,64 @@ mod tests {
     #[test]
     fn departed_remote_identity_can_rejoin_without_renaming_or_reviving_old_references() {
         let mut world = World::new();
-        crate::value_calls::tests::run_in(&mut world,
-            "scenemax_remote_17 => box");
-        let old = world.resource::<SceneMaxRuntimeAssets>().root_entity_declarations["scenemax_remote_17"].clone();
+        crate::value_calls::tests::run_in(&mut world, "scenemax_remote_17 => box");
+        let old = world
+            .resource::<SceneMaxRuntimeAssets>()
+            .root_entity_declarations["scenemax_remote_17"]
+            .clone();
         let old_identity = old.entity_identity().unwrap();
-        let entity = world.query::<(Entity, &SceneMaxEntity)>().iter(&world)
-            .find(|(_, scene)| scene.name == "scenemax_remote_17").unwrap().0;
+        let entity = world
+            .query::<(Entity, &SceneMaxEntity)>()
+            .iter(&world)
+            .find(|(_, scene)| scene.name == "scenemax_remote_17")
+            .unwrap()
+            .0;
         world.despawn(entity);
-        events::remove_entity(&mut world, &mut Multiplayer::default(), 17, "scenemax_remote_17");
+        events::remove_entity(
+            &mut world,
+            &mut Multiplayer::default(),
+            17,
+            "scenemax_remote_17",
+        );
         crate::value_calls::tests::run_in(&mut world, "scenemax_remote_17 => sphere");
-        let current = world.resource::<SceneMaxRuntimeAssets>().root_entity_declarations["scenemax_remote_17"].entity_identity().unwrap();
+        let current = world
+            .resource::<SceneMaxRuntimeAssets>()
+            .root_entity_declarations["scenemax_remote_17"]
+            .entity_identity()
+            .unwrap();
         assert_eq!(current.runtime_name, "scenemax_remote_17");
         assert_ne!(current, old_identity);
-        assert_ne!(old.entity_identity().unwrap().runtime_name, current.runtime_name);
-        assert_eq!(world.query::<&SceneMaxEntity>().iter(&world).next().unwrap().name, current.runtime_name);
+        assert_ne!(
+            old.entity_identity().unwrap().runtime_name,
+            current.runtime_name
+        );
+        assert_eq!(
+            world
+                .query::<&SceneMaxEntity>()
+                .iter(&world)
+                .next()
+                .unwrap()
+                .name,
+            current.runtime_name
+        );
     }
 
     #[test]
     fn authored_collision_source_survives_runtime_identity_and_recapture() {
         let (_server, mut world, net) = setup();
         world.insert_resource(net);
-        let options = EntityOptions { multiplayer: true, ..Default::default() };
+        let options = EntityOptions {
+            multiplayer: true,
+            ..Default::default()
+        };
         for runtime in ["scoped_instance", "replacement_instance"] {
-            declaration_with_source(&mut world.commands(), runtime, Some("authored"), "box", &options);
+            declaration_with_source(
+                &mut world.commands(),
+                runtime,
+                Some("authored"),
+                "box",
+                &options,
+            );
             // Label/state recapture must not overwrite the authored selector.
             declaration(&mut world.commands(), runtime, "box", &options);
             spawn(&mut world, runtime);
@@ -162,25 +197,59 @@ mod tests {
         let (_server, mut world, mut net) = setup();
         let entity = spawn(&mut world, "subject");
         let mut pools = SceneMaxObjectPools::default();
-        pools.pools.insert("reserve".into(), ObjectPoolRuntime {
-            members: HashSet::from(["subject".into()]),
-            ..Default::default()
-        });
+        pools.pools.insert(
+            "reserve".into(),
+            ObjectPoolRuntime {
+                members: HashSet::from(["subject".into()]),
+                ..Default::default()
+            },
+        );
         world.insert_resource(pools);
-        net.declarations.insert("subject".into(), ("box".into(), EntityOptions::default()));
+        net.declarations
+            .insert("subject".into(), ("box".into(), EntityOptions::default()));
         update_connected(&mut world, &mut net);
         assert!(net.locals.is_empty());
-        world.resource_mut::<SceneMaxObjectPools>().pools.get_mut("reserve").unwrap().in_use.insert("subject".into());
+        world
+            .resource_mut::<SceneMaxObjectPools>()
+            .pools
+            .get_mut("reserve")
+            .unwrap()
+            .in_use
+            .insert("subject".into());
         update_connected(&mut world, &mut net);
         let first = net.locals["subject"].1;
-        world.resource_mut::<SceneMaxVars>().0.insert("subject.network.id".into(), 42.);
-        world.resource_mut::<SceneMaxObjectPools>().pools.get_mut("reserve").unwrap().in_use.clear();
-        net.pending.push(("subject".into(), "{network_entity}.pos = (1,2,3)".into(), None));
+        world
+            .resource_mut::<SceneMaxVars>()
+            .0
+            .insert("subject.network.id".into(), 42.);
+        world
+            .resource_mut::<SceneMaxObjectPools>()
+            .pools
+            .get_mut("reserve")
+            .unwrap()
+            .in_use
+            .clear();
+        net.pending.push((
+            "subject".into(),
+            "{network_entity}.pos = (1,2,3)".into(),
+            None,
+        ));
         update_connected(&mut world, &mut net);
         assert!(net.locals.is_empty() && net.pending.is_empty());
         assert!(net.declarations.contains_key("subject"));
-        assert!(!world.resource::<SceneMaxVars>().0.contains_key("subject.network.id"));
-        world.resource_mut::<SceneMaxObjectPools>().pools.get_mut("reserve").unwrap().in_use.insert("subject".into());
+        assert!(
+            !world
+                .resource::<SceneMaxVars>()
+                .0
+                .contains_key("subject.network.id")
+        );
+        world
+            .resource_mut::<SceneMaxObjectPools>()
+            .pools
+            .get_mut("reserve")
+            .unwrap()
+            .in_use
+            .insert("subject".into());
         update_connected(&mut world, &mut net);
         assert_eq!(net.locals["subject"].0, entity);
         assert_ne!(net.locals["subject"].1, first);

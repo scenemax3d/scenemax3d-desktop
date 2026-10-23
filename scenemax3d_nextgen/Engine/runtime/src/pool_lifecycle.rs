@@ -30,19 +30,39 @@ struct PooledCollision {
 pub(super) fn set_visible(commands: &mut Commands, name: &str, visible: bool) {
     let name = name.to_owned();
     commands.queue(move |world: &mut World| {
-        let entity = world.query::<(Entity, &SceneMaxEntity)>().iter(world).find_map(|(e,s)| (s.name == name).then_some(e));
+        let entity = world
+            .query::<(Entity, &SceneMaxEntity)>()
+            .iter(world)
+            .find_map(|(e, s)| (s.name == name).then_some(e));
         if let Some(entity) = entity {
             if visible {
                 if let Some(saved) = world.entity_mut(entity).take::<PooledCollision>() {
-                    if let Some(collider) = saved.collider { world.entity_mut(entity).insert(collider); }
-                    if let Some(layers) = saved.layers { world.entity_mut(entity).insert(layers); }
+                    if let Some(collider) = saved.collider {
+                        world.entity_mut(entity).insert(collider);
+                    }
+                    if let Some(layers) = saved.layers {
+                        world.entity_mut(entity).insert(layers);
+                    }
                 }
             } else if world.get::<PooledCollision>(entity).is_none() {
-                let saved = PooledCollision { collider: world.get::<AvianCollider>(entity).cloned(),
-                    layers: world.get::<CollisionLayers>(entity).copied() };
-                world.entity_mut(entity).insert(saved).insert(CollisionLayers::NONE).remove::<AvianCollider>();
+                let saved = PooledCollision {
+                    collider: world.get::<AvianCollider>(entity).cloned(),
+                    layers: world.get::<CollisionLayers>(entity).copied(),
+                };
+                world
+                    .entity_mut(entity)
+                    .insert(saved)
+                    .insert(CollisionLayers::NONE)
+                    .remove::<AvianCollider>();
             }
-            world.entity_mut(entity).insert((if visible { Visibility::Inherited } else { Visibility::Hidden }, SceneMaxRuntimeVisibility { visible }));
+            world.entity_mut(entity).insert((
+                if visible {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                },
+                SceneMaxRuntimeVisibility { visible },
+            ));
         }
     });
 }
@@ -141,25 +161,39 @@ pub(crate) mod tests {
         use bevy::mesh::VertexAttributeValues;
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, AssetPlugin::default()))
-            .init_asset::<Mesh>().init_asset::<StandardMaterial>();
+            .init_asset::<Mesh>()
+            .init_asset::<StandardMaterial>();
         let world = app.world_mut();
         world.init_resource::<SceneMaxVars>();
         world.init_resource::<SceneMaxObjectPools>();
         world.init_resource::<SceneMaxRuntimeAssets>();
         world.init_resource::<SceneMaxColliderBounds>();
         world.init_resource::<DelayedActionQueue>();
-        world.insert_resource(Batch(scenemax_parser::parse_program(
-            "subject => box: size (2,4,6), pos (1,2,3), scale 2"
-        ).unwrap().statements));
+        world.insert_resource(Batch(
+            scenemax_parser::parse_program("subject => box: size (2,4,6), pos (1,2,3), scale 2")
+                .unwrap()
+                .statements,
+        ));
         world.run_system_once(execute).unwrap();
-        let (mesh, transform) = world.query::<(&Mesh3d, &Transform)>().single(world).unwrap();
-        assert_eq!(transform.translation, Vec3::new(1.,2.,3.));
+        let (mesh, transform) = world
+            .query::<(&Mesh3d, &Transform)>()
+            .single(world)
+            .unwrap();
+        assert_eq!(transform.translation, Vec3::new(1., 2., 3.));
         assert_eq!(transform.scale, Vec3::splat(2.));
         let mesh = world.resource::<Assets<Mesh>>().get(&mesh.0).unwrap();
-        let VertexAttributeValues::Float32x3(points) = mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() else { panic!() };
-        let min = points.iter().fold(Vec3::splat(f32::INFINITY), |a,p| a.min(Vec3::from_array(*p)));
-        let max = points.iter().fold(Vec3::splat(f32::NEG_INFINITY), |a,p| a.max(Vec3::from_array(*p)));
-        assert_eq!(max-min, Vec3::new(2.,4.,6.));
+        let VertexAttributeValues::Float32x3(points) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+        else {
+            panic!()
+        };
+        let min = points.iter().fold(Vec3::splat(f32::INFINITY), |a, p| {
+            a.min(Vec3::from_array(*p))
+        });
+        let max = points.iter().fold(Vec3::splat(f32::NEG_INFINITY), |a, p| {
+            a.max(Vec3::from_array(*p))
+        });
+        assert_eq!(max - min, Vec3::new(2., 4., 6.));
     }
 
     #[derive(Resource)]
@@ -401,11 +435,23 @@ pub(super) fn source_options(source: &EntityOptions) -> EntityOptions {
     // RuntimeObjectPool.copyVariableDef copies transform/body fields, not sharing,
     // network annotation, material overrides or specialized primitive dimensions.
     EntityOptions {
-        geometry_values: source.geometry_values.iter().filter(|attr| attr.name == "rotate").cloned().collect(),
-        resource_value: source.resource_value.clone(), sprite: source.sprite, collider: source.collider,
-        position: source.position, position_value: source.position_value.clone(),
-        rotation_degrees: source.rotation_degrees, scale: source.scale,
-        scale_value: source.scale_value.clone(), body_kind: source.body_kind,
-        collision_shape: source.collision_shape.clone(), hidden: true, ..default()
+        geometry_values: source
+            .geometry_values
+            .iter()
+            .filter(|attr| attr.name == "rotate")
+            .cloned()
+            .collect(),
+        resource_value: source.resource_value.clone(),
+        sprite: source.sprite,
+        collider: source.collider,
+        position: source.position,
+        position_value: source.position_value.clone(),
+        rotation_degrees: source.rotation_degrees,
+        scale: source.scale,
+        scale_value: source.scale_value.clone(),
+        body_kind: source.body_kind,
+        collision_shape: source.collision_shape.clone(),
+        hidden: true,
+        ..default()
     }
 }

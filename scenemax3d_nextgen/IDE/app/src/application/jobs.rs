@@ -206,6 +206,12 @@ pub(crate) fn apply_storage(
             session.catalog = result?;
             changes.write(ViewChange::CatalogChanged);
             if let Some((fallback, script)) = services.catalog_startup.take() {
+                if session.catalog.selected.is_none()
+                    && scenemax_ide_services::workspace_state::is_installation_root(&fallback)
+                {
+                    session.status = "Open or create a project to begin.".into();
+                    return Ok(());
+                }
                 let root = session.catalog.selected.clone().unwrap_or(fallback);
                 services
                     .storage
@@ -463,8 +469,12 @@ pub(crate) fn poll_jobs(
     }
     match services.storage.poll() {
         Ok(Some(result)) => {
-            let outcome = apply_storage(result, &mut services, &mut session, &mut changes, &mut exit).map_err(|e| format!("{e:#}"));
-            if let Err(error) = &outcome { session.status = error.clone(); }
+            let outcome =
+                apply_storage(result, &mut services, &mut session, &mut changes, &mut exit)
+                    .map_err(|e| format!("{e:#}"));
+            if let Err(error) = &outcome {
+                session.status = error.clone();
+            }
             services.storage_outcome = Some(outcome);
         }
         Err(error) => {
@@ -496,7 +506,10 @@ pub(crate) fn poll_jobs(
         }
         Err(error) => session.status = error.to_string(),
         Ok(None) => {
-            if was_preparing && !services.projector.is_preparing() && services.projector.is_running() {
+            if was_preparing
+                && !services.projector.is_preparing()
+                && services.projector.is_running()
+            {
                 session.status = "Bevy projector started".into();
             }
         }

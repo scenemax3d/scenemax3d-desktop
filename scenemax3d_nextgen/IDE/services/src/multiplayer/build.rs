@@ -248,19 +248,39 @@ mod tests {
         let root = project.path().canonicalize().unwrap();
         let mut snapshot = super::super::load(&root).unwrap();
         snapshot.settings.port = 9345;
-        let report = super::super::run(&root, super::super::Operation::BuildWithPassword(snapshot, "fixture-password".into()), &cancel).unwrap();
+        let report = super::super::run(
+            &root,
+            super::super::Operation::BuildWithPassword(snapshot, "fixture-password".into()),
+            &cancel,
+        )
+        .unwrap();
         assert!(report.message.contains("Compiled"));
         let server = report.server.unwrap();
         assert_eq!(server.parent().unwrap(), root.join("multiplayer_server"));
         let bytes = std::fs::read(server).unwrap();
         let marker = b"SCENEMAX_MP_CONFIG_BEGIN";
-        let start = bytes.windows(marker.len()).position(|b| b == marker).unwrap() + marker.len();
+        let start = bytes
+            .windows(marker.len())
+            .position(|b| b == marker)
+            .unwrap()
+            + marker.len();
         assert_eq!(&bytes[start + 12..start + 16], &9345u32.to_le_bytes());
         assert_eq!(super::super::load(&root).unwrap().settings.port, 9345);
         use sha2::{Digest, Sha256};
-        assert_eq!(&bytes[start + 400..start + 432], Sha256::digest(b"fixture-password").as_slice());
-        assert!(!bytes.windows(b"fixture-password".len()).any(|w| w == b"fixture-password"));
-        assert!(!std::fs::read_to_string(root.join(".scenemax-studio/multiplayer.json")).unwrap().contains("fixture-password"));
+        assert_eq!(
+            &bytes[start + 400..start + 432],
+            Sha256::digest(b"fixture-password").as_slice()
+        );
+        assert!(
+            !bytes
+                .windows(b"fixture-password".len())
+                .any(|w| w == b"fixture-password")
+        );
+        assert!(
+            !std::fs::read_to_string(root.join(".scenemax-studio/multiplayer.json"))
+                .unwrap()
+                .contains("fixture-password")
+        );
         let bad = tempfile::tempdir().unwrap();
         let source_dir = bad.path().join("tools/multiplayer-server/zig");
         std::fs::create_dir_all(&source_dir).unwrap();

@@ -70,7 +70,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         services.last_project_file = scenemax_ide_services::workspace_state::last_project_file();
     }
     services.catalog_path = options.project_catalog.clone();
-    services.projector.set_catalog(options.project_catalog.clone());
+    services
+        .projector
+        .set_catalog(options.project_catalog.clone());
     services.catalog_storage.request(StorageRequest::Catalog {
         root: options.project_root.clone(),
         path: options.project_catalog,
@@ -87,12 +89,21 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     let mut app = App::new();
     let mcp_port = std::env::var("SCENEMAX_MCP_PORT").ok();
     if std::env::var("SCENEMAX_MCP_DISABLED").as_deref() != Ok("1")
-        && (options.smoke_frames.is_none() || mcp_port.is_some()) {
+        && (options.smoke_frames.is_none() || mcp_port.is_some())
+    {
         let mut state = match mcp_port.as_deref().unwrap_or("8765").parse::<u16>() {
-            Ok(port) => application::mcp::State::start(port, std::env::var("SCENEMAX_MCP_TOKEN").ok().filter(|t|!t.is_empty())),
-            Err(error) => application::mcp::State::unavailable(format!("Invalid SCENEMAX_MCP_PORT: {error}")),
+            Ok(port) => application::mcp::State::start(
+                port,
+                std::env::var("SCENEMAX_MCP_TOKEN")
+                    .ok()
+                    .filter(|t| !t.is_empty()),
+            ),
+            Err(error) => {
+                application::mcp::State::unavailable(format!("Invalid SCENEMAX_MCP_PORT: {error}"))
+            }
         };
-        state.monitor = options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MCP_MONITOR").is_some();
+        state.monitor = options.smoke_frames.is_some()
+            && std::env::var_os("SCENEMAX_SMOKE_MCP_MONITOR").is_some();
         app.insert_resource(state);
     } else {
         app.insert_resource(application::mcp::State::unavailable("MCP disabled".into()));
@@ -152,7 +163,13 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::scene3d::gizmo::GizmoPlugin,
             presentation::scene3d::grid::GridPlugin,
         ));
-    app.add_systems(Update, (presentation::mcp::update, presentation::scene3d::automation::update));
+    app.add_systems(
+        Update,
+        (
+            presentation::mcp::update,
+            presentation::scene3d::automation::update,
+        ),
+    );
     app.add_systems(
         PostUpdate,
         presentation::scene3d::ik_controls::refresh
@@ -204,7 +221,10 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         );
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_GIT").is_some() {
-        app.add_systems(Update, presentation::git::smoke.before(presentation::git::collect));
+        app.add_systems(
+            Update,
+            presentation::git::smoke.before(presentation::git::collect),
+        );
     }
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_MULTIPLAYER").is_some() {
         app.add_systems(Update, presentation::multiplayer::smoke);
@@ -415,7 +435,14 @@ impl Plugin for StudioPlugin {
                             presentation::animation_analyzer::update,
                         )
                             .chain(),
-                        (presentation::motion::update, presentation::physics::update, presentation::multiplayer::input, application::multiplayer::update, presentation::multiplayer::refresh).chain(),
+                        (
+                            presentation::motion::update,
+                            presentation::physics::update,
+                            presentation::multiplayer::input,
+                            application::multiplayer::update,
+                            presentation::multiplayer::refresh,
+                        )
+                            .chain(),
                         presentation::ik::update,
                         presentation::model_import::update,
                         presentation::sprite_import::update,

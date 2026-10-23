@@ -4,10 +4,10 @@
 pub mod assistance;
 pub mod completion;
 pub mod deployment;
-pub mod multiplayer;
 mod document;
 mod editing;
 mod history;
+pub mod multiplayer;
 mod project;
 pub mod syntax;
 mod workspace;
@@ -59,9 +59,9 @@ pub mod ik;
 
 pub mod animation_analyzer;
 
-/// Version control workflow data.
-pub mod git;
 /// Agent automation schemas and authoring transactions.
 pub mod automation;
+/// Version control workflow data.
+pub mod git;
 
 pub mod physics;

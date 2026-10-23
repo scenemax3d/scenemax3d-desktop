@@ -161,7 +161,8 @@ pub(super) fn resume(
     let total = spec.duration + (duration - spec.target) / speed.max(0.001);
     let age = resume
         .map(|r| {
-            (total - (r.remaining_seconds - r.received_at.elapsed().as_secs_f64()).max(0.) as f32).max(0.)
+            (total - (r.remaining_seconds - r.received_at.elapsed().as_secs_f64()).max(0.) as f32)
+                .max(0.)
         })
         .unwrap_or(0.);
     let p = Playback {
@@ -246,7 +247,9 @@ mod tests {
         let node = bevy::animation::graph::AnimationNodeIndex::new(1);
         let mut player = AnimationPlayer::default();
         player.play(node).set_speed(0.5);
-        let player_entity = world.spawn((player, AnimationGraphHandle(Handle::default()))).id();
+        let player_entity = world
+            .spawn((player, AnimationGraphHandle(Handle::default())))
+            .id();
         let token = multiplayer::ActionLease::new(());
         let waiter = std::sync::Arc::downgrade(&token);
         let spec = spec();
@@ -299,11 +302,13 @@ mod tests {
             .unwrap();
         assert!((active.seek_time() - 0.3).abs() < 0.0001);
         assert_eq!(active.speed(), 0.5);
-        assert!(world
-            .get::<CurrentAnimation>(entity)
-            .unwrap()
-            .rewind
-            .is_none());
+        assert!(
+            world
+                .get::<CurrentAnimation>(entity)
+                .unwrap()
+                .rewind
+                .is_none()
+        );
         assert_eq!(waiter.strong_count(), 0);
     }
 }

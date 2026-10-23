@@ -170,7 +170,8 @@ mod tests {
     use super::*;
     #[test]
     fn nested_network_handlers_keep_function_and_branch_boundaries() {
-        let program = parse_program(r#"
+        let program = parse_program(
+            r#"
 setup() = {
  var count = 0
  network.on ("first", message) = do
@@ -184,13 +185,23 @@ setup() = {
  count = 10
 }
 run setup()
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         assert_eq!(program.statements.len(), 2);
-        let Statement::FunctionDef(function) = &program.statements[0] else { panic!("function"); };
+        let Statement::FunctionDef(function) = &program.statements[0] else {
+            panic!("function");
+        };
         assert_eq!(function.actions.len(), 4);
-        assert!(matches!(&function.actions[1], Statement::Network(NetworkStatement::On {actions,..}) if actions.len() == 1));
-        let Statement::If(branch) = &function.actions[2] else { panic!("branch"); };
-        assert!(matches!(&branch.actions[0], Statement::Network(NetworkStatement::On {actions,..}) if actions.len() == 1));
+        assert!(
+            matches!(&function.actions[1], Statement::Network(NetworkStatement::On {actions,..}) if actions.len() == 1)
+        );
+        let Statement::If(branch) = &function.actions[2] else {
+            panic!("branch");
+        };
+        assert!(
+            matches!(&branch.actions[0], Statement::Network(NetworkStatement::On {actions,..}) if actions.len() == 1)
+        );
         assert!(matches!(&function.actions[3], Statement::Assignment(a) if a.name == "count"));
     }
     #[test]

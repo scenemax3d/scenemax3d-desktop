@@ -41,43 +41,82 @@ fn key(path: &str, slot: &str) -> String {
 // Control state can exceed one legacy shared-value packet. The manifest and
 // content-addressed pieces keep a snapshot coherent across reordered delivery.
 fn control_piece_slot(slot: &str) -> bool {
-    ["list_state_", "edit_state_"].iter().any(|prefix| slot.strip_prefix(prefix)
-        .is_some_and(|n| n.parse::<usize>().is_ok_and(|n| n < 128)))
+    ["list_state_", "edit_state_"].iter().any(|prefix| {
+        slot.strip_prefix(prefix)
+            .is_some_and(|n| n.parse::<usize>().is_ok_and(|n| n < 128))
+    })
 }
 fn valid_control_packet(slot: &str, value: &Value) -> bool {
-    let Some(a) = value.as_array().filter(|a| a.len()==2) else { return false; };
-    let token = a[0].as_str().is_some_and(|s| s.len()==16 && s.bytes().all(|c|c.is_ascii_hexdigit()));
-    token && if matches!(slot,"list_state"|"edit_state") {
-        a[1].as_u64().is_some_and(|n| (1..=128).contains(&n))
-    } else { control_piece_slot(slot) && a[1].is_string() }
+    let Some(a) = value.as_array().filter(|a| a.len() == 2) else {
+        return false;
+    };
+    let token = a[0]
+        .as_str()
+        .is_some_and(|s| s.len() == 16 && s.bytes().all(|c| c.is_ascii_hexdigit()));
+    token
+        && if matches!(slot, "list_state" | "edit_state") {
+            a[1].as_u64().is_some_and(|n| (1..=128).contains(&n))
+        } else {
+            control_piece_slot(slot) && a[1].is_string()
+        }
 }
 fn publish_control(world: &mut World, entity: Entity, path: &str, slot: &str, raw: String) {
     let token = format!("{:x}", Sha256::digest(raw.as_bytes()))[..16].to_owned();
-    let mut parts = Vec::new(); let mut part = String::new();
+    let mut parts = Vec::new();
+    let mut part = String::new();
     for c in raw.chars() {
-        let mut next = part.clone(); next.push(c);
-        if scenemax_multiplayer::protocol::encode_value(&json!([token,next])).is_err() {
+        let mut next = part.clone();
+        next.push(c);
+        if scenemax_multiplayer::protocol::encode_value(&json!([token, next])).is_err() {
             parts.push(std::mem::take(&mut part));
         }
         part.push(c);
     }
-    if !part.is_empty() { parts.push(part); }
-    if parts.len()>128 { tracing::warn!(path,"UI control snapshot exceeds bounded transport capacity"); return; }
-    for (i,part) in parts.iter().enumerate() { publish_value(world,entity,path,&format!("{slot}_{i}"),json!([token,part])); }
-    publish_value(world,entity,path,slot,json!([token,parts.len()]));
+    if !part.is_empty() {
+        parts.push(part);
+    }
+    if parts.len() > 128 {
+        tracing::warn!(
+            path,
+            "UI control snapshot exceeds bounded transport capacity"
+        );
+        return;
+    }
+    for (i, part) in parts.iter().enumerate() {
+        publish_value(
+            world,
+            entity,
+            path,
+            &format!("{slot}_{i}"),
+            json!([token, part]),
+        );
+    }
+    publish_value(world, entity, path, slot, json!([token, parts.len()]));
 }
-fn assemble_control(state:&WidgetSync,path:&str,slot:&str)->Option<Value> {
-    if !matches!(slot,"list_state"|"edit_state") {return None;}
-    let manifest=&state.received.get(&key(path,slot))?.value;
-    if !valid_control_packet(slot,manifest) {return None;}
-    let token=manifest[0].as_str()?; let count=manifest[1].as_u64()? as usize;
-    let mut raw=String::new();
+fn assemble_control(state: &WidgetSync, path: &str, slot: &str) -> Option<Value> {
+    if !matches!(slot, "list_state" | "edit_state") {
+        return None;
+    }
+    let manifest = &state.received.get(&key(path, slot))?.value;
+    if !valid_control_packet(slot, manifest) {
+        return None;
+    }
+    let token = manifest[0].as_str()?;
+    let count = manifest[1].as_u64()? as usize;
+    let mut raw = String::new();
     for i in 0..count {
-        let piece=&state.received.get(&key(path,&format!("{slot}_{i}")))?.value;
-        if piece[0].as_str()?!=token {return None;}
+        let piece = &state
+            .received
+            .get(&key(path, &format!("{slot}_{i}")))?
+            .value;
+        if piece[0].as_str()? != token {
+            return None;
+        }
         raw.push_str(piece[1].as_str()?);
     }
-    if !format!("{:x}",Sha256::digest(raw.as_bytes())).starts_with(token) {return None;}
+    if !format!("{:x}", Sha256::digest(raw.as_bytes())).starts_with(token) {
+        return None;
+    }
     Some(Value::String(raw))
 }
 
@@ -87,33 +126,49 @@ mod control_tests {
     #[test]
     fn control_parts_wait_for_complete_matching_snapshot_in_any_arrival_order() {
         let (_server, _peer, client) = super::super::joins::tests::connection();
-        let mut world=World::new(); let entity=world.spawn_empty().id();
-        world.insert_resource(Multiplayer { client:Some(client), ..Default::default() });
-        let raw="Unicode λ🙂 and quoted \"text\". ".repeat(40);
-        publish_control(&mut world,entity,"fixture.layer.table","list_state",raw.clone());
-        let outgoing=world.resource::<Multiplayer>().widgets.pending.clone();
-        assert!(outgoing.len()>2);
-        let mut received=WidgetSync::default();
-        let manifest=key("fixture.layer.table","list_state");
-        receive(&mut received,manifest.clone(),outgoing[&manifest].clone());
-        assert!(assemble_control(&received,"fixture.layer.table","list_state").is_none());
-        for (key,value) in outgoing.iter().filter(|(key,_)| *key!=&manifest) {
+        let mut world = World::new();
+        let entity = world.spawn_empty().id();
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..Default::default()
+        });
+        let raw = "Unicode λ🙂 and quoted \"text\". ".repeat(40);
+        publish_control(
+            &mut world,
+            entity,
+            "fixture.layer.table",
+            "list_state",
+            raw.clone(),
+        );
+        let outgoing = world.resource::<Multiplayer>().widgets.pending.clone();
+        assert!(outgoing.len() > 2);
+        let mut received = WidgetSync::default();
+        let manifest = key("fixture.layer.table", "list_state");
+        receive(&mut received, manifest.clone(), outgoing[&manifest].clone());
+        assert!(assemble_control(&received, "fixture.layer.table", "list_state").is_none());
+        for (key, value) in outgoing.iter().filter(|(key, _)| *key != &manifest) {
             assert!(scenemax_multiplayer::protocol::encode_value(value).is_ok());
-            receive(&mut received,key.clone(),value.clone());
+            receive(&mut received, key.clone(), value.clone());
         }
-        assert_eq!(assemble_control(&received,"fixture.layer.table","list_state"),Some(Value::String(raw)));
-        let piece=key("fixture.layer.table","list_state_0");
-        let mut stale=outgoing[&piece].clone(); stale[0]=json!("0000000000000000");
-        receive(&mut received,piece,stale);
-        assert!(assemble_control(&received,"fixture.layer.table","list_state").is_none());
+        assert_eq!(
+            assemble_control(&received, "fixture.layer.table", "list_state"),
+            Some(Value::String(raw))
+        );
+        let piece = key("fixture.layer.table", "list_state_0");
+        let mut stale = outgoing[&piece].clone();
+        stale[0] = json!("0000000000000000");
+        receive(&mut received, piece, stale);
+        assert!(assemble_control(&received, "fixture.layer.table", "list_state").is_none());
     }
 }
 
 fn slot(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("$ui:")?;
     let (digest, slot) = rest.split_once(':')?;
-    (digest.len() == 32 && digest.bytes().all(|c| c.is_ascii_hexdigit()) && (SLOTS.contains(&slot) || control_piece_slot(slot)))
-        .then_some(slot)
+    (digest.len() == 32
+        && digest.bytes().all(|c| c.is_ascii_hexdigit())
+        && (SLOTS.contains(&slot) || control_piece_slot(slot)))
+    .then_some(slot)
 }
 
 pub(crate) fn action_target(action: &SceneMaxUiAction) -> Option<&UiTargetPath> {
@@ -143,7 +198,9 @@ pub(in crate::multiplayer) fn receive(state: &mut WidgetSync, name: String, valu
             return;
         }
         // Numbered easing updates from the same client cannot rewind each other.
-        if slot == "visible" && let (Some(old), Some(new)) = (previous.value.as_array(), value.as_array()) {
+        if slot == "visible"
+            && let (Some(old), Some(new)) = (previous.value.as_array(), value.as_array())
+        {
             if old[0] == new[0] {
                 let old = old[1].as_u64().unwrap_or(0) as u32;
                 let new = new[1].as_u64().unwrap_or(0) as u32;
@@ -178,32 +235,77 @@ fn decode(slot: &str, value: &Value, target: UiTargetPath) -> Option<SceneMaxUiA
         "edit_state" => {
             let raw = value.as_str()?;
             let state: crate::ui::edits::Snapshot = serde_json::from_str(raw).ok()?;
-            state.valid().then(|| SceneMaxUiAction::SetProperty { target, property: "__edit_snapshot".into(), value: raw.into() })
+            state.valid().then(|| SceneMaxUiAction::SetProperty {
+                target,
+                property: "__edit_snapshot".into(),
+                value: raw.into(),
+            })
         }
         "list_state" => {
             let raw = value.as_str()?;
             let state: crate::ui::lists::Snapshot = serde_json::from_str(raw).ok()?;
-            state.valid().then(|| SceneMaxUiAction::SetProperty { target, property: "__list_snapshot".into(), value: raw.into() })
+            state.valid().then(|| SceneMaxUiAction::SetProperty {
+                target,
+                property: "__list_snapshot".into(),
+                value: raw.into(),
+            })
         }
         "image_shader" => {
             type Source = (Option<String>, Option<String>, usize);
-            let (original, current, restored, position, shader): (Source, Source, bool, Option<usize>, Option<String>) = serde_json::from_value(value.clone()).ok()?;
+            let (original, current, restored, position, shader): (
+                Source,
+                Source,
+                bool,
+                Option<usize>,
+                Option<String>,
+            ) = serde_json::from_value(value.clone()).ok()?;
             let state = crate::ui::image_shaders::Snapshot {
-                original: crate::ui::images::Snapshot { image: original.0, sprite: original.1, frame: original.2 },
-                current: crate::ui::images::Snapshot { image: current.0, sprite: current.1, frame: current.2 },
-                restored, position, shader,
+                original: crate::ui::images::Snapshot {
+                    image: original.0,
+                    sprite: original.1,
+                    frame: original.2,
+                },
+                current: crate::ui::images::Snapshot {
+                    image: current.0,
+                    sprite: current.1,
+                    frame: current.2,
+                },
+                restored,
+                position,
+                shader,
             };
-            state.valid().then_some(SceneMaxUiAction::ImageShader { target, state })
+            state
+                .valid()
+                .then_some(SceneMaxUiAction::ImageShader { target, state })
         }
         "surface_shader" => {
-            let (name, captured, original, current): (String, bool, Option<[f32;4]>, Option<[f32;4]>) = serde_json::from_value(value.clone()).ok()?;
-            let state = crate::ui::shaders::Snapshot { name, captured, original, current };
-            state.valid().then_some(SceneMaxUiAction::SurfaceShader { target, state })
+            let (name, captured, original, current): (
+                String,
+                bool,
+                Option<[f32; 4]>,
+                Option<[f32; 4]>,
+            ) = serde_json::from_value(value.clone()).ok()?;
+            let state = crate::ui::shaders::Snapshot {
+                name,
+                captured,
+                original,
+                current,
+            };
+            state
+                .valid()
+                .then_some(SceneMaxUiAction::SurfaceShader { target, state })
         }
         "image_state" => {
-            let (image, sprite, frame): (Option<String>, Option<String>, usize) = serde_json::from_value(value.clone()).ok()?;
-            let state = crate::ui::images::Snapshot { image, sprite, frame };
-            state.valid().then_some(SceneMaxUiAction::ImageState { target, state })
+            let (image, sprite, frame): (Option<String>, Option<String>, usize) =
+                serde_json::from_value(value.clone()).ok()?;
+            let state = crate::ui::images::Snapshot {
+                image,
+                sprite,
+                frame,
+            };
+            state
+                .valid()
+                .then_some(SceneMaxUiAction::ImageState { target, state })
         }
         "text" | "frame" | "textcolor" | "backgroundcolor" | "fontsize" | "font" => {
             let value = value.as_str()?;
@@ -267,7 +369,9 @@ pub(crate) fn capture(
     let Some(path) = resolve_ui_target_path(runtime, target) else {
         return;
     };
-    if widget.widget_type == "EDIT_TEXT" { return; }
+    if widget.widget_type == "EDIT_TEXT" {
+        return;
+    }
     let entity = widget.entity;
     let mut action = action.clone();
     if let SceneMaxUiAction::SetProperty {
@@ -279,7 +383,9 @@ pub(crate) fn capture(
         };
         *property = canonical.into();
         // Actual image widgets publish the coupled state after applying the command.
-        if matches!(widget.widget_type.as_str(), "IMAGE" | "PANEL") && matches!(canonical, "image" | "sprite" | "frame") {
+        if matches!(widget.widget_type.as_str(), "IMAGE" | "PANEL")
+            && matches!(canonical, "image" | "sprite" | "frame")
+        {
             return;
         }
         if crate::ui::properties::is_style(property)
@@ -376,14 +482,22 @@ pub(crate) fn capture(
 }
 
 pub(crate) fn capture_edit(world: &mut World, entity: Entity, path: &str) {
-    let Some(state) = crate::ui::edits::snapshot(world, entity) else { return; };
-    let Ok(value) = serde_json::to_string(&state) else { return; };
+    let Some(state) = crate::ui::edits::snapshot(world, entity) else {
+        return;
+    };
+    let Ok(value) = serde_json::to_string(&state) else {
+        return;
+    };
     publish_control(world, entity, path, "edit_state", value);
 }
 
 pub(crate) fn capture_list(world: &mut World, entity: Entity, path: &str) {
-    let Some(state) = crate::ui::lists::snapshot(world, entity) else { return; };
-    let Ok(value) = serde_json::to_string(&state) else { return; };
+    let Some(state) = crate::ui::lists::snapshot(world, entity) else {
+        return;
+    };
+    let Ok(value) = serde_json::to_string(&state) else {
+        return;
+    };
     publish_control(world, entity, path, "list_state", value);
 }
 
@@ -392,39 +506,70 @@ pub(crate) fn capture_image(world: &mut World, entity: Entity, path: &str) {
         capture_image_shader(world, entity, path);
         return;
     }
-    let Some(state) = crate::ui::images::snapshot(world, entity) else { return; };
+    let Some(state) = crate::ui::images::snapshot(world, entity) else {
+        return;
+    };
     let value = json!([state.image, state.sprite, state.frame]);
     publish_value(world, entity, path, "image_state", value);
 }
 
 pub(crate) fn capture_image_shader(world: &mut World, entity: Entity, path: &str) {
-    let Some(state) = crate::ui::image_shaders::snapshot(world, entity) else { return; };
+    let Some(state) = crate::ui::image_shaders::snapshot(world, entity) else {
+        return;
+    };
     let value = json!([
-        [state.original.image, state.original.sprite, state.original.frame],
-        [state.current.image, state.current.sprite, state.current.frame],
-        state.restored, state.position, state.shader,
+        [
+            state.original.image,
+            state.original.sprite,
+            state.original.frame
+        ],
+        [
+            state.current.image,
+            state.current.sprite,
+            state.current.frame
+        ],
+        state.restored,
+        state.position,
+        state.shader,
     ]);
     publish_value(world, entity, path, "image_shader", value);
 }
 
 pub(crate) fn capture_shader(world: &mut World, entity: Entity, path: &str) {
-    let Some(state) = crate::ui::shaders::snapshot(world, entity) else { return; };
+    let Some(state) = crate::ui::shaders::snapshot(world, entity) else {
+        return;
+    };
     let value = json!([state.name, state.captured, state.original, state.current]);
     publish_value(world, entity, path, "surface_shader", value);
 }
 
 fn publish_value(world: &mut World, entity: Entity, path: &str, slot: &str, value: Value) {
-    if scenemax_multiplayer::protocol::encode_value(&value).is_err() { return; }
-    let Some(mut net) = world.get_resource_mut::<Multiplayer>() else { return; };
-    let Some(client) = net.client.as_ref() else { return; };
-    if matches!(client.state(), State::Closed | State::Rejected) { return; }
+    if scenemax_multiplayer::protocol::encode_value(&value).is_err() {
+        return;
+    }
+    let Some(mut net) = world.get_resource_mut::<Multiplayer>() else {
+        return;
+    };
+    let Some(client) = net.client.as_ref() else {
+        return;
+    };
+    if matches!(client.state(), State::Closed | State::Rejected) {
+        return;
+    }
     let name = key(path, slot);
-    if net.widgets.pending.len() >= LIMIT && !net.widgets.pending.contains_key(&name) { return; }
+    if net.widgets.pending.len() >= LIMIT && !net.widgets.pending.contains_key(&name) {
+        return;
+    }
     net.widgets.pending.insert(name.clone(), value.clone());
     if net.widgets.received.len() < LIMIT || net.widgets.received.contains_key(&name) {
-        net.widgets.received.insert(name, Received {
-            value, applied: Some(entity), received_at: web_time::Instant::now(),
-        });
+        net.widgets.received.insert(
+            name,
+            Received {
+                value,
+                applied: Some(entity),
+                received_at: web_time::Instant::now(),
+            },
+        );
     }
 }
 
@@ -471,10 +616,20 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                 widget_path: widgets.split('.').map(str::to_owned).collect(),
             };
             for slot in SLOTS {
-                if matches!(slot, "image_state" | "frame") && net.widgets.received.contains_key(&key(path, "image_shader")) {
+                if matches!(slot, "image_state" | "frame")
+                    && net
+                        .widgets
+                        .received
+                        .contains_key(&key(path, "image_shader"))
+                {
                     continue;
                 }
-                if slot == "backgroundcolor" && net.widgets.received.contains_key(&key(path, "surface_shader")) {
+                if slot == "backgroundcolor"
+                    && net
+                        .widgets
+                        .received
+                        .contains_key(&key(path, "surface_shader"))
+                {
                     continue;
                 }
                 if slot == "frame" && net.widgets.received.contains_key(&key(path, "image_state")) {
@@ -487,7 +642,11 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                 if update.applied == Some(widget.entity) {
                     continue;
                 }
-                if let Some(mut action) = decode(slot, control.as_ref().unwrap_or(&update.value), target.clone()) {
+                if let Some(mut action) = decode(
+                    slot,
+                    control.as_ref().unwrap_or(&update.value),
+                    target.clone(),
+                ) {
                     if let SceneMaxUiAction::Ease { received_at, .. } = &mut action {
                         *received_at = Some(update.received_at);
                     }
@@ -576,29 +735,58 @@ mod tests {
 
     fn load_image(world: &mut World) -> (tempfile::TempDir, Entity) {
         let root = tempfile::tempdir().unwrap();
-        scenemax_assets::filesystem::write(root.path().join("fixture.smui"), json!({
-            "name":"fixture", "layers":[{"name":"overlay", "widgets":[{
-                "name":"panel", "type":"PANEL", "children":[{
-                    "name":"caption", "type":"IMAGE", "multiplayer":true,
-                    "spriteName":"missing atlas", "spriteFrame":3
-                }]
-            }]}]
-        }).to_string()).unwrap();
+        scenemax_assets::filesystem::write(
+            root.path().join("fixture.smui"),
+            json!({
+                "name":"fixture", "layers":[{"name":"overlay", "widgets":[{
+                    "name":"panel", "type":"PANEL", "children":[{
+                        "name":"caption", "type":"IMAGE", "multiplayer":true,
+                        "spriteName":"missing atlas", "spriteFrame":3
+                    }]
+                }]}]
+            })
+            .to_string(),
+        )
+        .unwrap();
         world.resource_mut::<SceneMaxLaunchContext>().script_root = Some(root.path().to_owned());
-        world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::Load { name: "fixture".into() });
+        world
+            .resource_mut::<SceneMaxUiActionQueue>()
+            .actions
+            .push(SceneMaxUiAction::Load {
+                name: "fixture".into(),
+            });
         apply(world);
-        let entity = resolve_ui_target(world.resource::<SceneMaxUiRuntime>(), &target()).unwrap().entity;
-        assert!(crate::ui::images::snapshot(world, entity).is_some(), "spawned image state missing");
-        assert_eq!(resolve_ui_target(world.resource::<SceneMaxUiRuntime>(), &target()).unwrap().widget_type, "IMAGE");
+        let entity = resolve_ui_target(world.resource::<SceneMaxUiRuntime>(), &target())
+            .unwrap()
+            .entity;
+        assert!(
+            crate::ui::images::snapshot(world, entity).is_some(),
+            "spawned image state missing"
+        );
+        assert_eq!(
+            resolve_ui_target(world.resource::<SceneMaxUiRuntime>(), &target())
+                .unwrap()
+                .widget_type,
+            "IMAGE"
+        );
         (root, entity)
     }
 
     fn shader_panel(world: &mut World) -> Entity {
         world.init_resource::<Assets<crate::ui::shaders::SurfaceShader>>();
         let entity = widget(world, true);
-        world.entity_mut(entity).insert(BackgroundColor(Color::srgb(0.,0.,1.)));
-        world.resource_mut::<SceneMaxUiRuntime>().loaded.get_mut("fixture").unwrap()
-            .targets.get_mut(PATH).unwrap().widget_type = "PANEL".into();
+        world
+            .entity_mut(entity)
+            .insert(BackgroundColor(Color::srgb(0., 0., 1.)));
+        world
+            .resource_mut::<SceneMaxUiRuntime>()
+            .loaded
+            .get_mut("fixture")
+            .unwrap()
+            .targets
+            .get_mut(PATH)
+            .unwrap()
+            .widget_type = "PANEL".into();
         entity
     }
 
@@ -607,34 +795,83 @@ mod tests {
         let mut app = app();
         let world = app.world_mut();
         let (_server, _, client) = super::super::joins::tests::connection();
-        let mut net = Multiplayer { client: Some(client), ..default() };
-        let value = json!([[null,"missing atlas",3],["missing.png",null,0],true,null,null]);
-        receive(&mut net.widgets, key(PATH,"image_shader"), value.clone());
+        let mut net = Multiplayer {
+            client: Some(client),
+            ..default()
+        };
+        let value = json!([
+            [null, "missing atlas", 3],
+            ["missing.png", null, 0],
+            true,
+            null,
+            null
+        ]);
+        receive(&mut net.widgets, key(PATH, "image_shader"), value.clone());
         flush(world, &mut net);
-        assert!(world.resource::<SceneMaxUiActionQueue>().remote_actions.is_empty());
+        assert!(
+            world
+                .resource::<SceneMaxUiActionQueue>()
+                .remote_actions
+                .is_empty()
+        );
         let (_root, entity) = load_image(world);
-        receive(&mut net.widgets, key(PATH,"image_state"), json!(["stale.png",null,9]));
-        receive(&mut net.widgets, key(PATH,"frame"), json!("8"));
+        receive(
+            &mut net.widgets,
+            key(PATH, "image_state"),
+            json!(["stale.png", null, 9]),
+        );
+        receive(&mut net.widgets, key(PATH, "frame"), json!("8"));
         replay(world, &mut net);
-        assert_eq!(world.get::<ImageNode>(entity).unwrap().color, Color::srgba(0.5,0.5,0.5,0.3));
-        assert_eq!(crate::ui::images::snapshot(world, entity).unwrap().image.as_deref(), Some("missing.png"));
+        assert_eq!(
+            world.get::<ImageNode>(entity).unwrap().color,
+            Color::srgba(0.5, 0.5, 0.5, 0.3)
+        );
+        assert_eq!(
+            crate::ui::images::snapshot(world, entity)
+                .unwrap()
+                .image
+                .as_deref(),
+            Some("missing.png")
+        );
         assert!(net.widgets.pending.is_empty());
-        for bad in [json!([[null,null,0],[null,null,0],true,null,""]),
-            json!([[null,null,0],[null,null,0],true,-1,null]),
-            json!([["bad\0path",null,0],[null,null,0],false,null,null]),
-            json!([[null,null,0],["x".repeat(300),null,0],false,null,null])] {
-            receive(&mut net.widgets, key(PATH,"image_shader"), bad);
+        for bad in [
+            json!([[null, null, 0], [null, null, 0], true, null, ""]),
+            json!([[null, null, 0], [null, null, 0], true, -1, null]),
+            json!([["bad\0path", null, 0], [null, null, 0], false, null, null]),
+            json!([
+                [null, null, 0],
+                ["x".repeat(300), null, 0],
+                false,
+                null,
+                null
+            ]),
+        ] {
+            receive(&mut net.widgets, key(PATH, "image_shader"), bad);
         }
-        assert_eq!(net.widgets.received[&key(PATH,"image_shader")].value, value);
+        assert_eq!(
+            net.widgets.received[&key(PATH, "image_shader")].value,
+            value
+        );
         let (_second_root, second) = load_image(world);
         replay(world, &mut net);
-        assert_eq!(world.get::<ImageNode>(second).unwrap().color, Color::srgba(0.5,0.5,0.5,0.3));
-        world.resource_mut::<SceneMaxUiActionQueue>().remote_actions.push(SceneMaxUiAction::SetProperty {
-            target: target(), property: "frame".into(), value: "2".into(),
-        });
+        assert_eq!(
+            world.get::<ImageNode>(second).unwrap().color,
+            Color::srgba(0.5, 0.5, 0.5, 0.3)
+        );
+        world
+            .resource_mut::<SceneMaxUiActionQueue>()
+            .remote_actions
+            .push(SceneMaxUiAction::SetProperty {
+                target: target(),
+                property: "frame".into(),
+                value: "2".into(),
+            });
         world.insert_resource(net);
         apply(world);
-        assert_eq!(world.get::<ImageNode>(second).unwrap().color, Color::srgba(1.,0.,1.,1.));
+        assert_eq!(
+            world.get::<ImageNode>(second).unwrap().color,
+            Color::srgba(1., 0., 1., 1.)
+        );
         assert!(world.resource::<Multiplayer>().widgets.pending.is_empty());
     }
 
@@ -644,20 +881,48 @@ mod tests {
         let world = app.world_mut();
         let (root, entity) = load_image(world);
         scenemax_assets::filesystem::create_dir(root.path().join("scripts")).unwrap();
-        scenemax_assets::filesystem::write(root.path().join("scripts/tint.bvshader"), r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#).unwrap();
-        world.resource_mut::<SceneMaxLaunchContext>().asset_root = Some(root.path().join("resources"));
+        scenemax_assets::filesystem::write(
+            root.path().join("scripts/tint.bvshader"),
+            r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#,
+        )
+        .unwrap();
+        world.resource_mut::<SceneMaxLaunchContext>().asset_root =
+            Some(root.path().join("resources"));
         world.init_resource::<Assets<crate::ui::shaders::SurfaceShader>>();
         let (_server, _, client) = super::super::joins::tests::connection();
-        world.insert_resource(Multiplayer { client: Some(client), ..default() });
-        for (property, value) in [("shader","tint"),("image","missing.png"),("shader",""),("shader","invalid")] {
-            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::SetProperty {
-                target: target(), property: property.into(), value: value.into(),
-            });
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..default()
+        });
+        for (property, value) in [
+            ("shader", "tint"),
+            ("image", "missing.png"),
+            ("shader", ""),
+            ("shader", "invalid"),
+        ] {
+            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(
+                SceneMaxUiAction::SetProperty {
+                    target: target(),
+                    property: property.into(),
+                    value: value.into(),
+                },
+            );
         }
         apply(world);
-        assert_eq!(world.get::<ImageNode>(entity).unwrap().color, Color::srgba(0.5,0.5,0.5,0.3));
-        assert_eq!(world.resource::<Multiplayer>().widgets.pending[&key(PATH,"image_shader")],
-            json!([[null,"missing atlas",3],["missing.png",null,0],true,null,null]));
+        assert_eq!(
+            world.get::<ImageNode>(entity).unwrap().color,
+            Color::srgba(0.5, 0.5, 0.5, 0.3)
+        );
+        assert_eq!(
+            world.resource::<Multiplayer>().widgets.pending[&key(PATH, "image_shader")],
+            json!([
+                [null, "missing atlas", 3],
+                ["missing.png", null, 0],
+                true,
+                null,
+                null
+            ])
+        );
     }
 
     #[test]
@@ -666,28 +931,57 @@ mod tests {
         let world = app.world_mut();
         let root = tempfile::tempdir().unwrap();
         scenemax_assets::filesystem::create_dir(root.path().join("scripts")).unwrap();
-        scenemax_assets::filesystem::write(root.path().join("scripts/tint.bvshader"), r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#).unwrap();
-        world.resource_mut::<SceneMaxLaunchContext>().asset_root = Some(root.path().join("resources"));
+        scenemax_assets::filesystem::write(
+            root.path().join("scripts/tint.bvshader"),
+            r#"{"mainColor":[0,1,0,1],"blocks":["TINT"]}"#,
+        )
+        .unwrap();
+        world.resource_mut::<SceneMaxLaunchContext>().asset_root =
+            Some(root.path().join("resources"));
         let entity = shader_panel(world);
         let (_server, _, client) = super::super::joins::tests::connection();
-        world.insert_resource(Multiplayer { client: Some(client), ..default() });
-        for (property, value) in [("shader","tint"),("shader",""),("color","#ff0000"),("shader","tint"),("shader","")] {
-            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::SetProperty {
-                target: target(), property: property.into(), value: value.into(),
-            });
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..default()
+        });
+        for (property, value) in [
+            ("shader", "tint"),
+            ("shader", ""),
+            ("color", "#ff0000"),
+            ("shader", "tint"),
+            ("shader", ""),
+        ] {
+            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(
+                SceneMaxUiAction::SetProperty {
+                    target: target(),
+                    property: property.into(),
+                    value: value.into(),
+                },
+            );
         }
         apply(world);
-        assert_eq!(world.get::<BackgroundColor>(entity).unwrap().0, Color::srgb(0.,0.,1.));
-        assert_eq!(world.resource::<Multiplayer>().widgets.pending[&key(PATH,"surface_shader")],
-            json!(["",true,[0.,0.,1.,1.],[0.,0.,1.,1.]]));
-        for (property, value) in [("color","#00ff00"),("shader","missing")] {
-            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::SetProperty {
-                target: target(), property: property.into(), value: value.into(),
-            });
+        assert_eq!(
+            world.get::<BackgroundColor>(entity).unwrap().0,
+            Color::srgb(0., 0., 1.)
+        );
+        assert_eq!(
+            world.resource::<Multiplayer>().widgets.pending[&key(PATH, "surface_shader")],
+            json!(["", true, [0., 0., 1., 1.], [0., 0., 1., 1.]])
+        );
+        for (property, value) in [("color", "#00ff00"), ("shader", "missing")] {
+            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(
+                SceneMaxUiAction::SetProperty {
+                    target: target(),
+                    property: property.into(),
+                    value: value.into(),
+                },
+            );
         }
         apply(world);
-        assert_eq!(world.resource::<Multiplayer>().widgets.pending[&key(PATH,"surface_shader")],
-            json!(["",true,[0.,0.,1.,1.],[0.,1.,0.,1.]]));
+        assert_eq!(
+            world.resource::<Multiplayer>().widgets.pending[&key(PATH, "surface_shader")],
+            json!(["", true, [0., 0., 1., 1.], [0., 1., 0., 1.]])
+        );
     }
 
     #[test]
@@ -695,26 +989,54 @@ mod tests {
         let mut app = app();
         let world = app.world_mut();
         let (_server, _, client) = super::super::joins::tests::connection();
-        let mut net = Multiplayer { client: Some(client), ..default() };
-        let value = json!(["",true,[0.,0.,1.,1.],[0.,1.,0.,1.]]);
-        receive(&mut net.widgets, key(PATH,"surface_shader"), value.clone());
+        let mut net = Multiplayer {
+            client: Some(client),
+            ..default()
+        };
+        let value = json!(["", true, [0., 0., 1., 1.], [0., 1., 0., 1.]]);
+        receive(&mut net.widgets, key(PATH, "surface_shader"), value.clone());
         flush(world, &mut net);
-        assert!(world.resource::<SceneMaxUiActionQueue>().remote_actions.is_empty());
+        assert!(
+            world
+                .resource::<SceneMaxUiActionQueue>()
+                .remote_actions
+                .is_empty()
+        );
         let first = shader_panel(world);
         replay(world, &mut net);
-        assert_eq!(world.get::<BackgroundColor>(first).unwrap().0, Color::srgb(0.,1.,0.));
-        receive(&mut net.widgets, key(PATH,"backgroundcolor"), json!("#ff0000"));
-        for bad in [json!(["",true,[0,0,2,1],null]), json!(["tint",false,null,null]),
-            json!(["bad\0name",true,null,null]),json!(["",true,[1,2],null]),
-            json!(["x".repeat(300),true,null,null])] {
-            receive(&mut net.widgets, key(PATH,"surface_shader"), bad);
+        assert_eq!(
+            world.get::<BackgroundColor>(first).unwrap().0,
+            Color::srgb(0., 1., 0.)
+        );
+        receive(
+            &mut net.widgets,
+            key(PATH, "backgroundcolor"),
+            json!("#ff0000"),
+        );
+        for bad in [
+            json!(["", true, [0, 0, 2, 1], null]),
+            json!(["tint", false, null, null]),
+            json!(["bad\0name", true, null, null]),
+            json!(["", true, [1, 2], null]),
+            json!(["x".repeat(300), true, null, null]),
+        ] {
+            receive(&mut net.widgets, key(PATH, "surface_shader"), bad);
         }
-        assert_eq!(net.widgets.received[&key(PATH,"surface_shader")].value,value);
+        assert_eq!(
+            net.widgets.received[&key(PATH, "surface_shader")].value,
+            value
+        );
         let second = shader_panel(world);
         replay(world, &mut net);
-        assert_eq!(world.get::<BackgroundColor>(second).unwrap().0, Color::srgb(0.,1.,0.));
+        assert_eq!(
+            world.get::<BackgroundColor>(second).unwrap().0,
+            Color::srgb(0., 1., 0.)
+        );
         crate::ui::shaders::apply(world, second, "");
-        assert_eq!(world.get::<BackgroundColor>(second).unwrap().0, Color::srgb(0.,0.,1.));
+        assert_eq!(
+            world.get::<BackgroundColor>(second).unwrap().0,
+            Color::srgb(0., 0., 1.)
+        );
         assert!(net.widgets.pending.is_empty());
     }
 
@@ -724,18 +1046,32 @@ mod tests {
         let world = app.world_mut();
         let (_root, entity) = load_image(world);
         let (_server, _, client) = super::super::joins::tests::connection();
-        world.insert_resource(Multiplayer { client: Some(client), ..default() });
-        for (property, value) in [("frame", "2.9"), ("imagepath", "missing.png"), ("spritename", "missing atlas")] {
-            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::SetProperty {
-                target: target(), property: property.into(), value: value.into(),
-            });
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..default()
+        });
+        for (property, value) in [
+            ("frame", "2.9"),
+            ("imagepath", "missing.png"),
+            ("spritename", "missing atlas"),
+        ] {
+            world.resource_mut::<SceneMaxUiActionQueue>().actions.push(
+                SceneMaxUiAction::SetProperty {
+                    target: target(),
+                    property: property.into(),
+                    value: value.into(),
+                },
+            );
         }
         apply(world);
         let net = world.resource::<Multiplayer>();
         assert_eq!(net.widgets.pending.len(), 1);
-        let value = json!([null,"missing atlas",0]);
-        assert_eq!(net.widgets.pending[&key(PATH,"image_state")], value);
-        assert_eq!(net.widgets.received[&key(PATH,"image_state")].applied, Some(entity));
+        let value = json!([null, "missing atlas", 0]);
+        assert_eq!(net.widgets.pending[&key(PATH, "image_state")], value);
+        assert_eq!(
+            net.widgets.received[&key(PATH, "image_state")].applied,
+            Some(entity)
+        );
         assert_eq!(crate::ui::images::snapshot(world, entity).unwrap().frame, 0);
     }
 
@@ -744,32 +1080,61 @@ mod tests {
         let mut app = app();
         let world = app.world_mut();
         let (_server, _, client) = super::super::joins::tests::connection();
-        let mut net = Multiplayer { client: Some(client), ..default() };
-        let value = json!(["missing.png",null,0]);
-        receive(&mut net.widgets, key(PATH,"image_state"), value.clone());
+        let mut net = Multiplayer {
+            client: Some(client),
+            ..default()
+        };
+        let value = json!(["missing.png", null, 0]);
+        receive(&mut net.widgets, key(PATH, "image_state"), value.clone());
         flush(world, &mut net);
-        assert!(world.resource::<SceneMaxUiActionQueue>().remote_actions.is_empty());
+        assert!(
+            world
+                .resource::<SceneMaxUiActionQueue>()
+                .remote_actions
+                .is_empty()
+        );
         let (_root, first) = load_image(world);
-        receive(&mut net.widgets, key(PATH,"frame"), json!("3"));
+        receive(&mut net.widgets, key(PATH, "frame"), json!("3"));
         replay(world, &mut net);
-        assert_eq!(world.get::<ImageNode>(first).unwrap().color, Color::srgba(1.,0.,1.,1.));
+        assert_eq!(
+            world.get::<ImageNode>(first).unwrap().color,
+            Color::srgba(1., 0., 1., 1.)
+        );
         assert_eq!(crate::ui::images::snapshot(world, first).unwrap().frame, 0);
-        for bad in [json!(["bad\0name",null,1]),
-            json!([null,null,-1]),
-            json!([null,"x".repeat(300),1]),
-            json!([null,null,1,"ignored"])] {
-            receive(&mut net.widgets, key(PATH,"image_state"), bad);
+        for bad in [
+            json!(["bad\0name", null, 1]),
+            json!([null, null, -1]),
+            json!([null, "x".repeat(300), 1]),
+            json!([null, null, 1, "ignored"]),
+        ] {
+            receive(&mut net.widgets, key(PATH, "image_state"), bad);
         }
-        assert_eq!(net.widgets.received[&key(PATH,"image_state")].value, value);
-        let loaded = world.resource_mut::<SceneMaxUiRuntime>().loaded.remove("fixture").unwrap();
-        for root in loaded.root_entities { world.despawn(root); }
-        world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::Load { name:"fixture".into() });
+        assert_eq!(net.widgets.received[&key(PATH, "image_state")].value, value);
+        let loaded = world
+            .resource_mut::<SceneMaxUiRuntime>()
+            .loaded
+            .remove("fixture")
+            .unwrap();
+        for root in loaded.root_entities {
+            world.despawn(root);
+        }
+        world
+            .resource_mut::<SceneMaxUiActionQueue>()
+            .actions
+            .push(SceneMaxUiAction::Load {
+                name: "fixture".into(),
+            });
         apply(world);
-        let second = resolve_ui_target(world.resource::<SceneMaxUiRuntime>(), &target()).unwrap().entity;
+        let second = resolve_ui_target(world.resource::<SceneMaxUiRuntime>(), &target())
+            .unwrap()
+            .entity;
         assert_ne!(first, second);
         replay(world, &mut net);
-        assert_eq!(world.get::<ImageNode>(second).unwrap().color, Color::srgba(1.,0.,1.,1.));
-        receive(&mut net.widgets, key(PATH,"frame"), json!("2"));
+        assert_eq!(
+            world.get::<ImageNode>(second).unwrap().color,
+            Color::srgba(1., 0., 1., 1.)
+        );
+        receive(&mut net.widgets, key(PATH, "frame"), json!("2"));
         replay(world, &mut net);
         assert_eq!(crate::ui::images::snapshot(world, second).unwrap().frame, 0);
         assert!(net.widgets.pending.is_empty());
@@ -1043,23 +1408,57 @@ mod tests {
             let world = app.world_mut();
             let entity = widget(world, true);
             let (_server, _, client) = super::super::joins::tests::connection();
-            world.insert_resource(Multiplayer { client: Some(client), ..default() });
-            let action = SceneMaxUiAction::Ease { target: target(), easing: "EaseOutQuad".into(),
-                direction: UiEaseDirection::Up, duration_seconds: 2., received_at: None };
+            world.insert_resource(Multiplayer {
+                client: Some(client),
+                ..default()
+            });
+            let action = SceneMaxUiAction::Ease {
+                target: target(),
+                easing: "EaseOutQuad".into(),
+                direction: UiEaseDirection::Up,
+                duration_seconds: 2.,
+                received_at: None,
+            };
             let mut queue = world.resource_mut::<SceneMaxUiActionQueue>();
-            if remote { queue.remote_actions.push(action); } else { queue.actions.push(action); }
+            if remote {
+                queue.remote_actions.push(action);
+            } else {
+                queue.actions.push(action);
+            }
             apply(world);
-            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::ZERO);
+            assert_eq!(
+                world.get::<UiTransform>(entity).unwrap().translation,
+                Val2::ZERO
+            );
             world.resource_mut::<Multiplayer>().widgets.pending.clear();
-            world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs(1));
-            world.run_system_once(crate::ui::update_scenemax_ui_eases).unwrap();
-            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::percent(0., -75.));
-            world.run_system_once(crate::ui::update_scenemax_ui_eases).unwrap();
-            assert_eq!(*world.get::<Visibility>(entity).unwrap(), Visibility::Hidden);
-            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::ZERO);
+            world
+                .resource_mut::<Time>()
+                .advance_by(std::time::Duration::from_secs(1));
+            world
+                .run_system_once(crate::ui::update_scenemax_ui_eases)
+                .unwrap();
+            assert_eq!(
+                world.get::<UiTransform>(entity).unwrap().translation,
+                Val2::percent(0., -75.)
+            );
+            world
+                .run_system_once(crate::ui::update_scenemax_ui_eases)
+                .unwrap();
+            assert_eq!(
+                *world.get::<Visibility>(entity).unwrap(),
+                Visibility::Hidden
+            );
+            assert_eq!(
+                world.get::<UiTransform>(entity).unwrap().translation,
+                Val2::ZERO
+            );
             assert!(world.get::<SceneMaxUiEase>(entity).is_none());
             let pending = &world.resource::<Multiplayer>().widgets.pending;
-            if remote { assert!(pending.is_empty()); } else { assert_eq!(pending[&key(PATH, "visible")], json!(false)); }
+            if remote {
+                assert!(pending.is_empty());
+            } else {
+                assert_eq!(pending[&key(PATH, "visible")], json!(false));
+            }
         }
     }
 
@@ -1068,25 +1467,66 @@ mod tests {
         let mut app = app();
         let world = app.world_mut();
         let entity = widget(world, true);
-        for (name, duration, elapsed, visible) in [("EaseOutBounce", 0., 0, false), ("EaseOutBounce", 2., 3, false), ("EaseInBounce", 2., 3, true)] {
-            world.resource_mut::<SceneMaxUiActionQueue>().remote_actions.push(SceneMaxUiAction::Ease {
-                target: target(), easing: name.into(), direction: UiEaseDirection::Right, duration_seconds: duration,
-                received_at: Some(web_time::Instant::now() - std::time::Duration::from_secs(elapsed)),
-            });
+        for (name, duration, elapsed, visible) in [
+            ("EaseOutBounce", 0., 0, false),
+            ("EaseOutBounce", 2., 3, false),
+            ("EaseInBounce", 2., 3, true),
+        ] {
+            world
+                .resource_mut::<SceneMaxUiActionQueue>()
+                .remote_actions
+                .push(SceneMaxUiAction::Ease {
+                    target: target(),
+                    easing: name.into(),
+                    direction: UiEaseDirection::Right,
+                    duration_seconds: duration,
+                    received_at: Some(
+                        web_time::Instant::now() - std::time::Duration::from_secs(elapsed),
+                    ),
+                });
             apply(world);
-            assert_eq!(*world.get::<Visibility>(entity).unwrap(), if visible { Visibility::Inherited } else { Visibility::Hidden });
-            assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::ZERO);
+            assert_eq!(
+                *world.get::<Visibility>(entity).unwrap(),
+                if visible {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                }
+            );
+            assert_eq!(
+                world.get::<UiTransform>(entity).unwrap().translation,
+                Val2::ZERO
+            );
             assert!(world.get::<SceneMaxUiEase>(entity).is_none());
         }
-        world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::Ease {
-            target: target(), easing: "EaseInQuad".into(), direction: UiEaseDirection::Right, duration_seconds: 2., received_at: None,
-        });
+        world
+            .resource_mut::<SceneMaxUiActionQueue>()
+            .actions
+            .push(SceneMaxUiAction::Ease {
+                target: target(),
+                easing: "EaseInQuad".into(),
+                direction: UiEaseDirection::Right,
+                duration_seconds: 2.,
+                received_at: None,
+            });
         apply(world);
-        assert_eq!(world.get::<UiTransform>(entity).unwrap().translation, Val2::percent(-100., 0.));
-        world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::ShowHide { target: target(), visible: false });
+        assert_eq!(
+            world.get::<UiTransform>(entity).unwrap().translation,
+            Val2::percent(-100., 0.)
+        );
+        world
+            .resource_mut::<SceneMaxUiActionQueue>()
+            .actions
+            .push(SceneMaxUiAction::ShowHide {
+                target: target(),
+                visible: false,
+            });
         apply(world);
         assert!(world.get::<SceneMaxUiEase>(entity).is_none());
-        assert_eq!(*world.get::<Visibility>(entity).unwrap(), Visibility::Hidden);
+        assert_eq!(
+            *world.get::<Visibility>(entity).unwrap(),
+            Visibility::Hidden
+        );
     }
 
     #[test]
@@ -1094,15 +1534,33 @@ mod tests {
         fn history(world: &mut World) -> Vec<Entity> {
             let mut entities = vec![];
             for index in 0..5 {
-                let entity = world.spawn((Text::new("initial"), TextColor::default(), UiTransform::default(), Visibility::Hidden)).id();
+                let entity = world
+                    .spawn((
+                        Text::new("initial"),
+                        TextColor::default(),
+                        UiTransform::default(),
+                        Visibility::Hidden,
+                    ))
+                    .id();
                 entities.push(entity);
                 let mut runtime = world.resource_mut::<SceneMaxUiRuntime>();
                 runtime.active_ui_name = Some("fixture".into());
                 for (suffix, kind) in [("", "PANEL"), (".caption", "TEXT_VIEW")] {
-                    runtime.loaded.entry("fixture".into()).or_default().targets.insert(
-                        format!("fixture.layer1.entry{index}{suffix}"),
-                        SceneMaxUiTarget { entity, text_entity: Some(entity), multiplayer: true, widget_type: kind.into(), ui_scale: 1. },
-                    );
+                    runtime
+                        .loaded
+                        .entry("fixture".into())
+                        .or_default()
+                        .targets
+                        .insert(
+                            format!("fixture.layer1.entry{index}{suffix}"),
+                            SceneMaxUiTarget {
+                                entity,
+                                text_entity: Some(entity),
+                                multiplayer: true,
+                                widget_type: kind.into(),
+                                ui_scale: 1.,
+                            },
+                        );
                 }
             }
             entities
@@ -1111,10 +1569,24 @@ mod tests {
         let world = sender.world_mut();
         let local = history(world);
         let (_server, _, client) = super::super::joins::tests::connection();
-        world.insert_resource(Multiplayer { client: Some(client), ..default() });
-        let entries = (0..5).flat_map(|i| [format!("UI.layer1.entry{i}"), format!("UI.layer1.entry{i}.caption")]).collect::<Vec<_>>().join(",");
-        let calls = (1..=7).map(|i| format!("run record({i})\nwait 0.1 seconds\n")).collect::<String>();
-        let source = format!(r#"
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..default()
+        });
+        let entries = (0..5)
+            .flat_map(|i| {
+                [
+                    format!("UI.layer1.entry{i}"),
+                    format!("UI.layer1.entry{i}.caption"),
+                ]
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let calls = (1..=7)
+            .map(|i| format!("run record({i})\nwait 0.1 seconds\n"))
+            .collect::<String>();
+        let source = format!(
+            r#"
 var entries = [{entries}]
 var cursor = 0
 var descriptions = ["A", "B", "C", "D", "E", "F", "G"]
@@ -1134,7 +1606,8 @@ record(action) = {{
  }}
 }}
 {calls}
-"#);
+"#
+        );
         crate::value_calls::tests::run_in(world, &source);
         while !world.resource::<DelayedActionQueue>().actions.is_empty() {
             crate::value_calls::tests::resume_next(world);
@@ -1143,7 +1616,10 @@ record(action) = {{
         let expected = ["E", "F", "G", "C", "D"];
         for (entity, text) in local.iter().zip(expected) {
             assert_eq!(world.get::<Text>(*entity).unwrap().0, text);
-            assert_eq!(*world.get::<Visibility>(*entity).unwrap(), Visibility::Inherited);
+            assert_eq!(
+                *world.get::<Visibility>(*entity).unwrap(),
+                Visibility::Inherited
+            );
             assert!(world.get::<SceneMaxUiEase>(*entity).is_some());
         }
         let values = world.resource::<Multiplayer>().widgets.pending.clone();
@@ -1151,14 +1627,22 @@ record(action) = {{
         let mut receiver = app();
         let remote = history(receiver.world_mut());
         let mut net = Multiplayer::default();
-        for (name, value) in values { receive(&mut net.widgets, name, value); }
+        for (name, value) in values {
+            receive(&mut net.widgets, name, value);
+        }
         replay(receiver.world_mut(), &mut net);
         for (entity, text) in remote.iter().zip(expected) {
             assert_eq!(receiver.world().get::<Text>(*entity).unwrap().0, text);
-            assert_eq!(*receiver.world().get::<Visibility>(*entity).unwrap(), Visibility::Inherited);
+            assert_eq!(
+                *receiver.world().get::<Visibility>(*entity).unwrap(),
+                Visibility::Inherited
+            );
             assert!(receiver.world().get::<SceneMaxUiEase>(*entity).is_some());
         }
-        assert!(net.widgets.pending.is_empty(), "remote replay must not echo updates");
+        assert!(
+            net.widgets.pending.is_empty(),
+            "remote replay must not echo updates"
+        );
     }
 
     #[test]
@@ -1296,10 +1780,18 @@ record(action) = {{
         let world = app.world_mut();
         widget(world, true);
         let (_server, _, client) = super::super::joins::tests::connection();
-        world.insert_resource(Multiplayer { client: Some(client), ..default() });
-        world.resource_mut::<SceneMaxUiActionQueue>().actions.push(SceneMaxUiAction::SetProperty {
-            target: target(), property: "fontname".into(), value: "custom Ω".into(),
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..default()
         });
+        world
+            .resource_mut::<SceneMaxUiActionQueue>()
+            .actions
+            .push(SceneMaxUiAction::SetProperty {
+                target: target(),
+                property: "fontname".into(),
+                value: "custom Ω".into(),
+            });
         apply(world);
         let mut net = world.remove_resource::<Multiplayer>().unwrap();
         let wire = net.widgets.pending.remove(&key(PATH, "font")).unwrap();
@@ -1307,9 +1799,14 @@ record(action) = {{
         let mut receiver = WidgetSync::default();
         receive(&mut receiver, key(PATH, "font"), wire);
         receive(&mut receiver, key(PATH, "font"), json!("bad\0name"));
-        assert_eq!(receiver.received[&key(PATH, "font")].value, json!("custom Ω"));
-        assert!(matches!(decode("font", &json!(""), target()), Some(SceneMaxUiAction::SetProperty { property, value, .. })
-            if property == "font" && value.is_empty()));
+        assert_eq!(
+            receiver.received[&key(PATH, "font")].value,
+            json!("custom Ω")
+        );
+        assert!(
+            matches!(decode("font", &json!(""), target()), Some(SceneMaxUiAction::SetProperty { property, value, .. })
+            if property == "font" && value.is_empty())
+        );
     }
 
     #[test]

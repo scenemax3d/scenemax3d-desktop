@@ -161,7 +161,9 @@ fn extract_effekseer_effects(
                 .as_ref()
                 .map(|playback| playback.play_generation)
                 .unwrap_or(0),
-            elapsed_seconds: playback.as_ref().map_or(0., |playback| playback.elapsed_seconds),
+            elapsed_seconds: playback
+                .as_ref()
+                .map_or(0., |playback| playback.elapsed_seconds),
             playback_speed: playback
                 .as_ref()
                 .map(|playback| playback.playback_speed)
@@ -178,11 +180,16 @@ fn extract_effekseer_effects(
     retain_playback_completions(&completions, &extracted.instances);
 }
 
-fn retain_playback_completions(completions: &crate::PlaybackCompletions, instances: &[ExtractedEffekseerInstance]) {
+fn retain_playback_completions(
+    completions: &crate::PlaybackCompletions,
+    instances: &[ExtractedEffekseerInstance],
+) {
     if let Ok(mut entries) = completions.0.lock() {
-        let active: std::collections::HashSet<_> = instances.iter()
+        let active: std::collections::HashSet<_> = instances
+            .iter()
             .filter(|i| i.playing && !i.looped && i.preview.is_none())
-            .map(|i| (i.instance_id, i.play_generation)).collect();
+            .map(|i| (i.instance_id, i.play_generation))
+            .collect();
         entries.retain(|key| active.contains(key));
     }
 }
@@ -297,9 +304,18 @@ fn render_effekseer_3d_pass(
         }
         if result == NativeEffekseerRenderResult::Rendered {
             if let Ok(mut entries) = completions.0.lock() {
-                for instance in instances.iter().filter(|i| i.playing && !i.looped && i.preview.is_none()) {
+                for instance in instances
+                    .iter()
+                    .filter(|i| i.playing && !i.looped && i.preview.is_none())
+                {
                     // Native pointer stays owned by this render-world resource during the call.
-                    if unsafe { scenemax_effekseer_playback_finished(native.renderer, instance.instance_id, instance.play_generation) } {
+                    if unsafe {
+                        scenemax_effekseer_playback_finished(
+                            native.renderer,
+                            instance.instance_id,
+                            instance.play_generation,
+                        )
+                    } {
                         entries.insert((instance.instance_id, instance.play_generation));
                     }
                 }
@@ -663,7 +679,9 @@ fn create_native_vulkan_bridge(
     };
 
     if let Some(renderer) = created {
-        unsafe { scenemax_effekseer_enable_elapsed_playback(renderer); }
+        unsafe {
+            scenemax_effekseer_enable_elapsed_playback(renderer);
+        }
         native.renderer = renderer;
         tracing::info!("SceneMax Effekseer native Vulkan bridge created");
         write_runtime_diagnostic_line(format!(
@@ -1006,7 +1024,11 @@ pub(crate) struct SceneMaxEffekseerRenderer {
 #[cfg(feature = "effekseer_native")]
 #[allow(dead_code)]
 unsafe extern "C" {
-    fn scenemax_effekseer_playback_finished(renderer: *mut SceneMaxEffekseerRenderer, instance: u64, generation: u64) -> bool;
+    fn scenemax_effekseer_playback_finished(
+        renderer: *mut SceneMaxEffekseerRenderer,
+        instance: u64,
+        generation: u64,
+    ) -> bool;
 
     fn scenemax_effekseer_enable_elapsed_playback(renderer: *mut SceneMaxEffekseerRenderer);
 
@@ -1126,10 +1148,19 @@ mod playback_abi_tests {
         let feedback = crate::PlaybackCompletions::default();
         feedback.0.lock().unwrap().extend([(1, 1), (1, 2), (2, 1)]);
         let mut instance = ExtractedEffekseerInstance {
-            instance_id: 1, play_generation: 2, playing: true, looped: false,
-            asset_id: String::new(), effect_path: None, translation: Vec3::ZERO,
-            playback_speed: 1., elapsed_seconds: 0., dynamic_inputs: [0.; 4],
-            transform: [0.; 16], layers: Default::default(), preview: None,
+            instance_id: 1,
+            play_generation: 2,
+            playing: true,
+            looped: false,
+            asset_id: String::new(),
+            effect_path: None,
+            translation: Vec3::ZERO,
+            playback_speed: 1.,
+            elapsed_seconds: 0.,
+            dynamic_inputs: [0.; 4],
+            transform: [0.; 16],
+            layers: Default::default(),
+            preview: None,
         };
         retain_playback_completions(&feedback, &[instance.clone()]);
         assert_eq!(feedback.0.lock().unwrap().len(), 1);
@@ -1145,6 +1176,9 @@ mod playback_abi_tests {
     #[test]
     fn native_playback_position_layout_matches_cpp() {
         assert_eq!(std::mem::size_of::<SceneMaxEffekseerInstanceDesc>(), 128);
-        assert_eq!(std::mem::offset_of!(SceneMaxEffekseerInstanceDesc, elapsed_seconds), 124);
+        assert_eq!(
+            std::mem::offset_of!(SceneMaxEffekseerInstanceDesc, elapsed_seconds),
+            124
+        );
     }
 }

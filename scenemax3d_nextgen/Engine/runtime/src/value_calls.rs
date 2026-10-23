@@ -1,7 +1,7 @@
 //! Evaluation order for effectful script value calls; execution stays in actions.
 use super::*;
-use scenemax_runtime_vm_core::references::Reference;
 use scenemax_parser::ArrayOperation;
+use scenemax_runtime_vm_core::references::Reference;
 
 pub(super) enum Request {
     Leaf(AssignmentValue),
@@ -13,38 +13,79 @@ pub(super) fn contains(value: &AssignmentValue) -> bool {
     match value {
         AssignmentValue::Call { .. } | AssignmentValue::PoolAcquire { .. } => true,
         AssignmentValue::Array(items) => items.iter().any(contains),
-        AssignmentValue::Json(v) | AssignmentValue::Round { value: v } | AssignmentValue::RandomInt { max: v } => contains(v),
-        AssignmentValue::Binary { left, right, .. } | AssignmentValue::Access { value: left, index: right } => contains(left) || contains(right),
-        AssignmentValue::ArrayEdit { source, operation } => contains(source) || match operation { ArrayOperation::Push(v) | ArrayOperation::Reset(v) => contains(v), _ => false },
+        AssignmentValue::Json(v)
+        | AssignmentValue::Round { value: v }
+        | AssignmentValue::RandomInt { max: v } => contains(v),
+        AssignmentValue::Binary { left, right, .. }
+        | AssignmentValue::Access {
+            value: left,
+            index: right,
+        } => contains(left) || contains(right),
+        AssignmentValue::ArrayEdit { source, operation } => {
+            contains(source)
+                || match operation {
+                    ArrayOperation::Push(v) | ArrayOperation::Reset(v) => contains(v),
+                    _ => false,
+                }
+        }
         AssignmentValue::Condition(c) => condition_contains(c),
         _ => false,
     }
 }
 fn condition_contains(c: &Condition) -> bool {
     match c {
-        Condition::EqualsValue { left, right } | Condition::NotEqualsValue { left, right } | Condition::CompareValue { left, right, .. } => contains(left) || contains(right),
+        Condition::EqualsValue { left, right }
+        | Condition::NotEqualsValue { left, right }
+        | Condition::CompareValue { left, right, .. } => contains(left) || contains(right),
         Condition::Compare { value, .. } => contains(value),
         Condition::Not(c) => condition_contains(c),
         Condition::And(items) | Condition::Or(items) => items.iter().any(condition_contains),
         _ => false,
     }
 }
-fn literal(value: Reference) -> Box<AssignmentValue> { Box::new(AssignmentValue::RuntimeValue(value)) }
+fn literal(value: Reference) -> Box<AssignmentValue> {
+    Box::new(AssignmentValue::RuntimeValue(value))
+}
 
-pub(super) fn evaluate(value: &AssignmentValue, host: &mut impl FnMut(Request) -> Option<Reference>) -> Option<Reference> {
+pub(super) fn evaluate(
+    value: &AssignmentValue,
+    host: &mut impl FnMut(Request) -> Option<Reference>,
+) -> Option<Reference> {
     let resolved = match value {
         AssignmentValue::PoolAcquire { pool } => return host(Request::Acquire(pool.clone())),
         AssignmentValue::Call { name, args } => {
-            let args = args.iter().map(|arg| evaluate(arg, host)).collect::<Option<Vec<_>>>()?;
+            let args = args
+                .iter()
+                .map(|arg| evaluate(arg, host))
+                .collect::<Option<Vec<_>>>()?;
             return host(Request::Call(name.clone(), args));
         }
-        AssignmentValue::Array(items) => return items.iter().map(|v| evaluate(v, host)).collect::<Option<Vec<_>>>().map(Reference::array),
+        AssignmentValue::Array(items) => {
+            return items
+                .iter()
+                .map(|v| evaluate(v, host))
+                .collect::<Option<Vec<_>>>()
+                .map(Reference::array);
+        }
         AssignmentValue::Json(v) => AssignmentValue::Json(literal(evaluate(v, host)?)),
-        AssignmentValue::Round { value } => AssignmentValue::Round { value: literal(evaluate(value, host)?) },
-        AssignmentValue::RandomInt { max } => AssignmentValue::RandomInt { max: literal(evaluate(max, host)?) },
-        AssignmentValue::Access { value, index } => AssignmentValue::Access { value: literal(evaluate(value, host)?), index: literal(evaluate(index, host)?) },
-        AssignmentValue::Binary { left, operator, right } => AssignmentValue::Binary {
-            left: literal(evaluate(left, host)?), operator: *operator, right: literal(evaluate(right, host)?),
+        AssignmentValue::Round { value } => AssignmentValue::Round {
+            value: literal(evaluate(value, host)?),
+        },
+        AssignmentValue::RandomInt { max } => AssignmentValue::RandomInt {
+            max: literal(evaluate(max, host)?),
+        },
+        AssignmentValue::Access { value, index } => AssignmentValue::Access {
+            value: literal(evaluate(value, host)?),
+            index: literal(evaluate(index, host)?),
+        },
+        AssignmentValue::Binary {
+            left,
+            operator,
+            right,
+        } => AssignmentValue::Binary {
+            left: literal(evaluate(left, host)?),
+            operator: *operator,
+            right: literal(evaluate(right, host)?),
         },
         AssignmentValue::ArrayEdit { source, operation } => {
             let source = literal(evaluate(source, host)?);
@@ -55,7 +96,9 @@ pub(super) fn evaluate(value: &AssignmentValue, host: &mut impl FnMut(Request) -
             };
             AssignmentValue::ArrayEdit { source, operation }
         }
-        AssignmentValue::Condition(c) => return condition(c, host).map(|v| Reference::new(serde_json::Value::Bool(v))),
+        AssignmentValue::Condition(c) => {
+            return condition(c, host).map(|v| Reference::new(serde_json::Value::Bool(v)));
+        }
         other => other.clone(),
     };
     host(Request::Leaf(resolved))
@@ -63,26 +106,76 @@ pub(super) fn evaluate(value: &AssignmentValue, host: &mut impl FnMut(Request) -
 fn condition(c: &Condition, host: &mut impl FnMut(Request) -> Option<Reference>) -> Option<bool> {
     let resolved = match c {
         Condition::Not(c) => return condition(c, host).map(|v| !v),
-        Condition::And(items) => { for c in items { if !condition(c, host)? { return Some(false); } } return Some(true); }
-        Condition::Or(items) => { for c in items { if condition(c, host)? { return Some(true); } } return Some(false); }
-        Condition::EqualsValue { left, right } => Condition::EqualsValue { left: *literal(evaluate(left, host)?), right: *literal(evaluate(right, host)?) },
-        Condition::NotEqualsValue { left, right } => Condition::NotEqualsValue { left: *literal(evaluate(left, host)?), right: *literal(evaluate(right, host)?) },
-        Condition::CompareValue { left, operator, right } => Condition::CompareValue { left: *literal(evaluate(left, host)?), operator: *operator, right: *literal(evaluate(right, host)?) },
-        Condition::Compare { name, operator, value } => Condition::CompareValue { left: *literal(evaluate(&AssignmentValue::Symbol(name.clone()), host)?), operator: *operator, right: *literal(evaluate(value, host)?) },
+        Condition::And(items) => {
+            for c in items {
+                if !condition(c, host)? {
+                    return Some(false);
+                }
+            }
+            return Some(true);
+        }
+        Condition::Or(items) => {
+            for c in items {
+                if condition(c, host)? {
+                    return Some(true);
+                }
+            }
+            return Some(false);
+        }
+        Condition::EqualsValue { left, right } => Condition::EqualsValue {
+            left: *literal(evaluate(left, host)?),
+            right: *literal(evaluate(right, host)?),
+        },
+        Condition::NotEqualsValue { left, right } => Condition::NotEqualsValue {
+            left: *literal(evaluate(left, host)?),
+            right: *literal(evaluate(right, host)?),
+        },
+        Condition::CompareValue {
+            left,
+            operator,
+            right,
+        } => Condition::CompareValue {
+            left: *literal(evaluate(left, host)?),
+            operator: *operator,
+            right: *literal(evaluate(right, host)?),
+        },
+        Condition::Compare {
+            name,
+            operator,
+            value,
+        } => Condition::CompareValue {
+            left: *literal(evaluate(&AssignmentValue::Symbol(name.clone()), host)?),
+            operator: *operator,
+            right: *literal(evaluate(value, host)?),
+        },
         other => other.clone(),
     };
-    host(Request::Leaf(AssignmentValue::Condition(Box::new(resolved))))?.snapshot()?.as_bool()
+    host(Request::Leaf(AssignmentValue::Condition(Box::new(
+        resolved,
+    ))))?
+    .snapshot()?
+    .as_bool()
 }
 
 // Only immediate operands are visited. Branch bodies are evaluated when selected,
 // and function bodies are evaluated on invocation, never during definition.
-pub(super) fn map(action: &mut Statement, visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+pub(super) fn map(
+    action: &mut Statement,
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     match action {
-        Statement::Assignment(a) | Statement::SharedAssignment(a) | Statement::LocalAssignment(a) => map_assignment(a, visit)?,
+        Statement::Assignment(a)
+        | Statement::SharedAssignment(a)
+        | Statement::LocalAssignment(a) => map_assignment(a, visit)?,
         Statement::ReturnValue { value } | Statement::WaitValue { value } => visit(value)?,
-        Statement::Logger(LoggerStatement { message: LoggerMessage::Value(v), .. }) => visit(v)?,
+        Statement::Logger(LoggerStatement {
+            message: LoggerMessage::Value(v),
+            ..
+        }) => visit(v)?,
         Statement::If(s) => map_condition(&mut s.condition, visit)?,
-        Statement::Guarded { condition, .. } | Statement::WaitUntil { condition } | Statement::LoopContinue { condition, .. } => map_condition(condition, visit)?,
+        Statement::Guarded { condition, .. }
+        | Statement::WaitUntil { condition }
+        | Statement::LoopContinue { condition, .. } => map_condition(condition, visit)?,
         Statement::SetEnvironmentShader { shader } => visit(shader)?,
         Statement::SetSkybox { skybox } => visit(skybox)?,
         Statement::SetShader(s) => visit(&mut s.shader)?,
@@ -90,7 +183,12 @@ pub(super) fn map(action: &mut Statement, visit: &mut impl FnMut(&mut Assignment
         Statement::ModelDecl { options, .. } => {
             let mut prefix = options.resource_value.iter_mut().collect::<Vec<_>>();
             let mut trailing = options.scale_value.iter_mut().collect::<Vec<_>>();
-            trailing.extend(options.geometry_values.iter_mut().flat_map(|attr| attr.values.iter_mut()));
+            trailing.extend(
+                options
+                    .geometry_values
+                    .iter_mut()
+                    .flat_map(|attr| attr.values.iter_mut()),
+            );
             if let Some(position) = &mut options.position_value {
                 map_position_with_prefix(position, &mut prefix, &mut trailing, visit)?;
             } else {
@@ -99,8 +197,12 @@ pub(super) fn map(action: &mut Statement, visit: &mut impl FnMut(&mut Assignment
             }
             if let Some(label) = &mut options.label {
                 let mut values = Vec::new();
-                if let Some(text) = &mut label.text { values.push(text); }
-                if let Some(alpha) = &mut label.transparency { values.push(alpha); }
+                if let Some(text) = &mut label.text {
+                    values.push(text);
+                }
+                if let Some(alpha) = &mut label.transparency {
+                    values.push(alpha);
+                }
                 map_values(&mut values, visit)?;
             }
         }
@@ -109,28 +211,57 @@ pub(super) fn map(action: &mut Statement, visit: &mut impl FnMut(&mut Assignment
             if let scenemax_parser::ik::IkAction::Apply(value) = &mut s.action {
                 values.push(value);
             }
-            if let Some(value) = &mut s.blend { values.push(value); }
-            if let Some(value) = &mut s.weight { values.push(value); }
+            if let Some(value) = &mut s.blend {
+                values.push(value);
+            }
+            if let Some(value) = &mut s.weight {
+                values.push(value);
+            }
             map_values(&mut values, visit)?;
         }
         Statement::EffekseerPlay(s) => {
-            let mut attrs = s.attrs.iter_mut().map(|(_, value)| value).collect::<Vec<_>>();
-            if let Some(position) = &mut s.position { map_position_values(position, &mut attrs, visit)?; }
-            else { map_values(&mut attrs, visit)?; }
+            let mut attrs = s
+                .attrs
+                .iter_mut()
+                .map(|(_, value)| value)
+                .collect::<Vec<_>>();
+            if let Some(position) = &mut s.position {
+                map_position_values(position, &mut attrs, visit)?;
+            } else {
+                map_values(&mut attrs, visit)?;
+            }
         }
         Statement::Position(s) => map_position(&mut s.position, None, visit)?,
         Statement::RotationReset { rotation, .. } => map_position(rotation, None, visit)?,
-        Statement::Attach(s) => { if let Some(offset) = &mut s.offset_value { map_position(offset, None, visit)?; } }
-        Statement::Move(s) => map_values(&mut [&mut s.distance_value, &mut s.duration_value], visit)?,
-        Statement::Turn(s) => map_values(&mut [&mut s.degrees_value, &mut s.duration_value], visit)?,
-        Statement::CameraMove(s) => map_values(&mut [&mut s.distance_value, &mut s.duration_value], visit)?,
+        Statement::Attach(s) => {
+            if let Some(offset) = &mut s.offset_value {
+                map_position(offset, None, visit)?;
+            }
+        }
+        Statement::Move(s) => {
+            map_values(&mut [&mut s.distance_value, &mut s.duration_value], visit)?
+        }
+        Statement::Turn(s) => {
+            map_values(&mut [&mut s.degrees_value, &mut s.duration_value], visit)?
+        }
+        Statement::CameraMove(s) => {
+            map_values(&mut [&mut s.distance_value, &mut s.duration_value], visit)?
+        }
         Statement::MoveTo(s) => match &mut s.destination {
-            MoveToDestination::Delta(p) | MoveToDestination::Position(p) => map_position(p, Some(&mut s.duration_value), visit)?,
-            MoveToDestination::EntityForward { distance_value, .. } => map_values(&mut [distance_value, &mut s.duration_value], visit)?,
+            MoveToDestination::Delta(p) | MoveToDestination::Position(p) => {
+                map_position(p, Some(&mut s.duration_value), visit)?
+            }
+            MoveToDestination::EntityForward { distance_value, .. } => {
+                map_values(&mut [distance_value, &mut s.duration_value], visit)?
+            }
         },
         Statement::Animate(s) => visit(&mut s.speed_value)?,
         Statement::SpritePlay(s) => {
-            let mut values = vec![&mut s.from_frame_value, &mut s.to_frame_value, &mut s.duration_value];
+            let mut values = vec![
+                &mut s.from_frame_value,
+                &mut s.to_frame_value,
+                &mut s.duration_value,
+            ];
             values.extend(s.playback_seconds.iter_mut());
             map_values(&mut values, visit)?;
         }
@@ -139,9 +270,13 @@ pub(super) fn map(action: &mut Statement, visit: &mut impl FnMut(&mut Assignment
             match &mut s.value {
                 UiPropertyValue::Expression(value) => visit(value)?,
                 UiPropertyValue::Concatenation(parts) => {
-                    let mut values = parts.iter_mut().filter_map(|part| match part {
-                        UiPropertyValuePart::Expression(value) => Some(value), _ => None,
-                    }).collect::<Vec<_>>();
+                    let mut values = parts
+                        .iter_mut()
+                        .filter_map(|part| match part {
+                            UiPropertyValuePart::Expression(value) => Some(value),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
                     map_values(&mut values, visit)?;
                 }
                 _ => {}
@@ -152,16 +287,24 @@ pub(super) fn map(action: &mut Statement, visit: &mut impl FnMut(&mut Assignment
         Statement::Network(network) => {
             use scenemax_parser::network::NetworkStatement;
             match network {
-                NetworkStatement::Variable { value, .. } | NetworkStatement::EntityData { value, .. }
-                    | NetworkStatement::JoinSession { value } => map_source(value, visit)?,
-                NetworkStatement::Broadcast { event, message } | NetworkStatement::Send { event, message, .. } => {
+                NetworkStatement::Variable { value, .. }
+                | NetworkStatement::EntityData { value, .. }
+                | NetworkStatement::JoinSession { value } => map_source(value, visit)?,
+                NetworkStatement::Broadcast { event, message }
+                | NetworkStatement::Send { event, message, .. } => {
                     let mut sources = vec![event];
-                    if let Some(message) = message { sources.push(message); }
+                    if let Some(message) = message {
+                        sources.push(message);
+                    }
                     map_sources(&mut sources, visit)?;
                 }
-                NetworkStatement::On { event, argument, .. } => {
+                NetworkStatement::On {
+                    event, argument, ..
+                } => {
                     map_source(event, visit)?;
-                    if let Some(argument) = argument { map_source(argument, visit)?; }
+                    if let Some(argument) = argument {
+                        map_source(argument, visit)?;
+                    }
                 }
             }
         }
@@ -169,27 +312,41 @@ pub(super) fn map(action: &mut Statement, visit: &mut impl FnMut(&mut Assignment
     }
     Some(())
 }
-fn map_values(values: &mut [&mut AssignmentValue], visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+fn map_values(
+    values: &mut [&mut AssignmentValue],
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     let mut batch = AssignmentValue::Array(values.iter().map(|v| (**v).clone()).collect());
     if contains(&batch) {
         visit(&mut batch)?;
         if let AssignmentValue::RuntimeValue(resolved) = batch {
-            for (target, value) in values.iter_mut().zip(resolved.elements()?) { **target = AssignmentValue::RuntimeValue(value); }
+            for (target, value) in values.iter_mut().zip(resolved.elements()?) {
+                **target = AssignmentValue::RuntimeValue(value);
+            }
         }
     }
     Some(())
 }
-fn map_assignment(a: &mut scenemax_parser::AssignmentStatement, visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+fn map_assignment(
+    a: &mut scenemax_parser::AssignmentStatement,
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     // Keep the mutating operation intact: reducing it to a JSON literal would
     // replace a shared list instead of editing the existing collection.
     if let AssignmentValue::ArrayEdit { operation, .. } = &mut a.value {
-        if let ArrayOperation::Push(value) | ArrayOperation::Reset(value) = operation { visit(value)?; }
+        if let ArrayOperation::Push(value) | ArrayOperation::Reset(value) = operation {
+            visit(value)?;
+        }
         return Some(());
     }
     fn path(value: AssignmentValue, indices: &mut Vec<AssignmentValue>) -> Option<String> {
         match value {
             AssignmentValue::Symbol(name) => Some(name),
-            AssignmentValue::Access { value, index } => { let root = path(*value, indices)?; indices.push(*index); Some(root) }
+            AssignmentValue::Access { value, index } => {
+                let root = path(*value, indices)?;
+                indices.push(*index);
+                Some(root)
+            }
             _ => None,
         }
     }
@@ -207,7 +364,9 @@ fn map_assignment(a: &mut scenemax_parser::AssignmentStatement, visit: &mut impl
                         let mut values = values.elements()?.into_iter();
                         a.value = AssignmentValue::RuntimeValue(values.next()?);
                         a.name = root;
-                        for index in values { a.name.push_str(&format!("[{}]", index.snapshot()?)); }
+                        for index in values {
+                            a.name.push_str(&format!("[{}]", index.snapshot()?));
+                        }
                     }
                     return Some(());
                 }
@@ -216,57 +375,103 @@ fn map_assignment(a: &mut scenemax_parser::AssignmentStatement, visit: &mut impl
     }
     visit(&mut a.value)
 }
-fn map_position(position: &mut PositionValue, trailing: Option<&mut AssignmentValue>, visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+fn map_position(
+    position: &mut PositionValue,
+    trailing: Option<&mut AssignmentValue>,
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     let mut trailing = trailing.into_iter().collect::<Vec<_>>();
     map_position_values(position, &mut trailing, visit)
 }
-fn map_position_values(position: &mut PositionValue, trailing: &mut [&mut AssignmentValue], visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+fn map_position_values(
+    position: &mut PositionValue,
+    trailing: &mut [&mut AssignmentValue],
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     map_position_with_prefix(position, &mut [], trailing, visit)
 }
-fn map_position_with_prefix(position: &mut PositionValue, prefix: &mut [&mut AssignmentValue], trailing: &mut [&mut AssignmentValue], visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+fn map_position_with_prefix(
+    position: &mut PositionValue,
+    prefix: &mut [&mut AssignmentValue],
+    trailing: &mut [&mut AssignmentValue],
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     let PositionValue::Coordinates(coords) = position else {
         let mut refs = prefix.iter_mut().map(|v| &mut **v).collect::<Vec<_>>();
         refs.extend(trailing.iter_mut().map(|v| &mut **v));
         return map_values(&mut refs, visit);
     };
-    let mut values = coords.iter().map(|coord| match coord {
-        PositionExpr::Number(n) => AssignmentValue::Number(*n),
-        PositionExpr::Value(value) => value.clone(),
-        PositionExpr::EntityAxis { entity, axis, offset } => AssignmentValue::Binary {
-            left: Box::new(AssignmentValue::Symbol(format!("{entity}.{}", match axis { SceneMaxAxis::X => "x", SceneMaxAxis::Y => "y", SceneMaxAxis::Z => "z" }))),
-            operator: scenemax_parser::ArithmeticOperator::Add, right: Box::new(AssignmentValue::Number(*offset)),
-        },
-    }).collect::<Vec<_>>();
+    let mut values = coords
+        .iter()
+        .map(|coord| match coord {
+            PositionExpr::Number(n) => AssignmentValue::Number(*n),
+            PositionExpr::Value(value) => value.clone(),
+            PositionExpr::EntityAxis {
+                entity,
+                axis,
+                offset,
+            } => AssignmentValue::Binary {
+                left: Box::new(AssignmentValue::Symbol(format!(
+                    "{entity}.{}",
+                    match axis {
+                        SceneMaxAxis::X => "x",
+                        SceneMaxAxis::Y => "y",
+                        SceneMaxAxis::Z => "z",
+                    }
+                ))),
+                operator: scenemax_parser::ArithmeticOperator::Add,
+                right: Box::new(AssignmentValue::Number(*offset)),
+            },
+        })
+        .collect::<Vec<_>>();
     let mut refs = prefix.iter_mut().map(|v| &mut **v).collect::<Vec<_>>();
     refs.extend(values.iter_mut());
-    for value in trailing { refs.push(&mut **value); }
+    for value in trailing {
+        refs.push(&mut **value);
+    }
     map_values(&mut refs, visit)?;
     *coords = values.into_iter().map(PositionExpr::Value).collect();
     Some(())
 }
-fn map_sources(sources: &mut [&mut String], visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
-    let values = sources.iter().map(|s| scenemax_parser::parse_assignment_value(s).ok().flatten()).collect::<Option<Vec<_>>>();
+fn map_sources(
+    sources: &mut [&mut String],
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
+    let values = sources
+        .iter()
+        .map(|s| scenemax_parser::parse_assignment_value(s).ok().flatten())
+        .collect::<Option<Vec<_>>>();
     if let Some(values) = values {
         let mut value = AssignmentValue::Array(values);
         if contains(&value) {
             visit(&mut value)?;
             if let AssignmentValue::RuntimeValue(values) = value {
-                for (source, value) in sources.iter_mut().zip(values.elements()?) { **source = value.snapshot()?.to_string(); }
+                for (source, value) in sources.iter_mut().zip(values.elements()?) {
+                    **source = value.snapshot()?.to_string();
+                }
             }
         }
     }
     Some(())
 }
-fn map_source(source: &mut String, visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+fn map_source(
+    source: &mut String,
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     if let Ok(Some(mut value)) = scenemax_parser::parse_assignment_value(source) {
         if contains(&value) {
             visit(&mut value)?;
-            if let AssignmentValue::RuntimeValue(value) = value { *source = value.snapshot()?.to_string(); }
+            if let AssignmentValue::RuntimeValue(value) = value {
+                *source = value.snapshot()?.to_string();
+            }
         }
     }
     Some(())
 }
-fn map_condition(c: &mut Condition, visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>) -> Option<()> {
+fn map_condition(
+    c: &mut Condition,
+    visit: &mut impl FnMut(&mut AssignmentValue) -> Option<()>,
+) -> Option<()> {
     let mut value = AssignmentValue::Condition(Box::new(c.clone()));
     visit(&mut value)?;
     *c = match value {
@@ -277,27 +482,52 @@ fn map_condition(c: &mut Condition, visit: &mut impl FnMut(&mut AssignmentValue)
     Some(())
 }
 pub(super) fn action_contains(action: &Statement) -> bool {
-    if let Statement::DoWhile { condition, .. } = action { return condition_contains(condition); }
+    if let Statement::DoWhile { condition, .. } = action {
+        return condition_contains(condition);
+    }
     let mut found = false;
-    let _ = map(&mut action.clone(), &mut |value| { found |= contains(value); Some(()) });
+    let _ = map(&mut action.clone(), &mut |value| {
+        found |= contains(value);
+        Some(())
+    });
     found
 }
 
 // Textual resource/widget operands are resolved when executed. Expressions keep
 // their variable bindings, and nested bodies are not frozen before they run.
-pub(super) fn resolve_text_operands(action: &Statement, vars: &SceneMaxVars, scope: Option<&SceneMaxScopeFrame>) -> Option<Statement> {
-    if let Some(action) = resolve_ui_reference(action, vars, scope) { return Some(action); }
+pub(super) fn resolve_text_operands(
+    action: &Statement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+) -> Option<Statement> {
+    if let Some(action) = resolve_ui_reference(action, vars, scope) {
+        return Some(action);
+    }
     let scope = scope?;
-    let bindings = scope.parameters.iter().filter_map(|name| {
-        scenemax_runtime_vm_core::typed::lookup(name, vars, Some(scope))?.as_str().map(|v| (name.clone(), v.to_owned()))
-    }).collect::<HashMap<_,_>>();
-    if bindings.is_empty() { return None; }
+    let bindings = scope
+        .parameters
+        .iter()
+        .filter_map(|name| {
+            scenemax_runtime_vm_core::typed::lookup(name, vars, Some(scope))?
+                .as_str()
+                .map(|v| (name.clone(), v.to_owned()))
+        })
+        .collect::<HashMap<_, _>>();
+    if bindings.is_empty() {
+        return None;
+    }
     use scenemax_runtime_script_core::{substitute_reference, substitute_ui_target_path};
     let mut action = action.clone();
     match &mut action {
         Statement::UiLoad { name } => *name = substitute_reference(name, &bindings),
-        Statement::ChannelDraw(s) => { s.resource = substitute_reference(&s.resource, &bindings); s.channel = substitute_reference(&s.channel, &bindings); }
-        Statement::UiMessage(s) => { s.target = substitute_ui_target_path(&s.target, &bindings); s.text = substitute_reference(&s.text, &bindings); }
+        Statement::ChannelDraw(s) => {
+            s.resource = substitute_reference(&s.resource, &bindings);
+            s.channel = substitute_reference(&s.channel, &bindings);
+        }
+        Statement::UiMessage(s) => {
+            s.target = substitute_ui_target_path(&s.target, &bindings);
+            s.text = substitute_reference(&s.text, &bindings);
+        }
         Statement::UiShowHide(s) => s.target = substitute_ui_target_path(&s.target, &bindings),
         Statement::UiEase(s) => s.target = substitute_ui_target_path(&s.target, &bindings),
         Statement::UiSetProperty(s) => s.target = substitute_ui_target_path(&s.target, &bindings),
@@ -308,32 +538,56 @@ pub(super) fn resolve_text_operands(action: &Statement, vars: &SceneMaxVars, sco
 
 /// Resolve widget aliases before dispatch so local and multiplayer edits use
 /// exactly the same UI action queue as explicit UI paths.
-fn resolve_ui_reference(action: &Statement, vars: &SceneMaxVars, scope: Option<&SceneMaxScopeFrame>) -> Option<Statement> {
-    use scenemax_parser::{UiShowHideStatement, UiSetPropertyStatement, UiPropertyValue, parse_ui_target_path};
+fn resolve_ui_reference(
+    action: &Statement,
+    vars: &SceneMaxVars,
+    scope: Option<&SceneMaxScopeFrame>,
+) -> Option<Statement> {
+    use scenemax_parser::{
+        UiPropertyValue, UiSetPropertyStatement, UiShowHideStatement, parse_ui_target_path,
+    };
     let target = |name: &str| {
         let value = scenemax_parser::parse_assignment_value(name).ok()??;
         let reference = scenemax_runtime_vm_core::references::evaluate(
-            &value, vars, scope, &HashMap::new(), &scenemax_runtime_vm_core::NoSceneMaxVmSpatial)?;
+            &value,
+            vars,
+            scope,
+            &HashMap::new(),
+            &scenemax_runtime_vm_core::NoSceneMaxVmSpatial,
+        )?;
         parse_ui_target_path(&reference.ui_path()?)
     };
     match action {
-        Statement::Visibility { target: name, visible } => Some(Statement::UiShowHide(UiShowHideStatement {
-            target: target(name)?, visible: *visible,
+        Statement::Visibility {
+            target: name,
+            visible,
+        } => Some(Statement::UiShowHide(UiShowHideStatement {
+            target: target(name)?,
+            visible: *visible,
         })),
-        Statement::LabelText { target: name, value } => Some(Statement::UiSetProperty(UiSetPropertyStatement {
-            target: target(name)?, property: "text".into(), value: UiPropertyValue::Expression(value.clone()),
+        Statement::LabelText {
+            target: name,
+            value,
+        } => Some(Statement::UiSetProperty(UiSetPropertyStatement {
+            target: target(name)?,
+            property: "text".into(),
+            value: UiPropertyValue::Expression(value.clone()),
         })),
         Statement::Assignment(assignment) => {
             let (name, property) = assignment.name.rsplit_once('.')?;
             Some(Statement::UiSetProperty(UiSetPropertyStatement {
-                target: target(name)?, property: property.into(), value: UiPropertyValue::Expression(assignment.value.clone()),
+                target: target(name)?,
+                property: property.into(),
+                value: UiPropertyValue::Expression(assignment.value.clone()),
             }))
         }
         Statement::UiEase(ease) if ease.target_reference.is_some() => {
             let mut ease = ease.clone();
             let name = ease.target_reference.take()?;
             let Some(resolved) = target(&name) else {
-                return Some(Statement::Unsupported { text: format!("UI ease target '{name}' is not a UI reference") });
+                return Some(Statement::Unsupported {
+                    text: format!("UI ease target '{name}' is not a UI reference"),
+                });
             };
             ease.target = resolved;
             Some(Statement::UiEase(ease))
@@ -356,20 +610,48 @@ pub(crate) mod tests {
     fn for_each_model_keeps_entity_references_and_resumes_after_waits() {
         let mut world = World::new();
         world.init_resource::<SceneMaxVars>();
-        for (name, model, id) in [("alpha", true, 17), ("beta", true, 18), ("shape", false, 19)] {
-            let mut entity = world.spawn((SceneMaxEntity { name: name.into(), runtime_name: name.into() }, Transform::default()));
-            if model { entity.insert(SceneMaxGltf { gltf: Handle::default(), animation_names: vec![] }); }
-            scenemax_runtime_vm_core::typed::store(&mut world.resource_mut::<SceneMaxVars>(), &format!("{name}.network.id"), serde_json::json!(id));
+        for (name, model, id) in [
+            ("alpha", true, 17),
+            ("beta", true, 18),
+            ("shape", false, 19),
+        ] {
+            let mut entity = world.spawn((
+                SceneMaxEntity {
+                    name: name.into(),
+                    runtime_name: name.into(),
+                },
+                Transform::default(),
+            ));
+            if model {
+                entity.insert(SceneMaxGltf {
+                    gltf: Handle::default(),
+                    animation_names: vec![],
+                });
+            }
+            scenemax_runtime_vm_core::typed::store(
+                &mut world.resource_mut::<SceneMaxVars>(),
+                &format!("{name}.network.id"),
+                serde_json::json!(id),
+            );
         }
-        run_in(&mut world, "var matches=[]\nvar visited=0\nfor each model (m) do\nif (m.network.id > 0) {\nmatches.push(m)\n}\nwait 0.1 seconds\nvisited=visited+1\nend do\nvar chosen=matches[0]\nvar result=chosen.network.id\nvar complete=1");
-        while !world.resource::<DelayedActionQueue>().actions.is_empty() { resume_next(&mut world); }
+        run_in(
+            &mut world,
+            "var matches=[]\nvar visited=0\nfor each model (m) do\nif (m.network.id > 0) {\nmatches.push(m)\n}\nwait 0.1 seconds\nvisited=visited+1\nend do\nvar chosen=matches[0]\nvar result=chosen.network.id\nvar complete=1",
+        );
+        while !world.resource::<DelayedActionQueue>().actions.is_empty() {
+            resume_next(&mut world);
+        }
         let vars = world.resource::<SceneMaxVars>();
         assert_eq!(vars.0["visited"], 2.);
         assert_eq!(vars.0["result"], 17.);
         assert_eq!(vars.0["complete"], 1.);
         assert!(!vars.2.contains_key("m"));
-        assert_eq!(scenemax_runtime_vm_core::typed::lookup("matches.length", vars, None), Some(serde_json::json!(2)));
-        let empty = run("var visited=0\nfor each model (m) do\nvisited=visited+1\nend do\nvar complete=1");
+        assert_eq!(
+            scenemax_runtime_vm_core::typed::lookup("matches.length", vars, None),
+            Some(serde_json::json!(2))
+        );
+        let empty =
+            run("var visited=0\nfor each model (m) do\nvisited=visited+1\nend do\nvar complete=1");
         assert_eq!(empty.resource::<SceneMaxVars>().0["visited"], 0.);
         assert_eq!(empty.resource::<SceneMaxVars>().0["complete"], 1.);
     }
@@ -439,29 +721,40 @@ pub(crate) mod tests {
         world
     }
     pub(crate) fn run_in(world: &mut World, source: &str) {
-
         world.init_resource::<SceneMaxVars>();
         world.init_resource::<SceneMaxObjectPools>();
         world.init_resource::<SceneMaxRuntimeAssets>();
         world.init_resource::<SceneMaxColliderBounds>();
         world.init_resource::<DelayedActionQueue>();
-        world.insert_resource(Batch(scenemax_parser::parse_program(source).unwrap().statements));
+        world.insert_resource(Batch(
+            scenemax_parser::parse_program(source).unwrap().statements,
+        ));
         world.run_system_once(execute).unwrap();
     }
     pub(crate) fn resume_next(world: &mut World) {
         let pending = world.resource_mut::<DelayedActionQueue>().actions.remove(0);
-        let mut actions = world.resource::<Batch>().0.iter().filter(|s| matches!(s, Statement::FunctionDef(_))).cloned().collect::<Vec<_>>();
+        let mut actions = world
+            .resource::<Batch>()
+            .0
+            .iter()
+            .filter(|s| matches!(s, Statement::FunctionDef(_)))
+            .cloned()
+            .collect::<Vec<_>>();
         actions.extend(pending.actions);
         world.insert_resource(Batch(actions));
         world.remove_resource::<ResumeScope>();
-        if let Some(scope) = pending.scope { world.insert_resource(ResumeScope(scope)); }
+        if let Some(scope) = pending.scope {
+            world.insert_resource(ResumeScope(scope));
+        }
         world.run_system_once(execute).unwrap();
     }
     #[test]
     fn ui_references_survive_arrays_function_arguments_and_async_locals() {
         let mut world = World::new();
         world.init_resource::<SceneMaxUiActionQueue>();
-        run_in(&mut world, r#"
+        run_in(
+            &mut world,
+            r#"
 var widgets = [UI.hud.layer1.panel, UI.hud.layer1.panel.caption]
 var descriptions = ["First", "Second"]
 display(items, action) = {
@@ -472,37 +765,69 @@ display(items, action) = {
  panel.ease("EaseOutBounce", Right, 2) async
 }
 run display(widgets, 2) async
-"#);
+"#,
+        );
         resume_next(&mut world);
         let actions = &world.resource::<SceneMaxUiActionQueue>().actions;
         assert_eq!(actions.len(), 3, "{actions:?}");
-        assert!(matches!(&actions[0], SceneMaxUiAction::ShowHide { target, visible: true }
-            if target.ui_name.as_deref() == Some("hud") && target.widget_path == ["panel"]));
-        assert!(matches!(&actions[1], SceneMaxUiAction::SetProperty { target, property, value }
-            if target.widget_path == ["panel", "caption"] && property == "text" && value == "Second"));
-        assert!(matches!(&actions[2], SceneMaxUiAction::Ease { target, easing, direction: scenemax_parser::UiEaseDirection::Right, duration_seconds: 2., .. }
-            if target.widget_path == ["panel"] && easing == "EaseOutBounce"));
-        assert_eq!(world.resource::<SceneMaxVars>().2["widgets"].elements().unwrap()[0].ui_path().as_deref(), Some("UI.hud.layer1.panel"));
+        assert!(
+            matches!(&actions[0], SceneMaxUiAction::ShowHide { target, visible: true }
+            if target.ui_name.as_deref() == Some("hud") && target.widget_path == ["panel"])
+        );
+        assert!(
+            matches!(&actions[1], SceneMaxUiAction::SetProperty { target, property, value }
+            if target.widget_path == ["panel", "caption"] && property == "text" && value == "Second")
+        );
+        assert!(
+            matches!(&actions[2], SceneMaxUiAction::Ease { target, easing, direction: scenemax_parser::UiEaseDirection::Right, duration_seconds: 2., .. }
+            if target.widget_path == ["panel"] && easing == "EaseOutBounce")
+        );
+        assert_eq!(
+            world.resource::<SceneMaxVars>().2["widgets"]
+                .elements()
+                .unwrap()[0]
+                .ui_path()
+                .as_deref(),
+            Some("UI.hud.layer1.panel")
+        );
     }
 
     #[test]
     fn ui_aliases_support_global_visibility_and_properties_without_redirecting_labels() {
         let mut world = World::new();
         world.init_resource::<SceneMaxUiActionQueue>();
-        run_in(&mut world, r#"
+        run_in(
+            &mut world,
+            r#"
 var widget = UI.layer1.panel
 widget.Hide
 widget.fontSize = 24
-"#);
+"#,
+        );
         let actions = &world.resource::<SceneMaxUiActionQueue>().actions;
         assert_eq!(actions.len(), 2, "{actions:?}");
-        assert!(matches!(&actions[0], SceneMaxUiAction::ShowHide { visible: false, .. }));
-        assert!(matches!(&actions[1], SceneMaxUiAction::SetProperty { property, value, .. } if property == "fontSize" && value == "24"));
-        let ordinary = Statement::LabelText { target: "world_label".into(), value: scenemax_parser::parse_assignment_value("\"Unchanged\"").unwrap().unwrap() };
+        assert!(matches!(
+            &actions[0],
+            SceneMaxUiAction::ShowHide { visible: false, .. }
+        ));
+        assert!(
+            matches!(&actions[1], SceneMaxUiAction::SetProperty { property, value, .. } if property == "fontSize" && value == "24")
+        );
+        let ordinary = Statement::LabelText {
+            target: "world_label".into(),
+            value: scenemax_parser::parse_assignment_value("\"Unchanged\"")
+                .unwrap()
+                .unwrap(),
+        };
         assert!(resolve_ui_reference(&ordinary, world.resource::<SceneMaxVars>(), None).is_none());
-        run_in(&mut world, "var layer1 = UI.layer1.panel\nUI.layer1.ease(\"EaseOutBounce\", Left, 1) async");
-        assert!(matches!(world.resource::<SceneMaxUiActionQueue>().actions.last(), Some(SceneMaxUiAction::Ease { target, .. })
-            if target.layer == "layer1" && target.widget_path.is_empty()));
+        run_in(
+            &mut world,
+            "var layer1 = UI.layer1.panel\nUI.layer1.ease(\"EaseOutBounce\", Left, 1) async",
+        );
+        assert!(
+            matches!(world.resource::<SceneMaxUiActionQueue>().actions.last(), Some(SceneMaxUiAction::Ease { target, .. })
+            if target.layer == "layer1" && target.widget_path.is_empty())
+        );
     }
     #[test]
     fn for_loops_return_without_increment_or_running_the_tail() {
@@ -547,7 +872,9 @@ for (var k=0;k<0;k=k+1) {
 completed = completed + 1
 "#);
         for _ in 0..50 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         assert!(world.resource::<DelayedActionQueue>().actions.is_empty());
@@ -561,12 +888,23 @@ completed = completed + 1
         for nested_async in [false, true] {
             for guard_still_true in [false, true] {
                 let body = "before = 1\nwait 0.1 seconds\nafter = 1";
-                let body = if nested_async { format!("do async\n{body}\nend do") } else { body.into() };
-                let mut world = run(&format!("var can_go = 1\nvar before = 0\nvar after = 0\nvar finished = 0\n#[can_go == 1]\nhandler = {{\n{body}\n}}\nrun handler\nfinished = 1"));
-                if nested_async { resume_next(&mut world); }
+                let body = if nested_async {
+                    format!("do async\n{body}\nend do")
+                } else {
+                    body.into()
+                };
+                let mut world = run(&format!(
+                    "var can_go = 1\nvar before = 0\nvar after = 0\nvar finished = 0\n#[can_go == 1]\nhandler = {{\n{body}\n}}\nrun handler\nfinished = 1"
+                ));
+                if nested_async {
+                    resume_next(&mut world);
+                }
                 assert_eq!(world.resource::<SceneMaxVars>().0["before"], 1.);
                 assert_eq!(world.resource::<SceneMaxVars>().0["after"], 0.);
-                world.resource_mut::<SceneMaxVars>().0.insert("can_go".into(), if guard_still_true { 1. } else { 0. });
+                world
+                    .resource_mut::<SceneMaxVars>()
+                    .0
+                    .insert("can_go".into(), if guard_still_true { 1. } else { 0. });
                 resume_next(&mut world);
                 let vars = world.resource::<SceneMaxVars>();
                 assert_eq!(vars.0["after"], if guard_still_true { 1. } else { 0. });
@@ -596,7 +934,10 @@ var chosen = next(12)[1]
         assert_eq!(vars.0["calls"], 3.);
         assert_eq!(vars.0["chosen"], 3.);
         assert_eq!(vars.1["label"], serde_json::json!("outer"));
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["result"], &serde_json::json!([[4,1,"inner"],[8,2,"inner"]])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["result"],
+            &serde_json::json!([[4, 1, "inner"], [8, 2, "inner"]])
+        ));
         assert!(!vars.1.contains_key("first"));
     }
     #[test]
@@ -652,9 +993,12 @@ var result = create_value()
 "#);
         assert_eq!(world.resource::<SceneMaxVars>().0["result"], 7.);
         assert_eq!(world.resource::<SceneMaxVars>().0["changed"], 1.);
-        let found = world.query::<(&SceneMaxEntity, &Transform)>().iter(&world)
-            .next().map(|(_, transform)| transform.translation);
-        assert_eq!(found, Some(Vec3::new(1.,2.,3.)));
+        let found = world
+            .query::<(&SceneMaxEntity, &Transform)>()
+            .iter(&world)
+            .next()
+            .map(|(_, transform)| transform.translation);
+        assert_eq!(found, Some(Vec3::new(1., 2., 3.)));
     }
     #[test]
     fn synchronous_loops_recheck_value_calls_after_each_body() {
@@ -692,8 +1036,10 @@ while keep_going() == true
         let queue = world.resource::<DelayedActionQueue>();
         assert_eq!(queue.actions.len(), 1);
         assert!(matches!(&queue.actions[0].actions[0], Statement::EndScope));
-        assert!(matches!(&queue.actions[0].actions[1], Statement::DoWhile { condition, .. }
-            if condition_contains(condition)));
+        assert!(
+            matches!(&queue.actions[0].actions[1], Statement::DoWhile { condition, .. }
+            if condition_contains(condition))
+        );
         resume_next(&mut world);
         assert_eq!(world.resource::<SceneMaxVars>().0["count"], 2.);
         assert!(world.resource::<DelayedActionQueue>().actions.is_empty());
@@ -788,7 +1134,10 @@ grid[row()][column()] = rhs()
 "#);
         let vars = world.resource::<SceneMaxVars>();
         assert_eq!(vars.1["trace"], serde_json::json!("RAB"));
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["grid"], &serde_json::json!([[0,0],[9,0]])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["grid"],
+            &serde_json::json!([[0, 0], [9, 0]])
+        ));
     }
     #[test]
     fn position_operands_freeze_reads_before_and_after_an_effectful_call() {
@@ -809,12 +1158,22 @@ var done = place()
 "#);
         assert_eq!(world.resource::<SceneMaxVars>().0["done"], 1.);
         assert_eq!(world.resource::<SceneMaxVars>().0["coordinate"], 2.);
-        let position = world.query::<(&SceneMaxEntity, &Transform)>().iter(&world)
-            .next().map(|(_, transform)| transform.translation);
-        assert_eq!(position, Some(Vec3::new(1.,2.,2.)));
-        let (_, transform, visibility) = world.query::<(&SceneMaxEntity, &Transform, &Visibility)>().iter(&world)
-            .next().unwrap();
-        assert!(transform.rotation.abs_diff_eq(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2), 0.0001));
+        let position = world
+            .query::<(&SceneMaxEntity, &Transform)>()
+            .iter(&world)
+            .next()
+            .map(|(_, transform)| transform.translation);
+        assert_eq!(position, Some(Vec3::new(1., 2., 2.)));
+        let (_, transform, visibility) = world
+            .query::<(&SceneMaxEntity, &Transform, &Visibility)>()
+            .iter(&world)
+            .next()
+            .unwrap();
+        assert!(
+            transform
+                .rotation
+                .abs_diff_eq(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2), 0.0001)
+        );
         assert_eq!(*visibility, Visibility::Hidden);
     }
 
@@ -845,22 +1204,43 @@ subject.ik.contact.play: weight weight(), blend blend()
     }
     #[test]
     fn movement_operands_resolve_calls_in_source_order() {
-        let mut action = scenemax_parser::parse_program("subject.move forward amount() in duration() seconds async").unwrap().statements.remove(0);
+        let mut action = scenemax_parser::parse_program(
+            "subject.move forward amount() in duration() seconds async",
+        )
+        .unwrap()
+        .statements
+        .remove(0);
         let mut called = Vec::new();
         map(&mut action, &mut |value| {
             let resolved = evaluate(value, &mut |request| match request {
                 Request::Acquire(_) => panic!("unexpected pool acquisition"),
-                Request::Call(name, args) => { assert!(args.is_empty()); called.push(name); Some(Reference::new(serde_json::json!(called.len()))) }
-                Request::Leaf(value) => scenemax_runtime_vm_core::references::evaluate(&value, &SceneMaxVars::default(), None,
-                    &HashMap::new(), &scenemax_runtime_vm_core::NoSceneMaxVmSpatial),
+                Request::Call(name, args) => {
+                    assert!(args.is_empty());
+                    called.push(name);
+                    Some(Reference::new(serde_json::json!(called.len())))
+                }
+                Request::Leaf(value) => scenemax_runtime_vm_core::references::evaluate(
+                    &value,
+                    &SceneMaxVars::default(),
+                    None,
+                    &HashMap::new(),
+                    &scenemax_runtime_vm_core::NoSceneMaxVmSpatial,
+                ),
             })?;
             *value = AssignmentValue::RuntimeValue(resolved);
             Some(())
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(called, ["amount", "duration"]);
-        let Statement::Move(movement) = action else { panic!() };
-        assert!(matches!(movement.distance_value, AssignmentValue::RuntimeValue(v) if v.snapshot() == Some(serde_json::json!(1))));
-        assert!(matches!(movement.duration_value, AssignmentValue::RuntimeValue(v) if v.snapshot() == Some(serde_json::json!(2))));
+        let Statement::Move(movement) = action else {
+            panic!()
+        };
+        assert!(
+            matches!(movement.distance_value, AssignmentValue::RuntimeValue(v) if v.snapshot() == Some(serde_json::json!(1)))
+        );
+        assert!(
+            matches!(movement.duration_value, AssignmentValue::RuntimeValue(v) if v.snapshot() == Some(serde_json::json!(2)))
+        );
     }
     #[test]
     fn local_array_alias_with_call_operand_mutates_shared_collection() {
@@ -878,7 +1258,10 @@ var count = edit()
 "#);
         let vars = world.resource::<SceneMaxVars>();
         assert_eq!(vars.0["count"], 2.);
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["values"], &serde_json::json!([1,2])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["values"],
+            &serde_json::json!([1, 2])
+        ));
         assert!(!vars.1.contains_key("alias"));
     }
     #[test]
@@ -900,9 +1283,19 @@ child[0] = 7
 "#);
         let vars = world.resource::<SceneMaxVars>();
         for name in ["original", "returned", "child"] {
-            assert!(scenemax_runtime_vm_core::typed::equal(&vars.1[name], &serde_json::json!([7,2,3])), "{name}: {:?}", vars.1[name]);
+            assert!(
+                scenemax_runtime_vm_core::typed::equal(
+                    &vars.1[name],
+                    &serde_json::json!([7, 2, 3])
+                ),
+                "{name}: {:?}",
+                vars.1[name]
+            );
         }
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["parent"], &serde_json::json!([[7,2,3],[7,2,3]])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["parent"],
+            &serde_json::json!([[7, 2, 3], [7, 2, 3]])
+        ));
     }
     #[test]
     fn rebinding_an_array_parameter_detaches_only_that_parameter() {
@@ -917,8 +1310,14 @@ var returned = replace(original)
 returned.push(10)
 "#);
         let vars = world.resource::<SceneMaxVars>();
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["original"], &serde_json::json!([1,2])));
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["returned"], &serde_json::json!([9,10])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["original"],
+            &serde_json::json!([1, 2])
+        ));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["returned"],
+            &serde_json::json!([9, 10])
+        ));
         assert!(!vars.1.contains_key("items"));
     }
     #[test]
@@ -935,10 +1334,19 @@ make() = {
 var fresh = make()
 "#);
         let vars = world.resource::<SceneMaxVars>();
-        let saved = scenemax_runtime_vm_core::references::lookup("saved", vars, None).unwrap().entity_identity().unwrap();
-        let fresh = scenemax_runtime_vm_core::references::lookup("fresh", vars, None).unwrap().entity_identity().unwrap();
+        let saved = scenemax_runtime_vm_core::references::lookup("saved", vars, None)
+            .unwrap()
+            .entity_identity()
+            .unwrap();
+        let fresh = scenemax_runtime_vm_core::references::lookup("fresh", vars, None)
+            .unwrap()
+            .entity_identity()
+            .unwrap();
         assert_ne!(saved, fresh);
-        let current = world.query::<(&SceneMaxEntity, &Visibility)>().iter(&world).collect::<Vec<_>>();
+        let current = world
+            .query::<(&SceneMaxEntity, &Visibility)>()
+            .iter(&world)
+            .collect::<Vec<_>>();
         assert_eq!(current.len(), 1);
         assert_eq!(current[0].0.name, fresh.runtime_name);
         assert_eq!(*current[0].1, Visibility::Inherited);
@@ -971,7 +1379,9 @@ var extra = items.acquire
 var after_growth = calls
 "#);
         for _ in 0..12 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
@@ -1045,7 +1455,9 @@ var old_extra = get(alias)
 var count = creates
 "#);
         for _ in 0..12 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
@@ -1073,9 +1485,22 @@ make() = {
 shared items => Object.Pool(make, size 0)
 shared var holder = [items]
 "#);
-        assert!(world.resource::<SceneMaxObjectPools>().shared_variables.contains("items"));
-        assert!(crate::shared_entities::pool_names(world.resource::<SceneMaxVars>(), world.resource::<SceneMaxObjectPools>()).contains("items"));
-        run_in(&mut world, r#"
+        assert!(
+            world
+                .resource::<SceneMaxObjectPools>()
+                .shared_variables
+                .contains("items")
+        );
+        assert!(
+            crate::shared_entities::pool_names(
+                world.resource::<SceneMaxVars>(),
+                world.resource::<SceneMaxObjectPools>()
+            )
+            .contains("items")
+        );
+        run_in(
+            &mut world,
+            r#"
 location() = {
  return 99
 }
@@ -1088,9 +1513,12 @@ shared items => Object.Pool(make, size 99)
 var alias = holder[0]
 var created = alias.acquire
 var position = created.x
-"#);
+"#,
+        );
         for _ in 0..4 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         assert_eq!(world.resource::<SceneMaxVars>().0["position"], 99.);
@@ -1146,13 +1574,20 @@ var old_is_pool = saved != 0
 var old_is_not_entity = saved != first
 "#);
         for _ in 0..12 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
-        for key in ["same", "distinct", "old_is_pool", "old_is_not_entity"] { assert_eq!(vars.0[key], 1., "{key}"); }
+        for key in ["same", "distinct", "old_is_pool", "old_is_not_entity"] {
+            assert_eq!(vars.0[key], 1., "{key}");
+        }
         assert!(!vars.1.contains_key("invalid"));
-        assert_ne!(vars.2["items"].pool_identity(), vars.2["saved"].pool_identity());
+        assert_ne!(
+            vars.2["items"].pool_identity(),
+            vars.2["saved"].pool_identity()
+        );
         assert_eq!(world.query::<&SceneMaxEntity>().iter(&world).count(), 2);
     }
 
@@ -1177,16 +1612,28 @@ retained => sphere: pos (sample(99),0,0), scale sample(99)
 var positions = [first.x, first.y, first.z, second.x, retained.x]
 "#);
         for _ in 0..8 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
         assert_eq!(vars.0["calls"], 9.);
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["order"], &serde_json::json!([2,3,4,5,6,7,8,9,10])));
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["positions"], &serde_json::json!([2,3,4,6,10])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["order"],
+            &serde_json::json!([2, 3, 4, 5, 6, 7, 8, 9, 10])
+        ));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["positions"],
+            &serde_json::json!([2, 3, 4, 6, 10])
+        ));
         let first = vars.2["first"].entity_identity().unwrap().runtime_name;
         let second = vars.2["second"].entity_identity().unwrap().runtime_name;
-        let transforms = world.query::<(&SceneMaxEntity, &Transform)>().iter(&world).map(|(e,t)| (e.name.clone(),t.scale)).collect::<HashMap<_,_>>();
+        let transforms = world
+            .query::<(&SceneMaxEntity, &Transform)>()
+            .iter(&world)
+            .map(|(e, t)| (e.name.clone(), t.scale))
+            .collect::<HashMap<_, _>>();
         assert_eq!(transforms[&first], Vec3::splat(5.));
         assert_eq!(transforms[&second], Vec3::splat(9.));
     }
@@ -1213,21 +1660,41 @@ var reused = copies.acquire
 var same = reused == first
 "#);
         for _ in 0..12 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
-        assert_eq!(vars.0["calls"],2.); // Source copies omit primitive dimensions.
-        assert_eq!(vars.0["same"],1.);
+        assert_eq!(vars.0["calls"], 2.); // Source copies omit primitive dimensions.
+        assert_eq!(vars.0["same"], 1.);
         let first = vars.2["first"].entity_identity().unwrap().runtime_name;
         let second = vars.2["second"].entity_identity().unwrap().runtime_name;
         let bounds = world.resource::<SceneMaxColliderBounds>();
-        assert!(matches!(bounds.shape_by_name["prototype"], ColliderBoundShape::Box { half_extents } if half_extents == Vec3::new(1.5,1.,0.5)));
-        assert!(matches!(bounds.shape_by_name["sensor"], ColliderBoundShape::Sphere { radius } if radius == 3.));
-        assert!(matches!(bounds.shape_by_name[&first], ColliderBoundShape::Box { half_extents } if half_extents == Vec3::splat(0.5)));
-        let transforms = world.query::<(&SceneMaxEntity,&Transform)>().iter(&world).map(|(s,t)| (s.name.clone(),*t)).collect::<HashMap<_,_>>();
-        assert!(transforms[&first].rotation.abs_diff_eq(Quat::from_rotation_y(30f32.to_radians()),1e-5));
-        assert!(transforms[&second].rotation.abs_diff_eq(Quat::from_rotation_y(60f32.to_radians()),1e-5));
+        assert!(
+            matches!(bounds.shape_by_name["prototype"], ColliderBoundShape::Box { half_extents } if half_extents == Vec3::new(1.5,1.,0.5))
+        );
+        assert!(
+            matches!(bounds.shape_by_name["sensor"], ColliderBoundShape::Sphere { radius } if radius == 3.)
+        );
+        assert!(
+            matches!(bounds.shape_by_name[&first], ColliderBoundShape::Box { half_extents } if half_extents == Vec3::splat(0.5))
+        );
+        let transforms = world
+            .query::<(&SceneMaxEntity, &Transform)>()
+            .iter(&world)
+            .map(|(s, t)| (s.name.clone(), *t))
+            .collect::<HashMap<_, _>>();
+        assert!(
+            transforms[&first]
+                .rotation
+                .abs_diff_eq(Quat::from_rotation_y(30f32.to_radians()), 1e-5)
+        );
+        assert!(
+            transforms[&second]
+                .rotation
+                .abs_diff_eq(Quat::from_rotation_y(60f32.to_radians()), 1e-5)
+        );
     }
 
     #[test]
@@ -1249,18 +1716,40 @@ var same = reused == first
 var reused_x = reused.x
 "#);
         for _ in 0..12 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
-        for (name, expected) in [("first_x",4.),("second_x",7.),("same",1.),("reused_x",12.)] { assert_eq!(vars.0[name], expected, "{name}"); }
+        for (name, expected) in [
+            ("first_x", 4.),
+            ("second_x", 7.),
+            ("same", 1.),
+            ("reused_x", 12.),
+        ] {
+            assert_eq!(vars.0[name], expected, "{name}");
+        }
         let pools = world.resource::<SceneMaxObjectPools>();
         let pool = &pools.pools["items"];
         let (_, options) = pool.source_template.as_ref().unwrap();
         assert!(!options.shared && !options.multiplayer);
-        assert!(pool.members.iter().all(|name| !pools.shared_entities.contains(name)));
+        assert!(
+            pool.members
+                .iter()
+                .all(|name| !pools.shared_entities.contains(name))
+        );
         let name = vars.2["first"].entity_identity().unwrap().runtime_name;
-        assert_eq!(world.query::<(&SceneMaxEntity, &Transform)>().iter(&world).find(|(e,_)| e.name == name).unwrap().1.scale, Vec3::splat(2.));
+        assert_eq!(
+            world
+                .query::<(&SceneMaxEntity, &Transform)>()
+                .iter(&world)
+                .find(|(e, _)| e.name == name)
+                .unwrap()
+                .1
+                .scale,
+            Vec3::splat(2.)
+        );
     }
 
     #[test]
@@ -1275,13 +1764,24 @@ var new_member = new_pool.acquire
 var positions = [old_member.x, new_member.x]
 "#);
         for _ in 0..8 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
-        assert!(scenemax_runtime_vm_core::typed::equal(&world.resource::<SceneMaxVars>().1["positions"], &serde_json::json!([4,99])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &world.resource::<SceneMaxVars>().1["positions"],
+            &serde_json::json!([4, 99])
+        ));
         let pools = world.resource::<SceneMaxObjectPools>();
-        assert_eq!(pools.pools["old_pool"].source_template.as_ref().unwrap().0, "box");
-        assert_eq!(pools.pools["new_pool"].source_template.as_ref().unwrap().0, "sphere");
+        assert_eq!(
+            pools.pools["old_pool"].source_template.as_ref().unwrap().0,
+            "box"
+        );
+        assert_eq!(
+            pools.pools["new_pool"].source_template.as_ref().unwrap().0,
+            "sphere"
+        );
     }
 
     #[test]
@@ -1299,7 +1799,9 @@ var member = pool.acquire
 var position = member.x
 "#);
         for _ in 0..6 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         assert_eq!(world.resource::<SceneMaxVars>().0["position"], 8.);
@@ -1308,21 +1810,35 @@ var position = member.x
 
     #[test]
     fn pool_fill_growth_and_fifo_reuse_cross_256_members() {
-        let mut world = run("make() = {\nsubject => box\nreturn subject\n}\nitems => Object.Pool(make, size 257)");
-        let original = world.resource::<SceneMaxObjectPools>().pools["items"].available.clone();
+        let mut world = run(
+            "make() = {\nsubject => box\nreturn subject\n}\nitems => Object.Pool(make, size 257)",
+        );
+        let original = world.resource::<SceneMaxObjectPools>().pools["items"]
+            .available
+            .clone();
         assert_eq!(original.len(), 257);
         let mut source = String::from("make() = {\nsubject => box\nreturn subject\n}\n");
-        for index in 0..258 { source.push_str(&format!("var member_{index} = items.acquire\n")); }
+        for index in 0..258 {
+            source.push_str(&format!("var member_{index} = items.acquire\n"));
+        }
         source.push_str("items.release member_0\nitems.release member_256\nvar reused_first = items.acquire\nvar reused_last = items.acquire\n");
         run_in(&mut world, &source);
         for _ in 0..270 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         assert!(world.resource::<DelayedActionQueue>().actions.is_empty());
         let vars = world.resource::<SceneMaxVars>();
         for (index, name) in original.iter().enumerate() {
-            assert_eq!(&vars.2[&format!("member_{index}")].entity_identity().unwrap().runtime_name, name);
+            assert_eq!(
+                &vars.2[&format!("member_{index}")]
+                    .entity_identity()
+                    .unwrap()
+                    .runtime_name,
+                name
+            );
         }
         assert_eq!(vars.2["reused_first"], vars.2["member_0"]);
         assert_eq!(vars.2["reused_last"], vars.2["member_256"]);
@@ -1364,7 +1880,11 @@ flag => Object.Pool(make, size true)
         assert_eq!(vars.0["creates"], 3.);
         assert_eq!(world.query::<&SceneMaxEntity>().iter(&world).count(), 3);
         for name in ["empty", "text", "flag"] {
-            assert!(world.resource::<SceneMaxObjectPools>().pools[name].members.is_empty());
+            assert!(
+                world.resource::<SceneMaxObjectPools>().pools[name]
+                    .members
+                    .is_empty()
+            );
         }
     }
 
@@ -1394,34 +1914,66 @@ var skipped_again = true or items.acquire == first
 var final_calls = calls
 "#);
         for _ in 0..8 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
         assert_eq!(vars.0["final_calls"], 3.);
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["positions"], &serde_json::json!([1,2,3])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["positions"],
+            &serde_json::json!([1, 2, 3])
+        ));
         assert_ne!(vars.2["first"], vars.2["second"]);
         assert_ne!(vars.2["second"], vars.2["third"]);
-        assert_eq!(world.resource::<SceneMaxObjectPools>().pools["items"].in_use.len(), 3);
+        assert_eq!(
+            world.resource::<SceneMaxObjectPools>().pools["items"]
+                .in_use
+                .len(),
+            3
+        );
         assert_eq!(world.query::<&SceneMaxEntity>().iter(&world).count(), 3);
     }
 
     #[test]
     fn pool_growth_retains_declaration_bindings_after_owner_returns() {
-        let factory = "make() = {\nsubject => box\nsubject.pos = (captured,0,0)\nreturn subject\n}\n";
-        let mut world = run(&format!("{factory}owner() = {{\nvar captured = 7\nitems => Object.Pool(make, size 0)\ncaptured = 9\nreturn 0\n}}\nvar complete = owner()"));
+        let factory =
+            "make() = {\nsubject => box\nsubject.pos = (captured,0,0)\nreturn subject\n}\n";
+        let mut world = run(&format!(
+            "{factory}owner() = {{\nvar captured = 7\nitems => Object.Pool(make, size 0)\ncaptured = 9\nreturn 0\n}}\nvar complete = owner()"
+        ));
         // Address the retained runtime pool directly to isolate its captured scope
         // from pool-variable/parameter transport, which is a separate feature.
-        let pool = world.resource::<SceneMaxObjectPools>().pools.keys().next().unwrap().clone();
+        let pool = world
+            .resource::<SceneMaxObjectPools>()
+            .pools
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
         {
             let mut pools = world.resource_mut::<SceneMaxObjectPools>();
-            let captured = pools.pools.get_mut(&pool).unwrap().factory_scope.as_mut().unwrap();
+            let captured = pools
+                .pools
+                .get_mut(&pool)
+                .unwrap()
+                .factory_scope
+                .as_mut()
+                .unwrap();
             captured.value_call_depth = 16;
             captured.value_call_steps = 2048;
         }
-        run_in(&mut world, &format!("{factory}var captured = 100\nvar result = {pool}.acquire\nvar location = result.x"));
+        run_in(
+            &mut world,
+            &format!(
+                "{factory}var captured = 100\nvar result = {pool}.acquire\nvar location = result.x"
+            ),
+        );
         for _ in 0..4 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         assert_eq!(world.resource::<SceneMaxVars>().0["location"], 9.);
@@ -1431,10 +1983,16 @@ var final_calls = calls
     #[test]
     fn pool_factories_reject_non_entities_and_bound_recursive_acquisition() {
         for body in ["return 7", "var nested = items.acquire\nreturn nested"] {
-            let mut world = run(&format!("var calls = 0\nmake() = {{\ncalls = calls + 1\n{body}\n}}\nitems => Object.Pool(make, size 0)\nvar result = items.acquire"));
+            let mut world = run(&format!(
+                "var calls = 0\nmake() = {{\ncalls = calls + 1\n{body}\n}}\nitems => Object.Pool(make, size 0)\nvar result = items.acquire"
+            ));
             let calls = world.resource::<SceneMaxVars>().0["calls"];
             assert!(calls >= 1. && calls <= 16., "calls={calls}");
-            assert!(world.resource::<SceneMaxObjectPools>().pools["items"].members.is_empty());
+            assert!(
+                world.resource::<SceneMaxObjectPools>().pools["items"]
+                    .members
+                    .is_empty()
+            );
             assert_eq!(world.query::<&SceneMaxEntity>().iter(&world).count(), 0);
         }
     }
@@ -1442,194 +2000,482 @@ var final_calls = calls
     #[test]
     fn character_timed_and_held_movement_feed_physics_without_transform_bypass() {
         let mut world = run("subject => box");
-        let entity = world.query::<(Entity, &SceneMaxEntity)>().iter(&world).find(|(_,e)| e.name == "subject").unwrap().0;
-        world.entity_mut(entity).insert((SceneMaxCharacterController {
-            move_speed: 7., gravity: 60., capsule_radius: 0.5, capsule_height: 1., capsule_center_y: 1., float_height: 0.1,
-        }, SceneMaxCharacterMotor::default(), TnuaConfig::<SceneMaxControlScheme>(Handle::default()), TnuaController::<SceneMaxControlScheme>::default()));
+        let entity = world
+            .query::<(Entity, &SceneMaxEntity)>()
+            .iter(&world)
+            .find(|(_, e)| e.name == "subject")
+            .unwrap()
+            .0;
+        world.entity_mut(entity).insert((
+            SceneMaxCharacterController {
+                move_speed: 7.,
+                gravity: 60.,
+                capsule_radius: 0.5,
+                capsule_height: 1.,
+                capsule_center_y: 1.,
+                float_height: 0.1,
+            },
+            SceneMaxCharacterMotor::default(),
+            TnuaConfig::<SceneMaxControlScheme>(Handle::default()),
+            TnuaController::<SceneMaxControlScheme>::default(),
+        ));
         run_in(&mut world, "subject.move forward 4 for 2 seconds async");
         assert!(world.get::<TimedMoves>(entity).is_none());
-        assert_eq!(world.get::<Transform>(entity).unwrap().translation, Vec3::ZERO);
-        assert!((world.get::<SceneMaxCharacterMotor>(entity).unwrap().timed_motion.length() - 2./7.).abs() < 0.0001);
+        assert_eq!(
+            world.get::<Transform>(entity).unwrap().translation,
+            Vec3::ZERO
+        );
+        assert!(
+            (world
+                .get::<SceneMaxCharacterMotor>(entity)
+                .unwrap()
+                .timed_motion
+                .length()
+                - 2. / 7.)
+                .abs()
+                < 0.0001
+        );
         world.insert_resource(ContinuousDelta(0.1));
         run_in(&mut world, "subject.move right 0.1");
         world.remove_resource::<ContinuousDelta>();
-        assert_eq!(world.get::<Transform>(entity).unwrap().translation, Vec3::ZERO);
+        assert_eq!(
+            world.get::<Transform>(entity).unwrap().translation,
+            Vec3::ZERO
+        );
         assert!(world.get::<TimedMoves>(entity).is_none());
         run_in(&mut world, "subject.character.jump at speed of 20 async");
         assert!(world.get::<TimedJump>(entity).is_none());
-        assert!(world.get::<SceneMaxCharacterMotor>(entity).unwrap().pending_jump_speed.is_some());
+        assert!(
+            world
+                .get::<SceneMaxCharacterMotor>(entity)
+                .unwrap()
+                .pending_jump_speed
+                .is_some()
+        );
         world.init_resource::<Assets<SceneMaxControlSchemeConfig>>();
         world.init_resource::<SceneMaxStartupProgram>();
         let mut time = Time::<()>::default();
         time.advance_by(std::time::Duration::from_secs_f32(0.05));
         world.insert_resource(time);
-        world.run_system_once(feed_tnua_character_controllers).unwrap();
-        let motion = world.get::<TnuaController<SceneMaxControlScheme>>(entity).unwrap().basis.desired_motion;
-        assert!(motion.abs_diff_eq(Vec3::new(-1./7., 0., 2./7.), 0.0001), "{motion:?}");
-        world.resource_mut::<Time>().advance_by(std::time::Duration::from_secs(3));
-        world.run_system_once(feed_tnua_character_controllers).unwrap();
-        world.run_system_once(feed_tnua_character_controllers).unwrap();
-        assert_eq!(world.get::<TnuaController<SceneMaxControlScheme>>(entity).unwrap().basis.desired_motion, Vec3::ZERO);
+        world
+            .run_system_once(feed_tnua_character_controllers)
+            .unwrap();
+        let motion = world
+            .get::<TnuaController<SceneMaxControlScheme>>(entity)
+            .unwrap()
+            .basis
+            .desired_motion;
+        assert!(
+            motion.abs_diff_eq(Vec3::new(-1. / 7., 0., 2. / 7.), 0.0001),
+            "{motion:?}"
+        );
+        world
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_secs(3));
+        world
+            .run_system_once(feed_tnua_character_controllers)
+            .unwrap();
+        world
+            .run_system_once(feed_tnua_character_controllers)
+            .unwrap();
+        assert_eq!(
+            world
+                .get::<TnuaController<SceneMaxControlScheme>>(entity)
+                .unwrap()
+                .basis
+                .desired_motion,
+            Vec3::ZERO
+        );
         assert!(world.get::<bevy_tnua::TnuaMotor>(entity).is_some());
         run_in(&mut world, "subject.clear character mode");
         assert!(world.get::<bevy_tnua::TnuaMotor>(entity).is_none());
-        assert!(world.get::<bevy_tnua::TnuaRigidBodyTracker>(entity).is_none());
+        assert!(
+            world
+                .get::<bevy_tnua::TnuaRigidBodyTracker>(entity)
+                .is_none()
+        );
         assert!(world.get::<SceneMaxCharacterMotor>(entity).is_none());
         assert_eq!(world.get::<LinearVelocity>(entity).unwrap().0, Vec3::ZERO);
     }
 
     #[test]
     fn concurrent_rotation_commands_advance_and_finish_independently() {
-        let mut world = run("subject => box\nsubject.rotate(x+90) in 1 seconds async\nsubject.rotate(z+120) in 2 seconds async");
-        while !world.resource::<DelayedActionQueue>().actions.is_empty() { resume_next(&mut world); }
-        let entity = world.query::<(Entity, &SceneMaxEntity)>().iter(&world).find(|(_,e)| e.name == "subject").unwrap().0;
+        let mut world = run(
+            "subject => box\nsubject.rotate(x+90) in 1 seconds async\nsubject.rotate(z+120) in 2 seconds async",
+        );
+        while !world.resource::<DelayedActionQueue>().actions.is_empty() {
+            resume_next(&mut world);
+        }
+        let entity = world
+            .query::<(Entity, &SceneMaxEntity)>()
+            .iter(&world)
+            .find(|(_, e)| e.name == "subject")
+            .unwrap()
+            .0;
         assert_eq!(world.get::<TimedTurns>(entity).unwrap().turns.len(), 2);
         world.init_resource::<SceneMaxStartupProgram>();
         let mut time = Time::<()>::default();
         time.advance_by(std::time::Duration::from_secs(1));
         world.insert_resource(time);
         world.run_system_once(update_timed_turns).unwrap();
-        let first = Quat::from_rotation_x(90_f32.to_radians()) * Quat::from_rotation_z(60_f32.to_radians());
-        assert!(world.get::<Transform>(entity).unwrap().rotation.abs_diff_eq(first, 0.0001));
+        let first =
+            Quat::from_rotation_x(90_f32.to_radians()) * Quat::from_rotation_z(60_f32.to_radians());
+        assert!(
+            world
+                .get::<Transform>(entity)
+                .unwrap()
+                .rotation
+                .abs_diff_eq(first, 0.0001)
+        );
         assert_eq!(world.get::<TimedTurns>(entity).unwrap().turns.len(), 1);
         world.run_system_once(update_timed_turns).unwrap();
-        let final_rotation = Quat::from_rotation_x(90_f32.to_radians()) * Quat::from_rotation_z(120_f32.to_radians());
-        assert!(world.get::<Transform>(entity).unwrap().rotation.abs_diff_eq(final_rotation, 0.0001));
+        let final_rotation = Quat::from_rotation_x(90_f32.to_radians())
+            * Quat::from_rotation_z(120_f32.to_radians());
+        assert!(
+            world
+                .get::<Transform>(entity)
+                .unwrap()
+                .rotation
+                .abs_diff_eq(final_rotation, 0.0001)
+        );
         assert!(world.get::<TimedTurns>(entity).is_none());
     }
 
     #[test]
     fn returned_controller_aliases_keep_independent_targets_and_stop_the_selected_run() {
         let mut world = run("first => box\nsecond => box");
-        while !world.resource::<DelayedActionQueue>().actions.is_empty() { resume_next(&mut world); }
-        for name in ["first", "second"] {
-            world.resource_mut::<SceneMaxRuntimeAssets>().gltf_handles_by_name.insert(name.into(), Handle::default());
+        while !world.resource::<DelayedActionQueue>().actions.is_empty() {
+            resume_next(&mut world);
         }
-        run_in(&mut world, "make(subject) = {\ncontrol = animation subject.take\nreturn control\n}\nvar a = make(first)\nvar b = make(second)\nvar copy = a\nvar stored = [a,b]\nvar restored = stored[0]\nvar same = restored == copy\nvar different = a != b");
+        for name in ["first", "second"] {
+            world
+                .resource_mut::<SceneMaxRuntimeAssets>()
+                .gltf_handles_by_name
+                .insert(name.into(), Handle::default());
+        }
+        run_in(
+            &mut world,
+            "make(subject) = {\ncontrol = animation subject.take\nreturn control\n}\nvar a = make(first)\nvar b = make(second)\nvar copy = a\nvar stored = [a,b]\nvar restored = stored[0]\nvar same = restored == copy\nvar different = a != b",
+        );
         assert_eq!(world.resource::<SceneMaxVars>().0["same"], 1.);
         assert_eq!(world.resource::<SceneMaxVars>().0["different"], 1.);
-        let a = world.resource::<SceneMaxVars>().2["a"].controller_identity().unwrap().runtime_name;
-        let b = world.resource::<SceneMaxVars>().2["b"].controller_identity().unwrap().runtime_name;
-        assert_ne!(a,b);
-        run_in(&mut world, "copy.event(take,50) = {\nvar reached = 1\n}\ncopy.run");
+        let a = world.resource::<SceneMaxVars>().2["a"]
+            .controller_identity()
+            .unwrap()
+            .runtime_name;
+        let b = world.resource::<SceneMaxVars>().2["b"]
+            .controller_identity()
+            .unwrap()
+            .runtime_name;
+        assert_ne!(a, b);
+        run_in(
+            &mut world,
+            "copy.event(take,50) = {\nvar reached = 1\n}\ncopy.run",
+        );
         let assets = world.resource::<SceneMaxRuntimeAssets>();
-        assert_eq!(assets.animation_controllers_by_name[&a].events.len(),1, "batch={:?} copy={:?}", world.resource::<Batch>().0, world.resource::<SceneMaxVars>().2.get("copy"));
+        assert_eq!(
+            assets.animation_controllers_by_name[&a].events.len(),
+            1,
+            "batch={:?} copy={:?}",
+            world.resource::<Batch>().0,
+            world.resource::<SceneMaxVars>().2.get("copy")
+        );
         assert!(assets.animation_controllers_by_name[&b].events.is_empty());
-        let first_run = assets.animation_controllers_by_name[&a].source.as_ref().unwrap().0;
-        assert_eq!(world.get::<SceneMaxEntity>(first_run).unwrap().name,"first");
+        let first_run = assets.animation_controllers_by_name[&a]
+            .source
+            .as_ref()
+            .unwrap()
+            .0;
+        assert_eq!(
+            world.get::<SceneMaxEntity>(first_run).unwrap().name,
+            "first"
+        );
         run_in(&mut world, "b.run");
-        let second_run = world.resource::<SceneMaxRuntimeAssets>().animation_controllers_by_name[&b].source.as_ref().unwrap().0;
-        assert_eq!(world.get::<SceneMaxEntity>(second_run).unwrap().name,"second");
-        run_in(&mut world, "stop_selected(value) = {\nvalue.stop\n}\nrun stop_selected(restored)");
+        let second_run = world
+            .resource::<SceneMaxRuntimeAssets>()
+            .animation_controllers_by_name[&b]
+            .source
+            .as_ref()
+            .unwrap()
+            .0;
+        assert_eq!(
+            world.get::<SceneMaxEntity>(second_run).unwrap().name,
+            "second"
+        );
+        run_in(
+            &mut world,
+            "stop_selected(value) = {\nvalue.stop\n}\nrun stop_selected(restored)",
+        );
         let assets = world.resource::<SceneMaxRuntimeAssets>();
         assert!(!assets.animation_controllers_by_name[&a].running);
         assert!(assets.animation_controllers_by_name[&b].running);
-        assert!(assets.pending_animation_controller_stops.iter().any(|(entity,_)| *entity == first_run));
+        assert!(
+            assets
+                .pending_animation_controller_stops
+                .iter()
+                .any(|(entity, _)| *entity == first_run)
+        );
         run_in(&mut world, "var copy = 0\ncopy.stop");
-        assert!(world.resource::<SceneMaxRuntimeAssets>().animation_controllers_by_name[&b].running);
+        assert!(
+            world
+                .resource::<SceneMaxRuntimeAssets>()
+                .animation_controllers_by_name[&b]
+                .running
+        );
     }
-
 
     #[test]
     fn shared_cinematic_identity_and_rig_survive_scene_camera_reset() {
         let mut world = World::new();
         let mut cameras = SceneMaxCameraSystem::default();
         for id in ["first", "second"] {
-            cameras.cinematic_rigs.insert(id.into(), RuntimeCinematicRig {
-                id: id.into(), name: id.into(), position: Vec3::ZERO, rotation: Quat::IDENTITY,
-                scale: Vec3::ONE, target_entity_name: String::new(), target_offset: Vec3::ZERO,
-                ease_in: String::new(), ease_out: String::new(),
-                tracks_by_id: HashMap::from([("track".into(), RuntimeCinematicTrack {
-                    id: "track".into(), local_position: Vec3::ZERO, local_rotation: Quat::IDENTITY,
-                    local_scale: Vec3::ONE, radius_x: 1., radius_z: 1., anchor_count: 16,
-                })]),
-                segments: vec![RuntimeCinematicSegment { track_id: "track".into(), start_anchor: 0, end_anchor: 4 }],
-                has_relative_target_placement: false, relative_rig_position_to_target: Vec3::ZERO,
-                relative_rig_rotation_to_target: Quat::IDENTITY,
-            });
+            cameras.cinematic_rigs.insert(
+                id.into(),
+                RuntimeCinematicRig {
+                    id: id.into(),
+                    name: id.into(),
+                    position: Vec3::ZERO,
+                    rotation: Quat::IDENTITY,
+                    scale: Vec3::ONE,
+                    target_entity_name: String::new(),
+                    target_offset: Vec3::ZERO,
+                    ease_in: String::new(),
+                    ease_out: String::new(),
+                    tracks_by_id: HashMap::from([(
+                        "track".into(),
+                        RuntimeCinematicTrack {
+                            id: "track".into(),
+                            local_position: Vec3::ZERO,
+                            local_rotation: Quat::IDENTITY,
+                            local_scale: Vec3::ONE,
+                            radius_x: 1.,
+                            radius_z: 1.,
+                            anchor_count: 16,
+                        },
+                    )]),
+                    segments: vec![RuntimeCinematicSegment {
+                        track_id: "track".into(),
+                        start_anchor: 0,
+                        end_anchor: 4,
+                    }],
+                    has_relative_target_placement: false,
+                    relative_rig_position_to_target: Vec3::ZERO,
+                    relative_rig_rotation_to_target: Quat::IDENTITY,
+                },
+            );
         }
         world.insert_resource(cameras);
 
-        run_in(&mut world, "shared shot => cinematic.camera.first\nshared var original = shot\ntransient => cinematic.camera.second");
-        while !world.resource::<DelayedActionQueue>().actions.is_empty() { resume_next(&mut world); }
+        run_in(
+            &mut world,
+            "shared shot => cinematic.camera.first\nshared var original = shot\ntransient => cinematic.camera.second",
+        );
+        while !world.resource::<DelayedActionQueue>().actions.is_empty() {
+            resume_next(&mut world);
+        }
         crate::shared_entities::propagate_attachments(&mut world);
-        let names = world.resource::<SceneMaxObjectPools>().shared_entities.clone();
+        let names = world
+            .resource::<SceneMaxObjectPools>()
+            .shared_entities
+            .clone();
         assert!(names.contains("shot"));
         let program = scenemax_parser::parse_program("shot => cinematic.camera.second").unwrap();
-        crate::shared_entities::reset_cameras(&program, &mut world.resource_mut::<SceneMaxCameraSystem>(), &names);
-        assert_eq!(world.resource::<SceneMaxCameraSystem>().cinematic_vars["shot"].rig_id, "first");
-        assert!(!world.resource::<SceneMaxCameraSystem>().cinematic_vars.contains_key("transient"));
-        run_in(&mut world, "shot => cinematic.camera.second\nvar same = original == shot\noriginal.play : duration 1, async");
-        while !world.resource::<DelayedActionQueue>().actions.is_empty() { resume_next(&mut world); }
+        crate::shared_entities::reset_cameras(
+            &program,
+            &mut world.resource_mut::<SceneMaxCameraSystem>(),
+            &names,
+        );
+        assert_eq!(
+            world.resource::<SceneMaxCameraSystem>().cinematic_vars["shot"].rig_id,
+            "first"
+        );
+        assert!(
+            !world
+                .resource::<SceneMaxCameraSystem>()
+                .cinematic_vars
+                .contains_key("transient")
+        );
+        run_in(
+            &mut world,
+            "shot => cinematic.camera.second\nvar same = original == shot\noriginal.play : duration 1, async",
+        );
+        while !world.resource::<DelayedActionQueue>().actions.is_empty() {
+            resume_next(&mut world);
+        }
         assert_eq!(world.resource::<SceneMaxVars>().0["same"], 1.);
-        assert_eq!(world.resource::<SceneMaxCameraSystem>().active_cinematic.as_ref().unwrap().rig.id,"first");
-        run_in(&mut world, "original.play : duration 1\nvar after_cinematic = 1");
-        let weak = world.resource::<DelayedActionQueue>().actions.last().unwrap().animation_wait.as_ref().unwrap().controller_run.clone().unwrap();
-        assert_eq!(weak.strong_count(),1);
-        assert!(!world.resource::<SceneMaxVars>().0.contains_key("after_cinematic"));
-        world.resource_mut::<SceneMaxCameraSystem>().active_cinematic = None;
-        assert_eq!(weak.strong_count(),0);
+        assert_eq!(
+            world
+                .resource::<SceneMaxCameraSystem>()
+                .active_cinematic
+                .as_ref()
+                .unwrap()
+                .rig
+                .id,
+            "first"
+        );
+        run_in(
+            &mut world,
+            "original.play : duration 1\nvar after_cinematic = 1",
+        );
+        let weak = world
+            .resource::<DelayedActionQueue>()
+            .actions
+            .last()
+            .unwrap()
+            .animation_wait
+            .as_ref()
+            .unwrap()
+            .controller_run
+            .clone()
+            .unwrap();
+        assert_eq!(weak.strong_count(), 1);
+        assert!(
+            !world
+                .resource::<SceneMaxVars>()
+                .0
+                .contains_key("after_cinematic")
+        );
+        world
+            .resource_mut::<SceneMaxCameraSystem>()
+            .active_cinematic = None;
+        assert_eq!(weak.strong_count(), 0);
         resume_next(&mut world);
-        assert_eq!(world.resource::<SceneMaxVars>().0["after_cinematic"],1.);
-
+        assert_eq!(world.resource::<SceneMaxVars>().0["after_cinematic"], 1.);
     }
     #[test]
     fn cinematic_references_survive_calls_and_select_their_own_rigs() {
         let mut world = World::new();
         let mut cameras = SceneMaxCameraSystem::default();
         for id in ["first", "second"] {
-            cameras.cinematic_rigs.insert(id.into(), RuntimeCinematicRig {
-                id: id.into(), name: id.into(), position: Vec3::ZERO, rotation: Quat::IDENTITY,
-                scale: Vec3::ONE, target_entity_name: String::new(), target_offset: Vec3::ZERO,
-                ease_in: String::new(), ease_out: String::new(),
-                tracks_by_id: HashMap::from([("track".into(), RuntimeCinematicTrack {
-                    id: "track".into(), local_position: Vec3::ZERO, local_rotation: Quat::IDENTITY,
-                    local_scale: Vec3::ONE, radius_x: 1., radius_z: 1., anchor_count: 16,
-                })]),
-                segments: vec![RuntimeCinematicSegment { track_id: "track".into(), start_anchor: 0, end_anchor: 4 }],
-                has_relative_target_placement: false, relative_rig_position_to_target: Vec3::ZERO,
-                relative_rig_rotation_to_target: Quat::IDENTITY,
-            });
+            cameras.cinematic_rigs.insert(
+                id.into(),
+                RuntimeCinematicRig {
+                    id: id.into(),
+                    name: id.into(),
+                    position: Vec3::ZERO,
+                    rotation: Quat::IDENTITY,
+                    scale: Vec3::ONE,
+                    target_entity_name: String::new(),
+                    target_offset: Vec3::ZERO,
+                    ease_in: String::new(),
+                    ease_out: String::new(),
+                    tracks_by_id: HashMap::from([(
+                        "track".into(),
+                        RuntimeCinematicTrack {
+                            id: "track".into(),
+                            local_position: Vec3::ZERO,
+                            local_rotation: Quat::IDENTITY,
+                            local_scale: Vec3::ONE,
+                            radius_x: 1.,
+                            radius_z: 1.,
+                            anchor_count: 16,
+                        },
+                    )]),
+                    segments: vec![RuntimeCinematicSegment {
+                        track_id: "track".into(),
+                        start_anchor: 0,
+                        end_anchor: 4,
+                    }],
+                    has_relative_target_placement: false,
+                    relative_rig_position_to_target: Vec3::ZERO,
+                    relative_rig_rotation_to_target: Quat::IDENTITY,
+                },
+            );
         }
         world.insert_resource(cameras);
-        run_in(&mut world, "make() = {\nshot => cinematic.camera.first\nreturn shot\n}\nvar a = make()\nvar b = make()\nvar distinct = a != b\nroot => cinematic.camera.first\nvar old = root\nroot => cinematic.camera.second\nvar alias = root\n");
+        run_in(
+            &mut world,
+            "make() = {\nshot => cinematic.camera.first\nreturn shot\n}\nvar a = make()\nvar b = make()\nvar distinct = a != b\nroot => cinematic.camera.first\nvar old = root\nroot => cinematic.camera.second\nvar alias = root\n",
+        );
         for _ in 0..8 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         assert_eq!(world.resource::<SceneMaxVars>().0["distinct"], 1.);
-        assert_ne!(world.resource::<SceneMaxVars>().2["old"], world.resource::<SceneMaxVars>().2["root"]);
-        for (target, expected) in [("a", Some("first")), ("b", Some("first")), ("alias", Some("second")), ("old", None)] {
-            world.resource_mut::<SceneMaxCameraSystem>().active_cinematic = None;
+        assert_ne!(
+            world.resource::<SceneMaxVars>().2["old"],
+            world.resource::<SceneMaxVars>().2["root"]
+        );
+        for (target, expected) in [
+            ("a", Some("first")),
+            ("b", Some("first")),
+            ("alias", Some("second")),
+            ("old", None),
+        ] {
+            world
+                .resource_mut::<SceneMaxCameraSystem>()
+                .active_cinematic = None;
             run_in(&mut world, &format!("{target}.play : duration 1, async"));
-            assert_eq!(world.resource::<SceneMaxCameraSystem>().active_cinematic.as_ref().map(|a| a.rig.id.as_str()), expected);
+            assert_eq!(
+                world
+                    .resource::<SceneMaxCameraSystem>()
+                    .active_cinematic
+                    .as_ref()
+                    .map(|a| a.rig.id.as_str()),
+                expected
+            );
         }
-        run_in(&mut world, "view(camera_ref) = {\nlocal_target => box\ncamera_ref.play : duration 1, target local_target\n}\nrun view(a)");
+        run_in(
+            &mut world,
+            "view(camera_ref) = {\nlocal_target => box\ncamera_ref.play : duration 1, target local_target\n}\nrun view(a)",
+        );
         for _ in 0..8 {
-            if world.resource::<SceneMaxCameraSystem>().active_cinematic.as_ref().is_some_and(|a| a.look_at.is_some()) { break; }
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world
+                .resource::<SceneMaxCameraSystem>()
+                .active_cinematic
+                .as_ref()
+                .is_some_and(|a| a.look_at.is_some())
+            {
+                break;
+            }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
-        let active = world.resource::<SceneMaxCameraSystem>().active_cinematic.as_ref().unwrap();
+        let active = world
+            .resource::<SceneMaxCameraSystem>()
+            .active_cinematic
+            .as_ref()
+            .unwrap();
         assert_eq!(active.rig.id, "first");
-        let Some(CinematicLookAt::Entity(target)) = active.look_at.as_ref() else { panic!("missing scoped look-at"); };
+        let Some(CinematicLookAt::Entity(target)) = active.look_at.as_ref() else {
+            panic!("missing scoped look-at");
+        };
         assert_ne!(target, "local_target");
         let target = target.clone();
-        assert!(world.query::<&SceneMaxEntity>().iter(&world).any(|e| e.name == target));
+        assert!(
+            world
+                .query::<&SceneMaxEntity>()
+                .iter(&world)
+                .any(|e| e.name == target)
+        );
         run_in(&mut world, "missing => cinematic.camera.absent");
         assert!(!world.resource::<SceneMaxVars>().2.contains_key("missing"));
     }
 
     #[test]
     fn scoped_lights_and_probes_return_distinct_instance_references() {
-        for declaration in ["subject => Lights.point: pos (value,0,0)", "Lights.Add Probe \"subject\" Having pos (value,0,0)"] {
-            let mut world = run(&format!("make(value) = {{\n{declaration}\nreturn subject\n}}\nvar first = make(3)\nvar second = make(8)\nvar distinct = first != second\nvar first_x = first.x\nvar second_x = second.x"));
+        for declaration in [
+            "subject => Lights.point: pos (value,0,0)",
+            "Lights.Add Probe \"subject\" Having pos (value,0,0)",
+        ] {
+            let mut world = run(&format!(
+                "make(value) = {{\n{declaration}\nreturn subject\n}}\nvar first = make(3)\nvar second = make(8)\nvar distinct = first != second\nvar first_x = first.x\nvar second_x = second.x"
+            ));
             let vars = world.resource::<SceneMaxVars>();
             assert_eq!(vars.0["distinct"], 1.);
             assert_eq!(vars.0["first_x"], 3.);
             assert_eq!(vars.0["second_x"], 8.);
             assert_eq!(world.query::<&SceneMaxLight>().iter(&world).count(), 2);
-            assert!(world.resource::<SceneMaxRuntimeAssets>().pending_entity_handles.is_empty());
+            assert!(
+                world
+                    .resource::<SceneMaxRuntimeAssets>()
+                    .pending_entity_handles
+                    .is_empty()
+            );
         }
     }
 
@@ -1642,7 +2488,10 @@ lamp => Lights.spot: pos (99,0,0), intensity 10
 var unchanged = lamp == original
 "#);
         assert_eq!(world.resource::<SceneMaxVars>().0["unchanged"], 1.);
-        let lights = world.query::<(&Transform, &PointLight)>().iter(&world).collect::<Vec<_>>();
+        let lights = world
+            .query::<(&Transform, &PointLight)>()
+            .iter(&world)
+            .collect::<Vec<_>>();
         assert_eq!(lights.len(), 1);
         assert_eq!(lights[0].0.translation.x, 3.);
         assert_eq!(world.query::<&SpotLight>().iter(&world).count(), 0);
@@ -1691,7 +2540,9 @@ var location = subject.x
 var score = subject.data.score
 "#);
         for _ in 0..4 {
-            if world.resource::<DelayedActionQueue>().actions.is_empty() { break; }
+            if world.resource::<DelayedActionQueue>().actions.is_empty() {
+                break;
+            }
             resume_next(&mut world);
         }
         let vars = world.resource::<SceneMaxVars>();
@@ -1733,13 +2584,21 @@ var replacement_x = replacement.x
         resume_next(&mut world);
         resume_next(&mut world);
         let vars = world.resource::<SceneMaxVars>();
-        let original = scenemax_runtime_vm_core::references::lookup("original", vars, None).and_then(|v| v.entity_identity()).expect(&format!("root values: {vars:?}"));
-        let replacement = scenemax_runtime_vm_core::references::lookup("replacement", vars, None).unwrap().entity_identity().unwrap();
+        let original = scenemax_runtime_vm_core::references::lookup("original", vars, None)
+            .and_then(|v| v.entity_identity())
+            .expect(&format!("root values: {vars:?}"));
+        let replacement = scenemax_runtime_vm_core::references::lookup("replacement", vars, None)
+            .unwrap()
+            .entity_identity()
+            .unwrap();
         assert_ne!(original.runtime_name, replacement.runtime_name);
         assert_eq!(vars.0["different"], 1.);
         assert_eq!(vars.0["replacement_x"], 12.);
-        let entities = world.query::<(&SceneMaxEntity, &Transform)>().iter(&world)
-            .map(|(s,t)| (s.name.clone(), t.translation.x)).collect::<HashMap<_,_>>();
+        let entities = world
+            .query::<(&SceneMaxEntity, &Transform)>()
+            .iter(&world)
+            .map(|(s, t)| (s.name.clone(), t.translation.x))
+            .collect::<HashMap<_, _>>();
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[&replacement.runtime_name], 12.);
         assert!(!entities.contains_key(&original.runtime_name));
@@ -1767,7 +2626,15 @@ var first_x = first.x
 var second_x = second.x
 "#);
         let vars = world.resource::<SceneMaxVars>();
-        for name in ["same", "different", "not_string", "not_zero", "not_null", "same_list", "distinct_list"] {
+        for name in [
+            "same",
+            "different",
+            "not_string",
+            "not_zero",
+            "not_null",
+            "same_list",
+            "distinct_list",
+        ] {
             assert_eq!(vars.0.get(name), Some(&1.), "{name}");
         }
         assert_eq!(vars.0["first_x"], 3.);
@@ -1790,10 +2657,19 @@ outer() = {
 var parent = outer()
 "#);
         let vars = world.resource::<SceneMaxVars>();
-        let parent = scenemax_runtime_vm_core::references::lookup("parent", vars, None).unwrap().entity_identity().unwrap();
-        let child = scenemax_runtime_vm_core::references::lookup("child", vars, None).unwrap().entity_identity().unwrap();
-        let entities = world.query::<(&SceneMaxEntity, &Transform)>().iter(&world)
-            .map(|(s,t)| (s.name.clone(), t.translation.x)).collect::<HashMap<_,_>>();
+        let parent = scenemax_runtime_vm_core::references::lookup("parent", vars, None)
+            .unwrap()
+            .entity_identity()
+            .unwrap();
+        let child = scenemax_runtime_vm_core::references::lookup("child", vars, None)
+            .unwrap()
+            .entity_identity()
+            .unwrap();
+        let entities = world
+            .query::<(&SceneMaxEntity, &Transform)>()
+            .iter(&world)
+            .map(|(s, t)| (s.name.clone(), t.translation.x))
+            .collect::<HashMap<_, _>>();
         assert_eq!(entities.len(), 2);
         assert_eq!(entities[&parent.runtime_name], 3.);
         assert_eq!(entities[&child.runtime_name], 8.);
@@ -1811,15 +2687,27 @@ var second = make(9)
 first.hide
 "#);
         let vars = world.resource::<SceneMaxVars>();
-        let first = scenemax_runtime_vm_core::references::lookup("first", vars, None).unwrap().entity_identity().unwrap();
-        let second = scenemax_runtime_vm_core::references::lookup("second", vars, None).unwrap().entity_identity().unwrap();
+        let first = scenemax_runtime_vm_core::references::lookup("first", vars, None)
+            .unwrap()
+            .entity_identity()
+            .unwrap();
+        let second = scenemax_runtime_vm_core::references::lookup("second", vars, None)
+            .unwrap()
+            .entity_identity()
+            .unwrap();
         assert_ne!(first.key, second.key);
         assert_ne!(first.runtime_name, second.runtime_name);
-        let entities = world.query::<(&SceneMaxEntity, &Transform, &Visibility)>().iter(&world)
-            .map(|(s,t,v)| (s.name.clone(), (t.translation, t.scale, *v))).collect::<HashMap<_,_>>();
+        let entities = world
+            .query::<(&SceneMaxEntity, &Transform, &Visibility)>()
+            .iter(&world)
+            .map(|(s, t, v)| (s.name.clone(), (t.translation, t.scale, *v)))
+            .collect::<HashMap<_, _>>();
         assert_eq!(entities.len(), 2);
-        assert_eq!(entities[&first.runtime_name], (Vec3::new(4.,2.,3.), Vec3::splat(4.), Visibility::Hidden));
-        assert_eq!(entities[&second.runtime_name].0, Vec3::new(9.,2.,3.));
+        assert_eq!(
+            entities[&first.runtime_name],
+            (Vec3::new(4., 2., 3.), Vec3::splat(4.), Visibility::Hidden)
+        );
+        assert_eq!(entities[&second.runtime_name].0, Vec3::new(9., 2., 3.));
         assert_eq!(entities[&second.runtime_name].1, Vec3::splat(9.));
     }
 
@@ -1830,10 +2718,26 @@ first.hide
         let replacement = Reference::entity("subject");
         {
             let mut vars = world.resource_mut::<SceneMaxVars>();
-            scenemax_runtime_vm_core::references::assign("source", original.clone(), &mut vars, None, false).unwrap();
-            scenemax_runtime_vm_core::references::assign("replacement", replacement.clone(), &mut vars, None, false).unwrap();
+            scenemax_runtime_vm_core::references::assign(
+                "source",
+                original.clone(),
+                &mut vars,
+                None,
+                false,
+            )
+            .unwrap();
+            scenemax_runtime_vm_core::references::assign(
+                "replacement",
+                replacement.clone(),
+                &mut vars,
+                None,
+                false,
+            )
+            .unwrap();
         }
-        world.insert_resource(Batch(scenemax_parser::parse_program(r#"
+        world.insert_resource(Batch(
+            scenemax_parser::parse_program(
+                r#"
 var retained = 0
 route(value) = {
  var items = [value]
@@ -1845,13 +2749,29 @@ ordinary(value) = {
 }
 var result = route(source)
 run ordinary(source)
-"#).unwrap().statements));
+"#,
+            )
+            .unwrap()
+            .statements,
+        ));
         world.run_system_once(execute).unwrap();
         let vars = world.resource::<SceneMaxVars>();
-        assert_eq!(scenemax_runtime_vm_core::references::lookup("result", vars, None).unwrap(), original);
-        assert_eq!(scenemax_runtime_vm_core::references::lookup("retained", vars, None).unwrap(), original);
-        assert_eq!(scenemax_runtime_vm_core::references::lookup("source", vars, None).unwrap(), original);
-        assert_eq!(scenemax_runtime_vm_core::references::lookup("replacement", vars, None).unwrap(), replacement);
+        assert_eq!(
+            scenemax_runtime_vm_core::references::lookup("result", vars, None).unwrap(),
+            original
+        );
+        assert_eq!(
+            scenemax_runtime_vm_core::references::lookup("retained", vars, None).unwrap(),
+            original
+        );
+        assert_eq!(
+            scenemax_runtime_vm_core::references::lookup("source", vars, None).unwrap(),
+            original
+        );
+        assert_eq!(
+            scenemax_runtime_vm_core::references::lookup("replacement", vars, None).unwrap(),
+            replacement
+        );
     }
 
     #[test]
@@ -1877,29 +2797,70 @@ var result = change("first")
     fn redeclaration_replaces_existing_entity_instead_of_reusing_components() {
         let mut world = run("subject => box\nwait 0.01 seconds\nsubject => label: text \"fresh\"");
         // The first declaration suspends at its lifecycle boundary.
-        let old = world.query::<(Entity, &SceneMaxEntity)>().iter(&world)
-            .find(|(_, scene)| scene.name == "subject").unwrap().0;
+        let old = world
+            .query::<(Entity, &SceneMaxEntity)>()
+            .iter(&world)
+            .find(|(_, scene)| scene.name == "subject")
+            .unwrap()
+            .0;
         #[derive(Component)]
         struct RetiredOnly;
         world.entity_mut(old).insert(RetiredOnly);
-        scenemax_runtime_vm_core::typed::store(world.resource_mut::<SceneMaxVars>().as_mut(), "subject.data.old", serde_json::json!([1,2]));
+        scenemax_runtime_vm_core::typed::store(
+            world.resource_mut::<SceneMaxVars>().as_mut(),
+            "subject.data.old",
+            serde_json::json!([1, 2]),
+        );
         let child = world.spawn(ChildOf(old)).id();
-        world.resource_mut::<SceneMaxColliderBounds>().radius_by_name.insert("subject".into(), 99.);
-        world.resource_mut::<SceneMaxRuntimeAssets>().model_resources_by_name.insert("subject".into(), "old-resource".into());
+        world
+            .resource_mut::<SceneMaxColliderBounds>()
+            .radius_by_name
+            .insert("subject".into(), 99.);
+        world
+            .resource_mut::<SceneMaxRuntimeAssets>()
+            .model_resources_by_name
+            .insert("subject".into(), "old-resource".into());
         resume_next(&mut world);
         resume_next(&mut world);
         assert!(world.get_entity(old).is_err());
-        let current_name = world.resource::<SceneMaxRuntimeAssets>().root_entity_declarations["subject"].entity_identity().unwrap().runtime_name;
-        let current = world.query::<(Entity, &SceneMaxEntity)>().iter(&world)
-            .filter(|(_, scene)| scene.name == current_name).map(|(entity, _)| entity).collect::<Vec<_>>();
+        let current_name = world
+            .resource::<SceneMaxRuntimeAssets>()
+            .root_entity_declarations["subject"]
+            .entity_identity()
+            .unwrap()
+            .runtime_name;
+        let current = world
+            .query::<(Entity, &SceneMaxEntity)>()
+            .iter(&world)
+            .filter(|(_, scene)| scene.name == current_name)
+            .map(|(entity, _)| entity)
+            .collect::<Vec<_>>();
         assert_eq!(current.len(), 1);
         assert_ne!(old, current[0]);
         assert!(world.get::<RetiredOnly>(current[0]).is_none());
-        assert!(!world.resource::<SceneMaxVars>().1.contains_key("subject.data.old"));
+        assert!(
+            !world
+                .resource::<SceneMaxVars>()
+                .1
+                .contains_key("subject.data.old")
+        );
         assert!(world.get_entity(child).is_err());
-        assert_eq!(world.get::<crate::labels::Label>(current[0]).unwrap().text, "fresh");
-        assert!(!world.resource::<SceneMaxColliderBounds>().radius_by_name.contains_key("subject"));
-        assert!(!world.resource::<SceneMaxRuntimeAssets>().model_resources_by_name.contains_key("subject"));
+        assert_eq!(
+            world.get::<crate::labels::Label>(current[0]).unwrap().text,
+            "fresh"
+        );
+        assert!(
+            !world
+                .resource::<SceneMaxColliderBounds>()
+                .radius_by_name
+                .contains_key("subject")
+        );
+        assert!(
+            !world
+                .resource::<SceneMaxRuntimeAssets>()
+                .model_resources_by_name
+                .contains_key("subject")
+        );
     }
 
     #[test]
@@ -1913,10 +2874,12 @@ create() = {
 }
 var result = create()
 "#);
-        let current = world.query::<(&SceneMaxEntity, &Transform, &Visibility)>().iter(&world)
+        let current = world
+            .query::<(&SceneMaxEntity, &Transform, &Visibility)>()
+            .iter(&world)
             .collect::<Vec<_>>();
         assert_eq!(current.len(), 1);
-        assert_eq!(current[0].1.translation, Vec3::new(4.,5.,6.));
+        assert_eq!(current[0].1.translation, Vec3::new(4., 5., 6.));
         assert_eq!(*current[0].2, Visibility::Hidden);
     }
 
@@ -1958,7 +2921,9 @@ completed = local
 
     #[test]
     fn bounded_repeat_with_scopes_completes_all_iterations() {
-        let world = run("var result = 0\ndo 128 times\n var local = 1\n result = result + local\nend do\nvar finished = 1");
+        let world = run(
+            "var result = 0\ndo 128 times\n var local = 1\n result = result + local\nend do\nvar finished = 1",
+        );
         let vars = world.resource::<SceneMaxVars>();
         assert_eq!(vars.0["result"], 128.);
         assert_eq!(vars.0["finished"], 1.);
@@ -2069,7 +3034,10 @@ run outer()
 "#);
         let vars = world.resource::<SceneMaxVars>();
         assert_eq!(vars.0["result"], 6.);
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["result_list"], &serde_json::json!([9])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["result_list"],
+            &serde_json::json!([9])
+        ));
         assert!(!vars.1.contains_key("count"));
     }
     #[test]
@@ -2118,7 +3086,10 @@ after = 1
 var length = items.length
 "#);
         let vars = world.resource::<SceneMaxVars>();
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["items"], &serde_json::json!([1,2,3])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["items"],
+            &serde_json::json!([1, 2, 3])
+        ));
         assert_eq!(vars.0["count"], 1.);
         assert_eq!(vars.0["after"], 1.);
         assert_eq!(vars.0["length"], 3.);
@@ -2128,13 +3099,26 @@ var length = items.length
     fn scoped_text_operands_read_rebound_parameters_without_rewriting_assignments() {
         let mut scope = SceneMaxScopeFrame::default();
         scope.parameters.insert("resource".into());
-        scope.typed.insert("resource".into(), serde_json::json!("first"));
+        scope
+            .typed
+            .insert("resource".into(), serde_json::json!("first"));
         let vars = SceneMaxVars::default();
-        let action = Statement::UiLoad { name: "resource".into() };
-        assert!(matches!(resolve_text_operands(&action, &vars, Some(&scope)), Some(Statement::UiLoad {name}) if name == "first"));
-        scope.typed.insert("resource".into(), serde_json::json!("second"));
-        assert!(matches!(resolve_text_operands(&action, &vars, Some(&scope)), Some(Statement::UiLoad {name}) if name == "second"));
-        let assignment = scenemax_parser::parse_program("resource = \"other\"").unwrap().statements.remove(0);
+        let action = Statement::UiLoad {
+            name: "resource".into(),
+        };
+        assert!(
+            matches!(resolve_text_operands(&action, &vars, Some(&scope)), Some(Statement::UiLoad {name}) if name == "first")
+        );
+        scope
+            .typed
+            .insert("resource".into(), serde_json::json!("second"));
+        assert!(
+            matches!(resolve_text_operands(&action, &vars, Some(&scope)), Some(Statement::UiLoad {name}) if name == "second")
+        );
+        let assignment = scenemax_parser::parse_program("resource = \"other\"")
+            .unwrap()
+            .statements
+            .remove(0);
         assert!(resolve_text_operands(&assignment, &vars, Some(&scope)).is_none());
     }
     #[test]
@@ -2178,13 +3162,22 @@ items.push(4)
         assert_eq!(world.resource::<SceneMaxVars>().0["marker"], 0.);
         let pending = world.resource_mut::<DelayedActionQueue>().actions.remove(0);
         assert!(world.resource::<DelayedActionQueue>().actions.is_empty());
-        let mut actions = world.resource::<Batch>().0.iter().filter(|s| matches!(s, Statement::FunctionDef(_))).cloned().collect::<Vec<_>>();
+        let mut actions = world
+            .resource::<Batch>()
+            .0
+            .iter()
+            .filter(|s| matches!(s, Statement::FunctionDef(_)))
+            .cloned()
+            .collect::<Vec<_>>();
         actions.extend(pending.actions);
         world.insert_resource(Batch(actions));
         world.insert_resource(ResumeScope(pending.scope.unwrap()));
         world.run_system_once(execute).unwrap();
         let vars = world.resource::<SceneMaxVars>();
-        assert!(scenemax_runtime_vm_core::typed::equal(&vars.1["items"], &serde_json::json!([1,2,3,4])));
+        assert!(scenemax_runtime_vm_core::typed::equal(
+            &vars.1["items"],
+            &serde_json::json!([1, 2, 3, 4])
+        ));
         assert_eq!(vars.0["marker"], 1.);
         assert!(world.resource::<DelayedActionQueue>().actions.is_empty());
     }

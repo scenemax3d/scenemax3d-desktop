@@ -1,5 +1,5 @@
 //! Project-scoped multiplayer settings orchestration.
-use super::{Session, Command, CommandQueue};
+use super::{Command, CommandQueue, Session};
 use bevy::prelude::*;
 use scenemax_ide_services::multiplayer::{Operation, Snapshot, Worker};
 use std::{
@@ -39,13 +39,25 @@ pub(crate) struct State {
 }
 impl State {
     fn start(&mut self, operation: Operation) {
-        let building = matches!(&operation, Operation::Build(_) | Operation::BuildWithPassword(..));
+        let building = matches!(
+            &operation,
+            Operation::Build(_) | Operation::BuildWithPassword(..)
+        );
         match self.worker.start(self.root.clone(), operation) {
             Ok(()) => {
                 self.busy = true;
-                self.status = if building { "Building multiplayer server…" } else { "Working…" }.into();
+                self.status = if building {
+                    "Building multiplayer server…"
+                } else {
+                    "Working…"
+                }
+                .into();
             }
-            Err(e) => { self.run_after_build = false; self.pending_password = None; self.status = e; },
+            Err(e) => {
+                self.run_after_build = false;
+                self.pending_password = None;
+                self.status = e;
+            }
         }
     }
     fn edited(&self) -> Result<Snapshot, String> {
@@ -65,16 +77,27 @@ impl State {
         Ok(snapshot)
     }
 }
-pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut commands: ResMut<CommandQueue>, mut services: ResMut<super::EditorServices>) {
+pub(crate) fn update(
+    mut state: ResMut<State>,
+    session: Res<Session>,
+    mut commands: ResMut<CommandQueue>,
+    mut services: ResMut<super::EditorServices>,
+) {
     if state.root != session.workspace.project().root() {
         state.local.stop();
         state.local_status.clear();
         state.run_after_build = false;
         state.password = None;
-        if !state.root.as_os_str().is_empty() { state.open = false; }
-        services.projector.set_password(session.workspace.project().root(), None);
+        if !state.root.as_os_str().is_empty() {
+            state.open = false;
+        }
+        services
+            .projector
+            .set_password(session.workspace.project().root(), None);
     }
-    if let Some(status) = state.local.poll() { state.local_status = status; }
+    if let Some(status) = state.local.poll() {
+        state.local_status = status;
+    }
     if state.busy && state.root != session.workspace.project().root() {
         state.worker.cancel();
     }
@@ -83,12 +106,17 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
         match result {
             Ok(report) => {
                 if let Some(password) = state.pending_password.take() {
-                    if state.root == session.workspace.project().root() { services.projector.set_password(&state.root, password); }
+                    if state.root == session.workspace.project().root() {
+                        services.projector.set_password(&state.root, password);
+                    }
                 }
                 if let Some(server) = report.server {
                     if state.run_after_build {
                         match state.local.start(&server, report.snapshot.settings.port) {
-                            Ok(()) => state.local_status = format!("UDP starting · port {}", report.snapshot.settings.port),
+                            Ok(()) => {
+                                state.local_status =
+                                    format!("UDP starting · port {}", report.snapshot.settings.port)
+                            }
                             Err(error) => state.local_status = error,
                         }
                     }
@@ -110,7 +138,11 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
                 state.snapshot = Some(report.snapshot);
                 state.status = report.message;
             }
-            Err(error) => { state.run_after_build = false; state.pending_password = None; state.status = error; },
+            Err(error) => {
+                state.run_after_build = false;
+                state.pending_password = None;
+                state.status = error;
+            }
         }
     }
     while let Some(action) = state.actions.pop_front() {
@@ -132,9 +164,14 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
             Action::UseEnvironment if !state.busy => {
                 state.password = None;
                 state.revision += 1;
-                state.status = "Environment password selected. Save or Build Server to apply.".into();
+                state.status =
+                    "Environment password selected. Save or Build Server to apply.".into();
             }
-            Action::Close => { state.run_after_build = false; state.worker.cancel(); state.open = false; },
+            Action::Close => {
+                state.run_after_build = false;
+                state.worker.cancel();
+                state.open = false;
+            }
             Action::StopLocal => {
                 state.run_after_build = false;
                 state.local.stop();
@@ -165,23 +202,35 @@ pub(crate) fn update(mut state: ResMut<State>, session: Res<Session>, mut comman
                                 state.status = "The local server is already running. Stop it before changing its settings.".into();
                                 continue;
                             }
-                            let native = if cfg!(target_os = "windows") { "windows-x64" } else if cfg!(target_os = "macos") { "macos-x64" } else { "linux-x64" };
+                            let native = if cfg!(target_os = "windows") {
+                                "windows-x64"
+                            } else if cfg!(target_os = "macos") {
+                                "macos-x64"
+                            } else {
+                                "linux-x64"
+                            };
                             if snapshot.settings.platform != native {
-                                state.status = format!("Select {native} to run the server on this computer.");
+                                state.status =
+                                    format!("Select {native} to run the server on this computer.");
                                 continue;
                             }
-                            if !matches!(snapshot.settings.server.trim(), "127.0.0.1" | "localhost") {
+                            if !matches!(snapshot.settings.server.trim(), "127.0.0.1" | "localhost")
+                            {
                                 state.status = "Set Server IP / hostname to 127.0.0.1 to run and connect locally.".into();
                                 continue;
                             }
                             state.run_after_build = true;
                         }
                         state.pending_password = Some(state.password.clone());
-                        let operation = if matches!(action, Action::Save) { Operation::Save(snapshot) }
-                            else if let Some(password) = state.password.clone() { Operation::BuildWithPassword(snapshot, password) }
-                            else { Operation::Build(snapshot) };
+                        let operation = if matches!(action, Action::Save) {
+                            Operation::Save(snapshot)
+                        } else if let Some(password) = state.password.clone() {
+                            Operation::BuildWithPassword(snapshot, password)
+                        } else {
+                            Operation::Build(snapshot)
+                        };
                         state.start(operation);
-                    },
+                    }
                     Err(error) => state.status = error,
                 }
             }
