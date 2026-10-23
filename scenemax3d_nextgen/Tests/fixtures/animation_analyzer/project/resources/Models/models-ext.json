@@ -1,0 +1,24 @@
+{
+  "extra": "preserve",
+  "models": [
+    {
+      "name": "fixture",
+      "path": "Models/fixture.gltf",
+      "animationFrameRanges": [
+        {
+          "name": "opening",
+          "sourceAnimation": "Complete take",
+          "start": 0,
+          "end": 3,
+          "custom": "keep"
+        },
+        {
+          "name": "ending",
+          "sourceAnimation": "Complete take",
+          "start": 3,
+          "end": 6
+        }
+      ]
+    }
+  ]
+}

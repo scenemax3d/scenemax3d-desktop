@@ -1,0 +1,62 @@
+{
+  "builtin_resources": "",
+  "butler": "butler",
+  "include_all_resources": false,
+  "itch_page": "",
+  "name": "package-smoke",
+  "native_effects": false,
+  "output": "target/web-smoke-export",
+  "platforms": [
+    {
+      "channel": "windows",
+      "recipe": "",
+      "runtime": "",
+      "selected": false,
+      "target": "windows",
+      "triple": "x86_64-pc-windows-msvc"
+    },
+    {
+      "channel": "linux",
+      "recipe": "",
+      "runtime": "",
+      "selected": false,
+      "target": "linux",
+      "triple": "x86_64-unknown-linux-gnu"
+    },
+    {
+      "channel": "macos",
+      "recipe": "",
+      "runtime": "",
+      "selected": false,
+      "target": "macos",
+      "triple": "aarch64-apple-darwin"
+    },
+    {
+      "channel": "android",
+      "recipe": "",
+      "runtime": "",
+      "selected": false,
+      "target": "android",
+      "triple": ""
+    },
+    {
+      "channel": "ios",
+      "recipe": "",
+      "runtime": "",
+      "selected": false,
+      "target": "ios",
+      "triple": ""
+    },
+    {
+      "channel": "web",
+      "recipe": "",
+      "runtime": "",
+      "selected": true,
+      "target": "web",
+      "triple": ""
+    }
+  ],
+  "rebuild_runtime": false,
+  "upload": false,
+  "version": "1.0.0"
+}
