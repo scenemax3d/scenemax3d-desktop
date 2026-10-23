@@ -1,5 +1,7 @@
 //! Owned build jobs. UI polling never touches the filesystem or waits for tools.
 mod files;
+mod preferences;
+pub use preferences::SettingsWriter;
 mod existing;
 mod assets;
 mod pipeline;
@@ -42,6 +44,8 @@ pub enum Operation {
     Check(Request),
     /// Snapshot, build, package and optionally publish.
     Build(Request),
+    /// Export for verification without changing saved project preferences.
+    BuildTemporary(Request),
     /// Retry publishing previously completed artifacts without rebuilding them.
     Upload(Request, Vec<PathBuf>, PathBuf),
     /// Authenticate using Butler's own browser flow and credential store.
@@ -192,6 +196,7 @@ impl Builder {
                 Operation::Load(root) => existing::load(&root, &worker),
                 Operation::Check(request) => pipeline::check(&request, &worker).map(|_| worker.edit(|r| r.status = "Requirements checked. Compiler and SDK diagnostics appear during Build.".into())),
                 Operation::Build(request) => pipeline::build(&request, &worker),
+                Operation::BuildTemporary(request) => pipeline::build_temporary(&request, &worker),
                 Operation::Upload(request, artifacts, log) => pipeline::upload(&request, &artifacts, &worker, &log),
                 Operation::Login(butler) => process::login(&butler, &worker),
                 Operation::Browse(folder) => process::browse(folder, &worker).map(|path| worker.edit(|r| { r.picked = path; r.status = "Path selection complete.".into(); })),

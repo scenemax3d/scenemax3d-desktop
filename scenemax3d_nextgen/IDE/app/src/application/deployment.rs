@@ -27,6 +27,7 @@ pub(crate) enum Action {
 pub(crate) enum PathField {
     Output,
     Builtin,
+    WebBackground,
     Butler,
     Runtime(usize),
     Recipe(usize),
@@ -49,6 +50,8 @@ pub(crate) struct Deployment {
     loading: bool,
     observed: Option<u64>,
     picking: Option<PathField>,
+    preferences: scenemax_ide_services::deployment::SettingsWriter,
+    saved_form: Option<(PathBuf, String)>,
 }
 impl Deployment {
     fn start(&mut self, operation: Operation) -> Result<(), String> {
@@ -85,6 +88,7 @@ impl Deployment {
         };
         resolve(&mut settings.output);
         resolve(&mut settings.builtin_resources);
+        resolve(&mut settings.web_loading.background);
         for platform in &mut settings.platforms {
             resolve(&mut platform.runtime);
             resolve(&mut platform.recipe);
@@ -139,6 +143,7 @@ pub(crate) fn update(
             match field {
                 PathField::Output => settings.output = value,
                 PathField::Builtin => settings.builtin_resources = value,
+                PathField::WebBackground => settings.web_loading.background = value,
                 PathField::Butler => settings.butler = value,
                 PathField::Runtime(i) => settings.platforms[i].runtime = value,
                 PathField::Recipe(i) => settings.platforms[i].recipe = value,
@@ -313,6 +318,23 @@ pub(crate) fn update(
             state.report.success = false;
             state.report.revision += 1;
         }
+    }
+    // Save edits even when the user only browses, logs in, publishes, or closes.
+    // A dedicated worker drains queued writes on shutdown without blocking frames.
+    if !state.loading && state.project == session.workspace.project().root()
+        && let Some(settings) = state.settings.clone()
+        && let Ok(json) = serde_json::to_string(&settings)
+    {
+        let key = (state.project.clone(), json);
+        if state.saved_form.as_ref() != Some(&key) {
+            match state.preferences.save(key.0.clone(), settings) {
+                Ok(()) => state.saved_form = Some(key),
+                Err(error) => state.notification = Some((false, error.to_string())),
+            }
+        }
+    }
+    if let Some(error) = state.preferences.error() {
+        state.notification = Some((false, error));
     }
 }
 

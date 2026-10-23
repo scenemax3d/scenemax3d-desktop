@@ -243,12 +243,15 @@ fn release_has_effects(release: &Path, package: &str) -> bool {
         })
 }
 pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
+    files::save_settings(&request.project, &request.settings)?;
+    build_temporary(request, context)
+}
+pub(super) fn build_temporary(request: &Request, context: &Context) -> io::Result<()> {
     let started = std::time::Instant::now();
     let mut rooted_request = request.clone();
     rooted_request.entry = assets::root_entry(&request.project.canonicalize()?, context)?;
     let request = &rooted_request;
     check(request, context)?;
-    files::save_settings(&request.project, &request.settings)?;
     let output = PathBuf::from(&request.settings.output);
     fs::create_dir_all(&output)?;
     let output = output.canonicalize()?;

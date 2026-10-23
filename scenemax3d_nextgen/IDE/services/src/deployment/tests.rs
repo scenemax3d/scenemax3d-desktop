@@ -1,6 +1,22 @@
 use super::*;
 use std::{fs, sync::atomic::AtomicBool};
 #[test]
+fn temporary_export_does_not_replace_saved_publishing_preferences() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("scripts")).unwrap();
+    fs::write(root.path().join("scripts/main"), "print \"fixture\"").unwrap();
+    let mut settings = Settings::default();
+    settings.itch_page = "https://example.itch.io/game".into();
+    settings.butler = "tools/butler.exe".into();
+    files::save_settings(root.path(), &settings).unwrap();
+    let path = root.path().join(".scenemax-studio/deployment.json");
+    let before = fs::read(&path).unwrap();
+    let request = Request { project: root.path().into(), entry: root.path().join("scripts/main"),
+        workspace: workspace(), settings: Settings::default() };
+    assert!(pipeline::build_temporary(&request, &context()).is_err());
+    assert_eq!(fs::read(path).unwrap(), before);
+}
+#[test]
 fn effect_folder_declaration_selects_binary_and_sidecars_without_catalog() {
     let project = workspace().join("Tests/fixtures/web_effects/project");
     let root = tempfile::tempdir().unwrap();

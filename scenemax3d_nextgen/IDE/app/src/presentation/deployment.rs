@@ -14,6 +14,10 @@ pub(crate) enum Field {
     Version,
     Output,
     Builtin,
+    WebBackground,
+    WebHeader,
+    WebMessage,
+    WebFooter,
     Itch,
     Butler,
     Triple(usize),
@@ -102,6 +106,7 @@ fn field(c: &mut Commands, p: Entity, title: &str, kind: Field, value: &str) -> 
     let path = match kind {
         Field::Output => Some(PathField::Output),
         Field::Builtin => Some(PathField::Builtin),
+        Field::WebBackground => Some(PathField::WebBackground),
         Field::Butler => Some(PathField::Butler),
         Field::Runtime(i) => Some(PathField::Runtime(i)),
         Field::Recipe(i) => Some(PathField::Recipe(i)),
@@ -327,10 +332,17 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
             text(
                 c,
                 detail,
-                if p.target == Target::Web {"Leave the recipe blank for the built-in browser projector. Native Effekseer effects are not supported."}else{"SDK recipes are documented in IDE/DEPLOYMENT.md. These runtime hosts are not bundled yet."},
+                if p.target == Target::Web {"Leave the recipe blank for the built-in browser projector. Effekseer effects are bundled for the browser."}else{"SDK recipes are documented in IDE/DEPLOYMENT.md. These runtime hosts are not bundled yet."},
                 11.,
                 Color::srgb(0.94, 0.72, 0.39),
             );
+        }
+        if p.target == Target::Web {
+            text(c, detail, "Loading screen - starts automatically", 12., INK);
+            field(c, detail, "Background image (PNG / JPEG, optional)", Field::WebBackground, &settings.web_loading.background);
+            field(c, detail, "Header", Field::WebHeader, &settings.web_loading.header);
+            field(c, detail, "Loading text", Field::WebMessage, &settings.web_loading.message);
+            field(c, detail, "Text below progress bar", Field::WebFooter, &settings.web_loading.footer);
         }
         field(c, detail, "itch.io channel", Field::Channel(i), &p.channel);
     }
@@ -514,6 +526,10 @@ pub(crate) fn collect(mut state: ResMut<Deployment>, fields: Fields) {
     for (kind, value) in &fields.inputs {
         let destination = match *kind {
             Field::Builtin => &mut settings.builtin_resources,
+            Field::WebBackground => &mut settings.web_loading.background,
+            Field::WebHeader => &mut settings.web_loading.header,
+            Field::WebMessage => &mut settings.web_loading.message,
+            Field::WebFooter => &mut settings.web_loading.footer,
             Field::Name => &mut settings.name,
             Field::Version => &mut settings.version,
             Field::Output => &mut settings.output,
@@ -707,6 +723,7 @@ pub(crate) fn refresh(
             let value = match *field {
                 Field::Output => Some(&settings.output),
                 Field::Builtin => Some(&settings.builtin_resources),
+                Field::WebBackground => Some(&settings.web_loading.background),
                 Field::Butler => Some(&settings.butler),
                 Field::Runtime(i) => Some(&settings.platforms[i].runtime),
                 Field::Recipe(i) => Some(&settings.platforms[i].recipe),
