@@ -1040,7 +1040,7 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
     let mut screen_mode = ScreenMode::Unspecified;
     let mut index = 0;
     let mut block_depth = 0usize;
-    let mut pending_guard = None;
+    let mut pending_guard: Option<ParsedConditionGuard> = None;
     let mut animation_controller_names = Vec::new();
     let mut throw_motion_names = Vec::new();
 
@@ -1051,7 +1051,10 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
             continue;
         }
 
-        if let Some((statement, next)) = network::block(&logical_lines, index)? {
+        if let Some((mut statement, next)) = network::block(&logical_lines, index)? {
+            if let Some(guard) = pending_guard.take() {
+                network::guard_handler(&mut statement, guard.condition);
+            }
             statements.push(statement);
             index = next;
             continue;
@@ -1311,6 +1314,12 @@ fn parse_key_event_block(
         }
 
         if let Some(guard) = parse_condition_guard(line)? {
+            if let Some((mut handler, next_index)) = network::block(logical_lines, cursor + 1)? {
+                network::guard_handler(&mut handler, guard.condition);
+                actions.push(handler);
+                cursor = next_index;
+                continue;
+            }
             if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
             {
                 event.guard = Some(guard.condition);
@@ -1949,6 +1958,12 @@ fn parse_action_block_with_stop(
         }
 
         if let Some(guard) = parse_condition_guard(line)? {
+            if let Some((mut handler, next_index)) = network::block(logical_lines, cursor + 1)? {
+                network::guard_handler(&mut handler, guard.condition);
+                actions.push(handler);
+                cursor = next_index;
+                continue;
+            }
             if let Some((mut event, next_index)) = parse_key_event_block(logical_lines, cursor + 1)?
             {
                 event.guard = Some(guard.condition);
