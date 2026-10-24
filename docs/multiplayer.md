@@ -6,13 +6,35 @@ Browser projectors use the WebSocket-to-UDP gateway; native projectors connect
 directly to the same Zig UDP server. The gateway preserves binary packets and
 assigns a separate upstream UDP socket to each browser connection.
 
-Open **Project Settings — Multiplayer** and set **Browser gateway** to **Enabled**.
+Open **Project Settings — Multiplayer**. Use the **Server** tab for connection,
+session and game password settings, then the **Browser** tab to enable the gateway.
+**Build** contains the platform selector, build summary and all build/local-run
+actions. **Deployment** configures SSH access and remote service installation.
+Back/Next and the tab buttons preserve unsaved edits across tabs.
 
 | Setting | Local example | Meaning |
 | --- | --- | --- |
 | Browser WebSocket URL | `ws://localhost:9002` | Address embedded in browser exports; use the public `wss://` address for deployment. |
 | Gateway listen IP:port | `127.0.0.1:9002` | TCP listener on the server host; distinct from the Zig UDP port. |
 | Allowed game origin | `http://localhost:8080` | Exact website origin serving the game, including its port, without a path or trailing slash. |
+
+Editing the Server tab's address or UDP port automatically fills the browser URL
+with that host and UDP port + 1, and updates the gateway listener to the same port.
+Loopback servers use a loopback listener; remote servers listen on all interfaces
+so public addresses behind cloud NAT work too. Existing `wss://` selection is
+preserved, and HTTPS game origins select `wss://`. Browser fields remain editable
+for a TLS proxy's domain, port or path; further server edits replace these overrides.
+Use a UDP port no higher than 65534 when enabling the browser gateway.
+
+The allowed origin is independent of the multiplayer server and is never changed
+by server edits. For local hosting, keep the actual local web server origin (for
+example `http://localhost:8080`). For itch.io, use the origin of the embedded game,
+not the outer game page. In browser developer tools, inspect the WebSocket
+request's `Origin` header, or select the game's iframe in the Console and evaluate
+`location.origin`. Copy that exact value without a path or trailing slash.
+HTTPS hosting requires a working `wss://` endpoint with a trusted TLS certificate;
+auto-filling the URL does not install TLS. The gateway accepts one configured
+origin, so local testing and hosted builds need the corresponding origin setting.
 
 **Save** stores these settings in the project. Browser exports automatically write
 the saved WebSocket URL to `network.json`; multiplayer exports report an error if
@@ -22,8 +44,10 @@ the gateway is disabled or invalid. Existing projects default to gateway disable
 server, `scenemax_web_gateway`, `gateway.json`, and deployment instructions.
 Both executables target the selected server platform. The gateway uses a shipped
 prebuilt binary when available, otherwise the IDE builds it with Rust. Source
-builds require Rust and the target linker; configure the toolchain in Build
-Configuration. Distributions may provide gateway binaries under
+builds require Rust; configure it in Build Configuration. Linux gateway builds
+automatically install the pinned Rust musl target and use bundled LLD, including
+when building from Windows. The first build requires Internet access. Other
+cross-platform targets require their target linker. Distributions may provide gateway binaries under
 `tools/browser-gateway/bin/<platform>/scenemax_web_gateway[.exe]`.
 
 **Run Server Locally** builds and starts both processes on loopback. Use the local
@@ -52,6 +76,45 @@ Windows MIME associations can cause a plain `python -m http.server` to serve
 `.mjs` as `text/plain`, preventing startup. Other hosting must also serve `.wasm`
 as `application/wasm`. Re-export games after runtime changes; configuring the
 gateway does not update old runtime binaries or add missing effect assets.
+
+### Cloud deployment from the IDE
+
+1. On **Server**, set the public native endpoint, UDP port and project/session.
+2. On **Browser**, set the public WebSocket URL, TCP listener and exact game origin.
+3. On **Build**, select **linux-x64**, review the summary, and **Build Server**.
+4. On **Deployment**, choose OpenSSH or PuTTY saved session, enter the host/session,
+   optional login, SSH port (0 uses client configuration), and optional local key path.
+   OpenSSH supports keys, ssh-agent and SSH config aliases. PuTTY supports PPK keys,
+   saved sessions and Pageant. Encrypted keys must already be unlocked in the agent.
+   Password prompts are not supported in background deployment. Key contents and
+   login passwords are never stored in project files. SSH host-key verification is
+   enforced: trust the expected host in your SSH client before using this tab.
+5. Set a dedicated install directory and service name. Choose passwordless sudo or
+   root login, then **Test connection**. The host must be Linux x64 with systemd,
+   systemd-run, sha256sum, flock and ss. SSH tools must be installed locally.
+6. **Deploy & start** uploads the current bundle, verifies SHA-256 checksums,
+   installs the UDP and optional gateway systemd services, enables startup at boot,
+   and verifies stable process IDs and listening sockets. **Check status** reads
+   the configured services. Use distinct names, directories and ports for each game.
+
+Only an unchanged bundle matching the current build settings can be deployed.
+Changing remote connection settings does not require rebuilding. Changing the
+game password, server or browser build settings does. Build output is selected in
+the current settings session; reopen the Build tab and rebuild after reopening
+Project Settings. Builds are cached.
+
+Services run with systemd DynamicUser isolation. Releases are installed in separate
+directories; activation switches the current symlink. Startup failure restores
+the old symlink, service definitions and previous active/enabled state. Old releases
+remain for recovery. The installer refuses to adopt unrelated directories or
+unmanaged services, including older services created outside this workflow.
+Installation runs as a transient systemd job: canceling SSH or closing the IDE
+does not interrupt a remote transaction halfway through. Check status before
+retrying after a connection loss; an error includes the job and staging paths.
+
+Firewall rules, DNS and the public WSS reverse proxy remain host configuration.
+This workflow installs services on an existing machine; it does not provision a
+cloud VM. Windows/macOS remote service installation is not supported.
 
 The GMTK browser/native local acceptance record is in
 `scenemax3d_nextgen/docs/BROWSER_NATIVE_MULTIPLAYER_TEST.md`. WebTransport and

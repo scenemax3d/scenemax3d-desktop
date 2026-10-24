@@ -35,6 +35,34 @@ pub struct Request {
     /// Non-secret form values.
     pub settings: Settings,
 }
+/// Web-only local test using saved export options without publishing or changing them.
+pub fn browser_test_request(project: PathBuf, entry: PathBuf) -> io::Result<Request> {
+    let mut settings = files::load_settings(&project)?;
+    settings.upload = false;
+    for platform in &mut settings.platforms {
+        platform.selected = platform.target == scenemax_ide_core::deployment::Target::Web;
+        for value in [&mut platform.runtime, &mut platform.recipe] {
+            if !value.is_empty() && !std::path::Path::new(value).is_absolute() {
+                *value = project.join(&*value).to_string_lossy().into_owned();
+            }
+        }
+    }
+    for value in [
+        &mut settings.output,
+        &mut settings.builtin_resources,
+        &mut settings.web_loading.background,
+    ] {
+        if !value.is_empty() && !std::path::Path::new(value).is_absolute() {
+            *value = project.join(&*value).to_string_lossy().into_owned();
+        }
+    }
+    Ok(Request {
+        project,
+        entry,
+        workspace: workspace(),
+        settings,
+    })
+}
 /// An operation submitted to the single packaging worker.
 #[derive(Clone)]
 pub enum Operation {

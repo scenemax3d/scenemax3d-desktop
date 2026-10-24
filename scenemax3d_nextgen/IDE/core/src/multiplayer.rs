@@ -18,6 +18,8 @@ pub struct Settings {
     pub platform: String,
     /// Browser transport and deployment endpoint (no credentials).
     pub browser_gateway: BrowserGateway,
+    /// SSH deployment configuration; key material and passwords are never stored here.
+    pub deployment: RemoteDeployment,
     /// Unknown fields survive native settings edits.
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
@@ -32,6 +34,7 @@ impl Default for Settings {
             session_name: "local".into(),
             platform: "windows-x64".into(),
             browser_gateway: BrowserGateway::default(),
+            deployment: RemoteDeployment::default(),
             extra: Default::default(),
         }
     }
@@ -189,5 +192,113 @@ mod gateway_tests {
         gateway.websocket_url = "wss://network.example.com".into();
         gateway.validate().unwrap();
         assert!(gateway.validate_local().is_err());
+    }
+}
+
+/// Connection and service settings for a Linux systemd host.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RemoteDeployment {
+    /// openssh (agent/config or optional identity file), or putty (saved session/Pageant).
+    pub method: String,
+    /// SSH hostname/config alias, or PuTTY saved session name.
+    pub host: String,
+    /// Optional login override; blank uses SSH config/saved session.
+    pub user: String,
+    /// SSH port (zero uses the client configuration).
+    pub port: u16,
+    /// Optional local private-key file path; never the key contents.
+    pub identity_file: String,
+    /// Dedicated service prefix, without .service.
+    pub service: String,
+    /// Dedicated installation directory on the remote host.
+    pub directory: String,
+    /// Use passwordless sudo for service installation.
+    pub sudo: bool,
+}
+impl Default for RemoteDeployment {
+    fn default() -> Self {
+        Self {
+            method: "openssh".into(),
+            host: String::new(),
+            user: String::new(),
+            port: 0,
+            identity_file: String::new(),
+            service: "scenemax-game".into(),
+            directory: "/opt/scenemax-game".into(),
+            sudo: true,
+        }
+    }
+}
+impl RemoteDeployment {
+    /// Validate values before they enter SSH arguments, remote shell or unit files.
+    pub fn validate(&self) -> Result<(), String> {
+        if !["openssh", "putty"].contains(&self.method.as_str()) {
+            return Err("Choose OpenSSH or PuTTY saved session".into());
+        }
+        let safe = |s: &str| {
+            !s.is_empty()
+                && s.len() <= 128
+                && s.as_bytes()[0].is_ascii_alphanumeric()
+                && s.bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"_.-".contains(&c))
+        };
+        let host_ok = if self.method == "putty" {
+            !self.host.is_empty()
+                && self.host.len() <= 128
+                && self.host.as_bytes()[0].is_ascii_alphanumeric()
+                && self
+                    .host
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"_.- ".contains(&c))
+        } else {
+            safe(&self.host) || self.host.parse::<std::net::IpAddr>().is_ok()
+        };
+        if !host_ok {
+            return Err(
+                "Enter an SSH hostname, IP, config alias, or a PuTTY saved session name".into(),
+            );
+        }
+        if !self.user.is_empty() && !safe(&self.user) {
+            return Err("Invalid SSH login name".into());
+        }
+        if !safe(&self.service) || self.service.len() > 64 || self.service.ends_with(".service") {
+            return Err("Service name must be 1–64 letters, digits, dots, hyphens or underscores, without .service".into());
+        }
+        if !self.directory.starts_with('/')
+            || self.directory.len() > 240
+            || self.directory.split('/').skip(1).any(|p| !safe(p))
+        {
+            return Err("Use a dedicated absolute Linux directory, such as /opt/scenemax-game (no spaces or parent traversal)".into());
+        }
+        if self.identity_file.len() > 2048 || self.identity_file.chars().any(char::is_control) {
+            return Err("Invalid SSH key file path".into());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod remote_tests {
+    use super::*;
+    #[test]
+    fn rejects_shell_and_service_injection() {
+        let mut d = RemoteDeployment::default();
+        d.host = "cloud.example.com".into();
+        d.validate().unwrap();
+        for value in ["-oProxyCommand=bad", "host;id", "host\nname"] {
+            d.host = value.into();
+            assert!(d.validate().is_err());
+        }
+        d.host = "cloud.example.com".into();
+        for value in ["/", "/opt/../etc", "/opt/a b", "/opt/evil;id"] {
+            d.directory = value.into();
+            assert!(d.validate().is_err());
+        }
+        d.directory = "/opt/game-server".into();
+        for value in ["bad.service", "../system", "a%u", "x\ny"] {
+            d.service = value.into();
+            assert!(d.validate().is_err());
+        }
     }
 }

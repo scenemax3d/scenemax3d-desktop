@@ -1,4 +1,62 @@
 use super::*;
+#[test]
+fn multiplayer_preview_preserves_exact_local_origin() {
+    for invalid in [
+        "https://localhost:8080",
+        "http://example.com:8080",
+        "http://0.0.0.0:8080",
+        "http://localhost:0",
+        "http://localhost:8080/path",
+    ] {
+        assert!(local_origin_address(invalid).is_err());
+    }
+    let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = reservation.local_addr().unwrap().port();
+    let origin = format!("http://localhost:{port}");
+    let address = local_origin_address(&origin).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let zip = archive(temp.path(), &[("index.html", b"local game")]);
+    let state = Arc::new(Mutex::new(Status::default()));
+    let cancel = Arc::new(AtomicBool::new(false));
+    assert!(
+        serve_archive_at(
+            &zip,
+            &cancel,
+            &state,
+            false,
+            Some((address, format!("{origin}/")))
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("Stop any other server")
+    );
+    drop(reservation);
+    let (c, s) = (cancel.clone(), state.clone());
+    let expected = format!("{origin}/");
+    let worker = std::thread::spawn(move || {
+        serve_archive_at(&zip, &c, &s, false, Some((address, expected)))
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while state.lock().unwrap().url.is_none() {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        state.lock().unwrap().url.as_deref(),
+        Some(format!("{origin}/").as_str())
+    );
+    assert!(
+        request(
+            &address.to_string(),
+            "/",
+            &format!("localhost:{port}"),
+            "GET"
+        )
+        .ends_with(b"local game")
+    );
+    cancel.store(true, Ordering::Relaxed);
+    worker.join().unwrap().unwrap();
+}
 fn archive(root: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
     let path = root.join("web.zip");
     let mut zip = zip::ZipWriter::new(File::create(&path).unwrap());
