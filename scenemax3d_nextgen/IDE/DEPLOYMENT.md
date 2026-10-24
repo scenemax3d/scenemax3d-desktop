@@ -89,14 +89,15 @@ Binary pin, checksums, licenses and maintainer update instructions are in
 `da76b5023bd7aa10fe66ee05f6fecd4b84debce3`).
 Custom Rust additions must compile for `wasm32-unknown-unknown`.
 
-For multiplayer, configure the exported `network.json` with `websocket_url`.
+For multiplayer, enable Browser gateway in Project Settings — Multiplayer and save
+its WebSocket URL, listener and allowed game origin. The exporter writes the saved
+URL into `network.json` automatically.
 Browsers use binary WebSocket messages through the supplied
 `scenemax_web_gateway`, which forwards each connection through its own UDP socket
-to the existing Zig server without changing the game protocol. Build the gateway
-with `cargo build --release -p scenemax_multiplayer --features web-gateway --bin scenemax_web_gateway`.
-It takes three arguments: listening socket address, fixed UDP upstream socket
-address, and allowed browser Origin. Example:
-`scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080`.
+to the existing Zig server without changing the game protocol. Build Server packages
+both executables and `gateway.json`; Run Server Locally starts and monitors both.
+The standalone gateway reads its adjacent configuration when launched without
+arguments. Local defaults are `ws://localhost:9002` and origin `http://localhost:8080`.
 Use a TLS reverse proxy for public WSS, and specify the actual hosting/iframe
 origin. Static hosting cannot run the gateway. The ZIP includes these deployment
 instructions. Desktop clients continue to connect directly over UDP.

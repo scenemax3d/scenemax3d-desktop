@@ -73,6 +73,10 @@ impl State {
         snapshot.settings.session_id = get("session_id")
             .parse()
             .map_err(|_| "Session ID must be a nonnegative whole number")?;
+        snapshot.settings.browser_gateway.enabled = get("gateway_enabled") == "Enabled";
+        snapshot.settings.browser_gateway.websocket_url = get("gateway_url");
+        snapshot.settings.browser_gateway.listen = get("gateway_listen");
+        snapshot.settings.browser_gateway.allowed_origin = get("gateway_origin");
         snapshot.settings.validate()?;
         Ok(snapshot)
     }
@@ -111,8 +115,15 @@ pub(crate) fn update(
                     }
                 }
                 if let Some(server) = report.server {
-                    if state.run_after_build {
-                        match state.local.start(&server, report.snapshot.settings.port) {
+                    if state.run_after_build && state.root == session.workspace.project().root() {
+                        match state.local.start_with_gateway(
+                            &server,
+                            report.snapshot.settings.port,
+                            report
+                                .gateway
+                                .as_deref()
+                                .map(|path| (path, &report.snapshot.settings.browser_gateway)),
+                        ) {
                             Ok(()) => {
                                 state.local_status =
                                     format!("UDP starting · port {}", report.snapshot.settings.port)
@@ -132,6 +143,24 @@ pub(crate) fn update(
                         ("session_id".into(), s.session_id.to_string()),
                         ("session_name".into(), s.session_name.clone()),
                         ("platform".into(), s.platform.clone()),
+                        (
+                            "gateway_enabled".into(),
+                            if s.browser_gateway.enabled {
+                                "Enabled"
+                            } else {
+                                "Disabled"
+                            }
+                            .into(),
+                        ),
+                        (
+                            "gateway_url".into(),
+                            s.browser_gateway.websocket_url.clone(),
+                        ),
+                        ("gateway_listen".into(), s.browser_gateway.listen.clone()),
+                        (
+                            "gateway_origin".into(),
+                            s.browser_gateway.allowed_origin.clone(),
+                        ),
                     ]);
                     state.revision += 1;
                 }
@@ -175,7 +204,7 @@ pub(crate) fn update(
             Action::StopLocal => {
                 state.run_after_build = false;
                 state.local.stop();
-                state.local_status = "UDP stopped".into();
+                state.local_status = "Local server and gateway stopped".into();
             }
             Action::Cancel if state.busy => {
                 state.run_after_build = false;
@@ -218,6 +247,14 @@ pub(crate) fn update(
                             {
                                 state.status = "Set Server IP / hostname to 127.0.0.1 to run and connect locally.".into();
                                 continue;
+                            }
+                            if snapshot.settings.browser_gateway.enabled {
+                                if let Err(error) =
+                                    snapshot.settings.browser_gateway.validate_local()
+                                {
+                                    state.status = error;
+                                    continue;
+                                }
                             }
                             state.run_after_build = true;
                         }

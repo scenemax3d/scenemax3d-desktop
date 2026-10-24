@@ -13,6 +13,7 @@ use std::{
     thread,
 };
 mod build;
+mod gateway;
 pub(crate) mod launch;
 pub mod local_server;
 
@@ -32,6 +33,8 @@ pub struct Report {
     pub message: String,
     /// Newly created server, if this operation built one.
     pub server: Option<PathBuf>,
+    /// Optional browser adapter built alongside the UDP server.
+    pub gateway: Option<PathBuf>,
 }
 /// Work performed outside the IDE frame thread.
 pub enum Operation {
@@ -123,6 +126,7 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
             message: "Multiplayer settings loaded. Passwords are kept only for this IDE session."
                 .into(),
             server: None,
+            gateway: None,
         }),
         Operation::Save(mut snapshot) => {
             save(&root, &mut snapshot)?;
@@ -130,6 +134,7 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
                 snapshot,
                 message: "Multiplayer settings saved.".into(),
                 server: None,
+                gateway: None,
             })
         }
         Operation::Build(mut snapshot) => {
@@ -141,33 +146,45 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
             patch(&mut bytes, s, &root, password.as_deref())?;
             let directory = root.join("multiplayer_server");
             ensure_directory(&root, &directory)?;
-            // Unique output prevents overwriting another build or a running server.
-            let mut pending = tempfile::Builder::new()
+            // A bundle becomes visible only after every requested executable is ready.
+            let bundle = tempfile::Builder::new()
                 .prefix("scenemax-mp-")
-                .suffix(if s.platform == "windows-x64" {
-                    ".exe"
-                } else {
-                    ""
-                })
-                .tempfile_in(&directory)
+                .tempdir_in(&directory)
                 .map_err(|e| e.to_string())?;
-            pending.write_all(&bytes).map_err(|e| e.to_string())?;
-            pending.as_file().sync_all().map_err(|e| e.to_string())?;
+            let path = bundle.path().join(if s.platform == "windows-x64" {
+                "scenemax-mp-server.exe"
+            } else {
+                "scenemax-mp-server"
+            });
+            fs::write(&path, &bytes).map_err(|e| e.to_string())?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                pending
-                    .as_file()
-                    .set_permissions(fs::Permissions::from_mode(0o700))
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
                     .map_err(|e| e.to_string())?;
             }
+            let gateway = if s.browser_gateway.enabled {
+                let bytes = gateway::prepare(&s.platform, cancel)?;
+                Some(gateway::install(bundle.path(), s, &bytes)?)
+            } else {
+                None
+            };
             build::check(cancel)?;
             save(&root, &mut snapshot)?;
-            let (_, path) = pending.keep().map_err(|e| e.to_string())?;
+            let _ = bundle.keep();
             Ok(Report {
                 snapshot,
-                message: format!("{origin}. Server created: {}", path.display()),
+                message: format!(
+                    "{origin}. {} created: {}",
+                    if gateway.is_some() {
+                        "UDP server and browser gateway"
+                    } else {
+                        "Server"
+                    },
+                    path.parent().unwrap().display()
+                ),
                 server: Some(path),
+                gateway,
             })
         }
     }
@@ -191,7 +208,10 @@ fn ensure_directory(root: &Path, path: &Path) -> Result<(), String> {
             .file_type()
             .is_symlink()
             || path.canonicalize().map_err(|e| e.to_string())?
-                != root.join(path.file_name().ok_or("Invalid settings folder")?)
+                != root
+                    .canonicalize()
+                    .map_err(|e| e.to_string())?
+                    .join(path.file_name().ok_or("Invalid settings folder")?)
         {
             return Err("Linked multiplayer directories are not supported".into());
         }
@@ -428,5 +448,131 @@ mod tests {
         assert!(!source.contains("stale"));
         assert!(!source.contains("password"));
         assert!(source.contains("var value = 1"));
+    }
+}
+
+/// Public browser endpoint from the project's saved multiplayer settings.
+pub(crate) fn browser_gateway_url(root: &Path, required: bool) -> Result<String, String> {
+    if !required {
+        return Ok(String::new());
+    }
+    let settings = load(root)?.settings;
+    if !settings.browser_gateway.enabled {
+        return Err("Enable Browser gateway and save its WebSocket URL in Project Settings > Multiplayer before exporting a multiplayer browser game.".into());
+    }
+    settings.browser_gateway.validate()?;
+    Ok(settings.browser_gateway.websocket_url)
+}
+
+#[cfg(test)]
+mod browser_settings_tests {
+    use super::*;
+    #[test]
+    fn export_uses_saved_url_and_rejects_missing_gateway_for_multiplayer() {
+        let project = tempfile::tempdir().unwrap();
+        assert_eq!(browser_gateway_url(project.path(), false).unwrap(), "");
+        let mut snapshot = load(project.path()).unwrap();
+        assert!(browser_gateway_url(project.path(), true).is_err());
+        snapshot.settings.browser_gateway.enabled = true;
+        snapshot.settings.browser_gateway.websocket_url = "wss://network.example.com/play".into();
+        snapshot.settings.browser_gateway.allowed_origin = "https://games.example.com".into();
+        save(project.path(), &mut snapshot).unwrap();
+        assert_eq!(
+            browser_gateway_url(project.path(), true).unwrap(),
+            "wss://network.example.com/play"
+        );
+        assert_eq!(
+            load(project.path()).unwrap().settings.browser_gateway,
+            snapshot.settings.browser_gateway
+        );
+    }
+
+    #[test]
+    #[ignore = "requires Zig and the native Rust gateway build toolchain"]
+    fn build_browser_bundle_then_run_and_stop_both() {
+        let project = tempfile::tempdir().unwrap();
+        let mut snapshot = load(project.path()).unwrap();
+        let udp = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        snapshot.settings.port = udp.local_addr().unwrap().port();
+        drop(udp);
+        let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = tcp.local_addr().unwrap().port();
+        drop(tcp);
+        snapshot.settings.platform = if cfg!(windows) {
+            "windows-x64"
+        } else if cfg!(target_os = "macos") {
+            "macos-x64"
+        } else {
+            "linux-x64"
+        }
+        .into();
+        snapshot.settings.browser_gateway.enabled = true;
+        snapshot.settings.browser_gateway.listen = format!("127.0.0.1:{port}");
+        snapshot.settings.browser_gateway.websocket_url = format!("ws://localhost:{port}");
+        let report = run(
+            project.path(),
+            Operation::BuildWithPassword(snapshot, String::new()),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let server = report.server.unwrap();
+        let gateway = report.gateway.unwrap();
+        assert_eq!(server.parent(), gateway.parent());
+        assert!(server.with_file_name("gateway.json").is_file());
+        assert_eq!(
+            browser_gateway_url(project.path(), true).unwrap(),
+            format!("ws://localhost:{port}")
+        );
+        let mut local = local_server::LocalServer::default();
+        local
+            .start_with_gateway(
+                &server,
+                report.snapshot.settings.port,
+                Some((&gateway, &report.snapshot.settings.browser_gateway)),
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let status = local.poll().unwrap_or_default();
+            if status.contains("Gateway listening") {
+                break;
+            }
+            assert!(
+                local.active() && std::time::Instant::now() < deadline,
+                "{status}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        local.stop();
+        assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_ok());
+        assert!(std::net::UdpSocket::bind(("127.0.0.1", report.snapshot.settings.port)).is_ok());
+        // The distributed executable also works without command-line arguments or a matching cwd.
+        let mut command = std::process::Command::new(&gateway);
+        command
+            .current_dir(project.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let connected = loop {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline || child.try_wait().unwrap().is_some() {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(
+            connected,
+            "bundled gateway must read its adjacent configuration"
+        );
     }
 }

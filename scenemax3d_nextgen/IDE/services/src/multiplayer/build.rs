@@ -74,7 +74,20 @@ fn prepare_with(
 
 // A temporary output file avoids pipe deadlocks. Size and time are checked on
 // every poll; only the final bounded diagnostic is presented to the user.
-fn compile(command: &mut Command, cancel: &AtomicBool, timeout: Duration) -> Result<bool, String> {
+pub(super) fn compile(
+    command: &mut Command,
+    cancel: &AtomicBool,
+    timeout: Duration,
+) -> Result<bool, String> {
+    compile_named(command, cancel, timeout, "Zig")
+}
+
+pub(super) fn compile_named(
+    command: &mut Command,
+    cancel: &AtomicBool,
+    timeout: Duration,
+    tool: &str,
+) -> Result<bool, String> {
     check(cancel)?;
     let log = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
     let stream = log.reopen().map_err(|e| e.to_string())?;
@@ -95,17 +108,20 @@ fn compile(command: &mut Command, cancel: &AtomicBool, timeout: Duration) -> Res
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(format!("Could not start Zig: {e}")),
+        Err(e) => return Err(format!("Could not start {tool}: {e}")),
     };
     let started = Instant::now();
     let result = (|| {
         loop {
             check(cancel)?;
             if started.elapsed() >= timeout {
-                return Err("Zig build exceeded its five-minute timeout".into());
+                return Err(format!(
+                    "{tool} build exceeded its {}-second timeout",
+                    timeout.as_secs()
+                ));
             }
             if log.as_file().metadata().map_err(|e| e.to_string())?.len() > 4 * 1024 * 1024 {
-                return Err("Zig output exceeded 4 MiB".into());
+                return Err(format!("{tool} output exceeded 4 MiB"));
             }
             if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
                 return if status.success() {
@@ -114,7 +130,7 @@ fn compile(command: &mut Command, cancel: &AtomicBool, timeout: Duration) -> Res
                     let bytes = read(log.path(), 4 * 1024 * 1024)?;
                     let tail = &bytes[bytes.len().saturating_sub(16384)..];
                     Err(format!(
-                        "Zig build failed ({status}). Install Zig 0.16.x.\n{}",
+                        "{tool} build failed ({status}).\n{}",
                         String::from_utf8_lossy(tail)
                     ))
                 };

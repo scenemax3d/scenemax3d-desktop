@@ -52,11 +52,20 @@ pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity
         .observe(|_: On<Pointer<Press>>, mut s: ResMut<State>| s.actions.push_back(Action::Open));
     e
 }
-fn node(c: &mut Commands, p: Entity, n: Node) -> Entity {
+fn node(c: &mut Commands, p: Entity, mut n: Node) -> Entity {
+    n.flex_shrink = 0.;
     c.spawn((n, ChildOf(p))).id()
 }
 fn text(c: &mut Commands, p: Entity, value: &str) -> Entity {
-    c.spawn((label(value, 12.), ChildOf(p))).id()
+    c.spawn((
+        label(value, 12.),
+        Node {
+            flex_shrink: 0.,
+            ..default()
+        },
+        ChildOf(p),
+    ))
+    .id()
 }
 pub(crate) fn input(
     mut state: ResMut<State>,
@@ -120,7 +129,9 @@ pub(crate) fn refresh(
             &mut c,
             root,
             Node {
-                width: px(610.),
+                width: px(720.),
+                max_height: percent(95.),
+                overflow: Overflow::scroll_y(),
                 max_width: percent(95.),
                 padding: px(16.).all(),
                 row_gap: px(10.),
@@ -128,7 +139,24 @@ pub(crate) fn refresh(
                 ..default()
             },
         );
-        c.entity(panel).insert(BackgroundColor(PANEL));
+        c.entity(panel)
+            .insert((BackgroundColor(PANEL), ScrollPosition::default()))
+            .observe(
+                |mut event: On<Pointer<Scroll>>,
+                 mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
+                    if let Ok((mut scroll, node)) = nodes.get_mut(event.entity) {
+                        let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
+                            40.
+                        } else {
+                            1.
+                        };
+                        let max = (node.content_size().y - node.size().y).max(0.)
+                            * node.inverse_scale_factor();
+                        scroll.y = (scroll.y - event.y * scale).clamp(0., max);
+                        event.propagate(false);
+                    }
+                },
+            );
         text(&mut c, panel, "Project Settings — Multiplayer");
         text(
             &mut c,
@@ -142,6 +170,10 @@ pub(crate) fn refresh(
             ("session_id", "Session ID"),
             ("session_name", "Session name"),
             ("platform", "Server platform"),
+            ("gateway_enabled", "Browser gateway"),
+            ("gateway_url", "Browser WebSocket URL"),
+            ("gateway_listen", "Gateway listen IP:port"),
+            ("gateway_origin", "Allowed game origin"),
         ] {
             let row = node(
                 &mut c,
@@ -149,12 +181,15 @@ pub(crate) fn refresh(
                 Node {
                     column_gap: px(8.),
                     align_items: AlignItems::Center,
+                    height: px(28.),
+                    min_height: px(28.),
                     ..default()
                 },
             );
             let l = text(&mut c, row, caption);
             c.entity(l).insert(Node {
-                width: px(155.),
+                width: px(180.),
+                height: px(16.),
                 flex_shrink: 0.,
                 ..default()
             });
@@ -168,7 +203,15 @@ pub(crate) fn refresh(
                 },
             );
             let value = state.fields.get(key).map(String::as_str).unwrap_or("");
-            if key == "platform" {
+            if key == "gateway_enabled" {
+                property::dropdown(
+                    &mut c,
+                    holder,
+                    Field(key.into()),
+                    value,
+                    &["Disabled".into(), "Enabled".into()],
+                );
+            } else if key == "platform" {
                 property::dropdown(
                     &mut c,
                     holder,
@@ -180,6 +223,11 @@ pub(crate) fn refresh(
                 property::input(&mut c, holder, Field(key.into()), value);
             }
         }
+        text(
+            &mut c,
+            panel,
+            "Enabled: Build Server includes the browser gateway; Run starts both. Web exports use the saved WebSocket URL. HTTPS games need a wss:// TLS reverse proxy. Origin is the game website (or hosting iframe), without a path.",
+        );
         text(&mut c, panel, "Password (this IDE session only)");
         scenemax_ide_ui::password::input(
             &mut c,
@@ -241,7 +289,7 @@ pub(crate) fn refresh(
         text(
             &mut c,
             panel,
-            "Run saves these settings and builds a local-only server. The server stops when the IDE closes or you change projects.",
+            "Run saves settings and binds UDP and the enabled gateway to loopback. Both stop when the IDE closes or you change projects. Serve the browser game from the allowed origin; its URL must point to this local gateway.",
         );
         let local = text(&mut c, panel, &state.local_status);
         c.entity(local).insert(LocalStatus);
@@ -291,6 +339,31 @@ pub(crate) fn refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn gateway_fields_retain_edits_without_recreating_the_dialog() {
+        let mut app = App::new();
+        app.init_resource::<State>()
+            .init_resource::<View>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, (input, refresh).chain());
+        app.world_mut().resource_mut::<State>().open = true;
+        app.update();
+        let world = app.world_mut();
+        let field = world
+            .query::<(Entity, &Field)>()
+            .iter(world)
+            .find(|(_, f)| f.0 == "gateway_url")
+            .unwrap()
+            .0;
+        *world.get_mut::<EditableText>(field).unwrap() =
+            EditableText::new("wss://network.example.com/play");
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().fields["gateway_url"],
+            "wss://network.example.com/play"
+        );
+        assert!(app.world().get::<Field>(field).is_some());
+    }
     #[test]
     fn multiplayer_settings_retain_fields_and_block_editor_shortcuts() {
         let (mut app, _dir, _) = crate::tests::app();

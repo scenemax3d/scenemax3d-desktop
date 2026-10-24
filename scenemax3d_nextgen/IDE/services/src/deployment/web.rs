@@ -168,6 +168,8 @@ pub(super) fn build(
         line.trim().starts_with("//$[multiplayer_server]=")
             && !line.trim().trim_end_matches(';').ends_with('=')
     });
+    let gateway_url = crate::multiplayer::browser_gateway_url(&request.project, multiplayer)
+        .map_err(io::Error::other)?;
     let aliases = package::deduplicate(&site, &listing, context)?;
     fs::write(
         site.join("game-manifest.json"),
@@ -175,7 +177,7 @@ pub(super) fn build(
             &serde_json::json!({"entry":format!("game/{script}"),"files":paths,"aliases":aliases,"multiplayer":multiplayer,"effects":has_effects,"effect_distortion":distortion}),
         )?,
     )?;
-    fs::write(site.join("network.json"), b"{\"websocket_url\":\"\"}\n")?;
+    write_network_config(&site, &gateway_url)?;
     context.log(
         "Building the browser projector (WebGPU); Cargo reuses unchanged compilation outputs.\n",
     );
@@ -211,10 +213,40 @@ pub(super) fn build(
         include_str!("web/bootstrap.mjs"),
     )?;
     fs::write(site.join("files.mjs"), include_str!("web/files.mjs"))?;
-    fs::write(site.join("README.txt"), include_str!("web/README.txt"))?;
+    fs::write(site.join("README.txt"), include_str!("web/README.md"))?;
     let partial = staging.join("web.partial");
     files::zip(&site, &partial, None, context)?;
     let artifact = output.join(format!("{}-web.zip", request.settings.name));
     fs::rename(partial, &artifact)?;
     Ok(artifact)
+}
+
+fn write_network_config(site: &Path, gateway_url: &str) -> io::Result<()> {
+    fs::write(
+        site.join("network.json"),
+        serde_json::to_vec(&serde_json::json!({"websocket_url": gateway_url}))?,
+    )
+}
+#[cfg(test)]
+mod network_config_tests {
+    use super::*;
+    #[test]
+    fn writes_only_public_endpoint_to_browser_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        write_network_config(dir.path(), "wss://gateway.example.com/network?version=1").unwrap();
+        let actual: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.path().join("network.json")).unwrap()).unwrap();
+        assert_eq!(
+            actual,
+            serde_json::json!({"websocket_url":"wss://gateway.example.com/network?version=1"})
+        );
+        write_network_config(dir.path(), "").unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(
+                &fs::read(dir.path().join("network.json")).unwrap()
+            )
+            .unwrap()["websocket_url"],
+            ""
+        );
+    }
 }

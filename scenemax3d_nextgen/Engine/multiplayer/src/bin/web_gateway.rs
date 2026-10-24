@@ -17,6 +17,7 @@ fn serve(
     upstream: SocketAddr,
     origin: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    stream.set_nodelay(true)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
     let config = tungstenite::protocol::WebSocketConfig::default()
@@ -96,7 +97,24 @@ fn serve(
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let mut args: Vec<_> = std::env::args().skip(1).collect();
+    // IDE bundles can be launched directly without a terminal or working-directory assumptions.
+    if args.is_empty() {
+        let config = std::env::current_exe()?.with_file_name("gateway.json");
+        let bytes = std::fs::read(&config)?;
+        if bytes.len() > 16384 {
+            return Err("Gateway configuration exceeds 16 KiB".into());
+        }
+        let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+        for key in ["listen", "upstream", "allowed_origin"] {
+            args.push(
+                value[key]
+                    .as_str()
+                    .ok_or("Invalid gateway configuration")?
+                    .to_owned(),
+            );
+        }
+    }
     if args.len() != 3 {
         eprintln!(
             "Usage: scenemax_web_gateway LISTEN_ADDRESS UDP_SERVER_ADDRESS ALLOWED_ORIGIN\nExample: scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080\nUse a TLS reverse proxy for public wss:// access. Each browser connection owns a distinct UDP socket."

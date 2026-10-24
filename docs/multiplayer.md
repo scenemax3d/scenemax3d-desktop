@@ -1,5 +1,62 @@
 # Multiplayer
 
+## Browser clients
+
+Browser projectors use the WebSocket-to-UDP gateway; native projectors connect
+directly to the same Zig UDP server. The gateway preserves binary packets and
+assigns a separate upstream UDP socket to each browser connection.
+
+Open **Project Settings — Multiplayer** and set **Browser gateway** to **Enabled**.
+
+| Setting | Local example | Meaning |
+| --- | --- | --- |
+| Browser WebSocket URL | `ws://localhost:9002` | Address embedded in browser exports; use the public `wss://` address for deployment. |
+| Gateway listen IP:port | `127.0.0.1:9002` | TCP listener on the server host; distinct from the Zig UDP port. |
+| Allowed game origin | `http://localhost:8080` | Exact website origin serving the game, including its port, without a path or trailing slash. |
+
+**Save** stores these settings in the project. Browser exports automatically write
+the saved WebSocket URL to `network.json`; multiplayer exports report an error if
+the gateway is disabled or invalid. Existing projects default to gateway disabled.
+
+**Build Server** creates a bundle under `multiplayer_server` containing the Zig
+server, `scenemax_web_gateway`, `gateway.json`, and deployment instructions.
+Both executables target the selected server platform. The gateway uses a shipped
+prebuilt binary when available, otherwise the IDE builds it with Rust. Source
+builds require Rust and the target linker; configure the toolchain in Build
+Configuration. Distributions may provide gateway binaries under
+`tools/browser-gateway/bin/<platform>/scenemax_web_gateway[.exe]`.
+
+**Run Server Locally** builds and starts both processes on loopback. Use the local
+example URL above (with a matching listener port). **Stop Local Server**, switching
+projects, or exiting the IDE stops both. Startup failures stop the paired server.
+Local run requires a local `ws://` URL; save deployment URLs before making a public
+browser export. Local run does not host the exported game website.
+
+For deployment, run both bundled executables on the same host. Opening the gateway
+without arguments reads `gateway.json` beside its executable, independent of the
+working directory. It forwards to the bundled Zig server at `127.0.0.1:<UDP port>`.
+Public HTTPS games require a WSS endpoint with TLS and WebSocket upgrade forwarding;
+the gateway itself speaks plain WebSocket. TLS termination is external to this
+bundle. Static hosting alone does not run the gateway. The game's project GUID
+and credentials must match the Zig server. Native clients continue to use UDP.
+
+For local browser testing, serve the extracted export with:
+
+```powershell
+python Tools/serve_web.py PATH_TO_EXTRACTED_EXPORT --port 8080
+```
+
+This development server binds to loopback, serves `.mjs` and `.js` as
+`text/javascript`, and disables caching so a rebuild cannot reuse an old loader.
+Windows MIME associations can cause a plain `python -m http.server` to serve
+`.mjs` as `text/plain`, preventing startup. Other hosting must also serve `.wasm`
+as `application/wasm`. Re-export games after runtime changes; configuring the
+gateway does not update old runtime binaries or add missing effect assets.
+
+The GMTK browser/native local acceptance record is in
+`scenemax3d_nextgen/docs/BROWSER_NATIVE_MULTIPLAYER_TEST.md`. WebTransport and
+public-network latency/load testing are separate from this WebSocket path.
+
 SceneMax multiplayer lets several game clients share the same session and scene through a
 SceneMax UDP server. A developer writes normal SceneMax code, marks the entities that should
 exist on all clients as `multiplayer`, and then drives those entities with the movement,
