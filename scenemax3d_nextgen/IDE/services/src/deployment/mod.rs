@@ -26,6 +26,8 @@ use std::{
 /// An immutable build input tied to the project visible when the user pressed Build.
 #[derive(Debug, Clone)]
 pub struct Request {
+    /// Test-only connection settings; never written to project preferences.
+    pub multiplayer_override: Option<scenemax_ide_core::multiplayer::Settings>,
     /// Canonical source project.
     pub project: PathBuf,
     /// Entry script inside this project.
@@ -34,6 +36,35 @@ pub struct Request {
     pub workspace: PathBuf,
     /// Non-secret form values.
     pub settings: Settings,
+}
+/// Web-only local test using saved export options without publishing or changing them.
+pub fn browser_test_request(project: PathBuf, entry: PathBuf) -> io::Result<Request> {
+    let mut settings = files::load_settings(&project)?;
+    settings.upload = false;
+    for platform in &mut settings.platforms {
+        platform.selected = platform.target == scenemax_ide_core::deployment::Target::Web;
+        for value in [&mut platform.runtime, &mut platform.recipe] {
+            if !value.is_empty() && !std::path::Path::new(value).is_absolute() {
+                *value = project.join(&*value).to_string_lossy().into_owned();
+            }
+        }
+    }
+    for value in [
+        &mut settings.output,
+        &mut settings.builtin_resources,
+        &mut settings.web_loading.background,
+    ] {
+        if !value.is_empty() && !std::path::Path::new(value).is_absolute() {
+            *value = project.join(&*value).to_string_lossy().into_owned();
+        }
+    }
+    Ok(Request {
+        multiplayer_override: None,
+        project,
+        entry,
+        workspace: workspace(),
+        settings,
+    })
 }
 /// An operation submitted to the single packaging worker.
 #[derive(Clone)]

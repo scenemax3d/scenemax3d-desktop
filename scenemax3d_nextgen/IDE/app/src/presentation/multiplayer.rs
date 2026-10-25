@@ -1,5 +1,5 @@
 //! Compact retained Project Settings multiplayer form.
-use crate::application::multiplayer::{Action, State};
+use crate::application::multiplayer::{Action, State, Tab};
 use bevy::{prelude::*, text::EditableText};
 use scenemax_ide_ui::{label, property, theme::*};
 #[derive(Component)]
@@ -8,6 +8,16 @@ pub(crate) struct Field(String);
 pub(crate) struct Status;
 #[derive(Component)]
 pub(crate) struct LocalStatus;
+#[derive(Component)]
+pub(crate) struct BuildSummary;
+#[derive(Component)]
+pub(crate) struct ProgressBar;
+#[derive(Component)]
+pub(crate) struct ProgressLabel;
+#[derive(Component)]
+pub(crate) struct ConsoleLog;
+#[derive(Component)]
+pub(crate) struct LogViewport;
 #[derive(Default, Resource)]
 pub(crate) struct View {
     root: Option<Entity>,
@@ -33,6 +43,15 @@ pub(crate) fn smoke(
                 state.actions.push_back(Action::Save);
             }
         }
+        if let Ok(tab) = std::env::var("SCENEMAX_SMOKE_MULTIPLAYER_TAB") {
+            state.tab = match tab.as_str() {
+                "browser" => Tab::Browser,
+                "build" => Tab::Build,
+                "deployment" => Tab::Deployment,
+                _ => Tab::Server,
+            };
+            state.revision += 1;
+        }
         *seeded = true;
     }
     if *seeded
@@ -52,11 +71,20 @@ pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity
         .observe(|_: On<Pointer<Press>>, mut s: ResMut<State>| s.actions.push_back(Action::Open));
     e
 }
-fn node(c: &mut Commands, p: Entity, n: Node) -> Entity {
+fn node(c: &mut Commands, p: Entity, mut n: Node) -> Entity {
+    n.flex_shrink = 0.;
     c.spawn((n, ChildOf(p))).id()
 }
 fn text(c: &mut Commands, p: Entity, value: &str) -> Entity {
-    c.spawn((label(value, 12.), ChildOf(p))).id()
+    c.spawn((
+        label(value, 12.),
+        Node {
+            flex_shrink: 0.,
+            ..default()
+        },
+        ChildOf(p),
+    ))
+    .id()
 }
 pub(crate) fn input(
     mut state: ResMut<State>,
@@ -67,13 +95,22 @@ pub(crate) fn input(
     if !state.open {
         return;
     }
+    let mut endpoint_changed = false;
     for (field, editable, choice) in &fields {
         let value = editable
             .map(|e| e.value().to_string())
             .or_else(|| choice.map(|c| c.0.clone()));
         if let Some(value) = value {
+            if matches!(field.0.as_str(), "server" | "port")
+                && state.fields.get(&field.0) != Some(&value)
+            {
+                endpoint_changed = true;
+            }
             state.fields.insert(field.0.clone(), value);
         }
+    }
+    if endpoint_changed {
+        state.follow_server_endpoint();
     }
     for password in &passwords {
         if password.touched() {
@@ -84,12 +121,140 @@ pub(crate) fn input(
         state.actions.push_back(Action::Close);
     }
 }
+
+fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) {
+    let row = node(
+        c,
+        parent,
+        Node {
+            column_gap: px(8.),
+            flex_wrap: FlexWrap::Wrap,
+            ..default()
+        },
+    );
+    for &(caption, action) in items {
+        let e = scenemax_ide_ui::button(c, row, caption, Name::new(caption.to_owned()));
+        c.entity(e)
+            .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| {
+                s.actions.push_back(action)
+            });
+    }
+}
+fn fields(c: &mut Commands, parent: Entity, state: &State, items: &[(&str, &str)]) {
+    if state.tab == Tab::Deployment {
+        let grid = node(
+            c,
+            parent,
+            Node {
+                display: Display::Grid,
+                grid_template_columns: vec![RepeatedGridTrack::flex(2, 1.)],
+                column_gap: px(16.),
+                row_gap: px(8.),
+                width: percent(100.),
+                ..default()
+            },
+        );
+        for &(key, caption) in items {
+            let cell = node(
+                c,
+                grid,
+                Node {
+                    min_width: px(0.),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(4.),
+                    ..default()
+                },
+            );
+            text(c, cell, caption);
+            let holder = node(
+                c,
+                cell,
+                Node {
+                    height: px(28.),
+                    min_width: px(0.),
+                    width: percent(100.),
+                    ..default()
+                },
+            );
+            field_control(c, holder, state, key);
+        }
+        return;
+    }
+    for &(key, caption) in items {
+        let row = node(
+            c,
+            parent,
+            Node {
+                column_gap: px(8.),
+                align_items: AlignItems::Center,
+                height: px(28.),
+                min_height: px(28.),
+                ..default()
+            },
+        );
+        let l = text(c, row, caption);
+        c.entity(l).insert(Node {
+            width: px(180.),
+            height: px(16.),
+            flex_shrink: 0.,
+            ..default()
+        });
+        let holder = node(
+            c,
+            row,
+            Node {
+                flex_grow: 1.,
+                min_width: px(0.),
+                ..default()
+            },
+        );
+        field_control(c, holder, state, key);
+    }
+}
+fn field_control(c: &mut Commands, holder: Entity, state: &State, key: &str) {
+    let value = state.fields.get(key).map(String::as_str).unwrap_or("");
+    let options: &[&str] = match key {
+        "gateway_enabled" => &["Disabled", "Enabled"],
+        "platform" => &["windows-x64", "linux-x64", "macos-x64"],
+        "remote_method" => &["OpenSSH", "PuTTY session"],
+        "remote_sudo" => &["Use sudo", "Root login"],
+        _ => &[],
+    };
+    if options.is_empty() {
+        property::input(c, holder, Field(key.into()), value);
+    } else {
+        property::dropdown(
+            c,
+            holder,
+            Field(key.into()),
+            value,
+            &options.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        );
+    }
+}
 pub(crate) fn refresh(
     mut c: Commands,
     state: Res<State>,
     mut view: ResMut<View>,
-    mut status: Query<&mut Text, (With<Status>, Without<LocalStatus>)>,
-    mut local_status: Query<&mut Text, (With<LocalStatus>, Without<Status>)>,
+    mut labels: Query<
+        (
+            &mut Text,
+            Option<&Status>,
+            Option<&LocalStatus>,
+            Option<&BuildSummary>,
+            Option<&ProgressLabel>,
+            Option<&ConsoleLog>,
+        ),
+        Or<(
+            With<Status>,
+            With<LocalStatus>,
+            With<BuildSummary>,
+            With<ProgressLabel>,
+            With<ConsoleLog>,
+        )>,
+    >,
+    mut bars: Query<&mut Node, With<ProgressBar>>,
+    mut log_scroll: Query<(&mut ScrollPosition, &ComputedNode), With<LogViewport>>,
 ) {
     if !state.open {
         if let Some(root) = view.root.take() {
@@ -120,170 +285,346 @@ pub(crate) fn refresh(
             &mut c,
             root,
             Node {
-                width: px(610.),
+                width: px(720.),
                 max_width: percent(95.),
+                max_height: percent(95.),
+                overflow: Overflow::scroll_y(),
                 padding: px(16.).all(),
-                row_gap: px(10.),
+                row_gap: px(12.),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
         );
-        c.entity(panel).insert(BackgroundColor(PANEL));
+        c.entity(panel)
+            .insert((BackgroundColor(PANEL), ScrollPosition::default()))
+            .observe(
+                |mut event: On<Pointer<Scroll>>,
+                 mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
+                    if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
+                        let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
+                            40.
+                        } else {
+                            1.
+                        };
+                        scroll.y = (scroll.y - event.y * scale).clamp(
+                            0.,
+                            (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor(),
+                        );
+                        event.propagate(false);
+                    }
+                },
+            );
         text(&mut c, panel, "Project Settings — Multiplayer");
-        text(
+        let tabs = node(
             &mut c,
             panel,
-            "SceneMax UDP server • Session and project settings",
+            Node {
+                column_gap: px(8.),
+                ..default()
+            },
         );
-        for (key, caption) in [
-            ("server", "Server IP / hostname"),
-            ("port", "UDP port"),
-            ("project_guid", "Project GUID"),
-            ("session_id", "Session ID"),
-            ("session_name", "Session name"),
-            ("platform", "Server platform"),
+        for (title, tab) in [
+            ("1  Server", Tab::Server),
+            ("2  Browser", Tab::Browser),
+            ("3  Build", Tab::Build),
+            ("4  Deployment", Tab::Deployment),
         ] {
-            let row = node(
+            let e = scenemax_ide_ui::button(&mut c, tabs, title, Name::new(title));
+            if tab == state.tab {
+                c.entity(e).insert((
+                    BackgroundColor(ACCENT),
+                    scenemax_ide_ui::ButtonSurface(ACCENT),
+                ));
+            }
+            c.entity(e)
+                .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| {
+                    s.actions.push_back(Action::SelectTab(tab))
+                });
+        }
+        match state.tab {
+            Tab::Server => {
+                text(&mut c, panel, "Connection and shared session");
+                fields(
+                    &mut c,
+                    panel,
+                    &state,
+                    &[
+                        ("server", "Server IP / hostname"),
+                        ("port", "UDP port"),
+                        ("project_guid", "Project GUID"),
+                        ("session_id", "Session ID"),
+                        ("session_name", "Session name"),
+                    ],
+                );
+                text(&mut c, panel, "Game password (this IDE session only)");
+                scenemax_ide_ui::password::input(
+                    &mut c,
+                    panel,
+                    Name::new("Multiplayer password"),
+                    state.password.as_deref().unwrap_or(""),
+                );
+                actions(
+                    &mut c,
+                    panel,
+                    &[
+                        ("No password", Action::NoPassword),
+                        ("Use environment password", Action::UseEnvironment),
+                    ],
+                );
+                text(
+                    &mut c,
+                    panel,
+                    "Save applies the password to game runs. Build uses the same password. Passwords are never saved in project files.",
+                );
+            }
+            Tab::Browser => {
+                text(&mut c, panel, "Optional WebSocket access for browser games");
+                fields(
+                    &mut c,
+                    panel,
+                    &state,
+                    &[
+                        ("gateway_enabled", "Browser gateway"),
+                        ("gateway_url", "Browser WebSocket URL"),
+                        ("gateway_listen", "Gateway listen IP:port"),
+                        ("gateway_origin", "Allowed game origin"),
+                    ],
+                );
+                text(
+                    &mut c,
+                    panel,
+                    "Server address edits fill the browser URL and gateway port (UDP + 1). You can override them here. Remote gateways listen on all interfaces.",
+                );
+                text(
+                    &mut c,
+                    panel,
+                    "Allowed origin is where the game is hosted: scheme + host + optional port, without a path. For itch.io, use the embedded game's origin. HTTPS games require wss:// and TLS.",
+                );
+            }
+            Tab::Build => {
+                fields(&mut c, panel, &state, &[("platform", "Server platform")]);
+                text(&mut c, panel, "Build summary");
+                let summary = text(&mut c, panel, &state.build_summary());
+                c.entity(summary).insert(BuildSummary);
+                actions(
+                    &mut c,
+                    panel,
+                    &[
+                        ("Build Server", Action::Build),
+                        ("Cancel build", Action::Cancel),
+                        ("Open Folder", Action::OpenFolder),
+                    ],
+                );
+                actions(
+                    &mut c,
+                    panel,
+                    &[
+                        ("Run Server Locally", Action::RunLocal),
+                        ("Stop Local Server", Action::StopLocal),
+                    ],
+                );
+                text(
+                    &mut c,
+                    panel,
+                    "Local run builds for this computer and binds both servers to loopback. Cloud deployment requires a linux-x64 bundle.",
+                );
+                let status = text(&mut c, panel, &state.local_status);
+                c.entity(status).insert(LocalStatus);
+            }
+            Tab::Deployment => {
+                text(
+                    &mut c,
+                    panel,
+                    "Install and update services on a Linux x64 cloud machine",
+                );
+                fields(
+                    &mut c,
+                    panel,
+                    &state,
+                    &[
+                        ("remote_method", "SSH client"),
+                        ("remote_host", "Host / saved session"),
+                        ("remote_user", "Login (optional)"),
+                        ("remote_port", "SSH port (0 = default)"),
+                        ("remote_key", "Private key path (optional)"),
+                        ("remote_sudo", "Installation permissions"),
+                        ("remote_directory", "Remote install folder"),
+                        ("remote_service", "Service name"),
+                    ],
+                );
+                text(
+                    &mut c,
+                    panel,
+                    "Use an SSH key/agent or PuTTY session. Trust the host key first; sudo must work without prompting.",
+                );
+                text(&mut c, panel, &format!("Bundle: {}", state.bundle_label()));
+                text(
+                    &mut c,
+                    panel,
+                    "Deploy installs and starts both services, with rollback on failure. Configure the cloud firewall and WSS proxy separately.",
+                );
+                actions(
+                    &mut c,
+                    panel,
+                    &[
+                        ("Test connection", Action::TestRemote),
+                        ("Deploy & start", Action::DeployRemote),
+                        ("Check status", Action::RemoteStatus),
+                        ("Cancel", Action::Cancel),
+                    ],
+                );
+                actions(
+                    &mut c,
+                    panel,
+                    &[
+                        (
+                            "Test With Local Server",
+                            Action::TestGame(scenemax_ide_services::multiplayer::TestTarget::Local),
+                        ),
+                        (
+                            "Test With Remote Server",
+                            Action::TestGame(
+                                scenemax_ide_services::multiplayer::TestTarget::Remote,
+                            ),
+                        ),
+                        ("Stop Test", Action::StopTestGame),
+                    ],
+                );
+            }
+        }
+        if matches!(state.tab, Tab::Build | Tab::Deployment) {
+            let copy = scenemax_ide_ui::button(
+                &mut c,
+                panel,
+                "Copy Log",
+                Name::new("Copy multiplayer log"),
+            );
+            c.entity(copy).observe(
+                |_: On<Pointer<Click>>,
+                 mut state: ResMut<State>,
+                 clipboard: Option<ResMut<bevy::clipboard::Clipboard>>| {
+                    state.status = if let Some(mut clipboard) = clipboard {
+                        match clipboard.set_text(state.progress.log.clone()) {
+                            Ok(()) => "Console log copied.".into(),
+                            Err(error) => format!("Could not copy console log: {error}"),
+                        }
+                    } else {
+                        "Clipboard unavailable.".into()
+                    };
+                },
+            );
+            let caption = text(&mut c, panel, &state.progress_label());
+            c.entity(caption).insert(ProgressLabel);
+            let track = node(
                 &mut c,
                 panel,
                 Node {
-                    column_gap: px(8.),
-                    align_items: AlignItems::Center,
+                    width: percent(100.),
+                    height: px(8.),
                     ..default()
                 },
             );
-            let l = text(&mut c, row, caption);
-            c.entity(l).insert(Node {
-                width: px(155.),
-                flex_shrink: 0.,
-                ..default()
-            });
-            let holder = node(
+            c.entity(track)
+                .insert(BackgroundColor(Color::srgb(0.15, 0.17, 0.18)));
+            let bar = node(
                 &mut c,
-                row,
+                track,
                 Node {
-                    flex_grow: 1.,
-                    min_width: px(0.),
+                    width: percent(state.progress.percent as f32),
+                    height: percent(100.),
                     ..default()
                 },
             );
-            let value = state.fields.get(key).map(String::as_str).unwrap_or("");
-            if key == "platform" {
-                property::dropdown(
-                    &mut c,
-                    holder,
-                    Field(key.into()),
-                    value,
-                    &["windows-x64".into(), "linux-x64".into(), "macos-x64".into()],
-                );
-            } else {
-                property::input(&mut c, holder, Field(key.into()), value);
-            }
-        }
-        text(&mut c, panel, "Password (this IDE session only)");
-        scenemax_ide_ui::password::input(
-            &mut c,
-            panel,
-            Name::new("Multiplayer password"),
-            state.password.as_deref().unwrap_or(""),
-        );
-        let password_actions = node(
-            &mut c,
-            panel,
-            Node {
-                column_gap: px(8.),
-                ..default()
-            },
-        );
-        let clear = scenemax_ide_ui::button(
-            &mut c,
-            password_actions,
-            "No password",
-            Name::new("No password"),
-        );
-        c.entity(clear)
-            .observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| {
-                state.actions.push_back(Action::NoPassword)
-            });
-        let environment = scenemax_ide_ui::button(
-            &mut c,
-            password_actions,
-            "Use environment password",
-            Name::new("Use environment password"),
-        );
-        c.entity(environment)
-            .observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| {
-                state.actions.push_back(Action::UseEnvironment)
-            });
-        text(
-            &mut c,
-            panel,
-            "Save applies the password to future runs. Build Server uses the same password.\nPasswords are never saved to project files. Clear the field for no password.",
-        );
-        let local_row = node(
-            &mut c,
-            panel,
-            Node {
-                column_gap: px(8.),
-                ..default()
-            },
-        );
-        for (caption, action) in [
-            ("Run Server Locally", Action::RunLocal),
-            ("Stop Local Server", Action::StopLocal),
-        ] {
-            let e = scenemax_ide_ui::button(&mut c, local_row, caption, Name::new(caption));
-            c.entity(e)
-                .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| {
-                    s.actions.push_back(action)
+            c.entity(bar).insert((ProgressBar, BackgroundColor(ACCENT)));
+            let console = node(
+                &mut c,
+                panel,
+                Node {
+                    height: px(150.),
+                    width: percent(100.),
+                    overflow: Overflow::scroll_y(),
+                    padding: px(8.).all(),
+                    ..default()
+                },
+            );
+            c.entity(console).insert((LogViewport, ScrollPosition::default(), BackgroundColor(Color::srgb(0.08, 0.09, 0.1))))
+                .observe(|mut event: On<Pointer<Scroll>>, mut nodes: Query<(&mut ScrollPosition, &ComputedNode), With<LogViewport>>| {
+                    if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
+                        let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line { 40. } else { 1. };
+                        scroll.y = (scroll.y - event.y * scale).clamp(0., (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor());
+                        event.propagate(false);
+                    }
                 });
+            let log = text(&mut c, console, &state.progress.log);
+            c.entity(log).insert((
+                ConsoleLog,
+                Node {
+                    width: percent(100.),
+                    flex_shrink: 0.,
+                    ..default()
+                },
+            ));
         }
-        text(
-            &mut c,
-            panel,
-            "Run saves these settings and builds a local-only server. The server stops when the IDE closes or you change projects.",
-        );
-        let local = text(&mut c, panel, &state.local_status);
-        c.entity(local).insert(LocalStatus);
-        let row = node(
-            &mut c,
-            panel,
-            Node {
-                column_gap: px(8.),
-                ..default()
-            },
-        );
-        for (caption, action) in [
-            ("Save", Action::Save),
-            ("Build Server", Action::Build),
-            ("Cancel", Action::Cancel),
-            ("Open Folder", Action::OpenFolder),
-            ("Close", Action::Close),
-        ] {
-            let e = scenemax_ide_ui::button(&mut c, row, caption, Name::new(caption));
-            c.entity(e)
-                .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| {
-                    s.actions.push_back(action)
-                });
+        let mut footer = vec![("Save", Action::Save)];
+        if state.tab != Tab::Server {
+            footer.push((
+                "Back",
+                Action::SelectTab(match state.tab {
+                    Tab::Browser => Tab::Server,
+                    Tab::Build => Tab::Browser,
+                    _ => Tab::Build,
+                }),
+            ));
         }
-        let label = text(&mut c, panel, &state.status);
-        c.entity(label).insert(Status);
+        if state.tab != Tab::Deployment {
+            footer.push((
+                "Next",
+                Action::SelectTab(match state.tab {
+                    Tab::Server => Tab::Browser,
+                    Tab::Browser => Tab::Build,
+                    _ => Tab::Deployment,
+                }),
+            ));
+        }
+        footer.push(("Close", Action::Close));
+        actions(&mut c, panel, &footer);
+        let status = text(&mut c, panel, &state.status);
+        c.entity(status).insert(Status);
         view.root = Some(root);
         view.revision = state.revision;
     }
-    for mut text in &mut status {
-        if text.0 != state.status {
-            text.0 = state.status.clone();
-        }
+    for mut bar in &mut bars {
+        bar.width = percent(state.progress.percent as f32);
     }
-    for mut text in &mut local_status {
-        let value = if state.local_status.is_empty() {
-            "UDP local server stopped"
+    for (mut text, status, local, summary, progress, console) in &mut labels {
+        let value = if status.is_some() {
+            state.status.lines().next().unwrap_or("").to_owned()
+        } else if local.is_some() {
+            if state.local_status.is_empty() {
+                "Local servers stopped".into()
+            } else {
+                state.local_status.clone()
+            }
+        } else if summary.is_some() {
+            state.build_summary()
+        } else if progress.is_some() {
+            state.progress_label()
+        } else if console.is_some() {
+            state.progress.log.clone()
         } else {
-            &state.local_status
+            continue;
         };
         if text.0 != value {
-            text.0 = value.to_owned();
+            if console.is_some() {
+                for (mut scroll, node) in &mut log_scroll {
+                    let bottom = (node.content_size().y - node.size().y).max(0.)
+                        * node.inverse_scale_factor();
+                    if scroll.y >= bottom - 24. {
+                        scroll.y = bottom + 10000.;
+                    }
+                }
+            }
+            text.0 = value;
         }
     }
 }
@@ -291,6 +632,185 @@ pub(crate) fn refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn operation_console_and_progress_update_without_rebuilding_fields() {
+        let mut app = App::new();
+        app.init_resource::<State>()
+            .init_resource::<View>()
+            .add_systems(Update, refresh);
+        {
+            let mut state = app.world_mut().resource_mut::<State>();
+            state.open = true;
+            state.tab = Tab::Build;
+        }
+        app.update();
+        {
+            let mut state = app.world_mut().resource_mut::<State>();
+            state.busy = true;
+            state.progress.percent = 55;
+            state.progress.stage = "Uploading server bundle".into();
+            state.progress.log = "First line\nSecond line\n".into();
+        }
+        app.update();
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<&Node, With<ProgressBar>>()
+                .single(world)
+                .unwrap()
+                .width,
+            percent(55.)
+        );
+        assert!(
+            world
+                .query_filtered::<&Text, With<ConsoleLog>>()
+                .single(world)
+                .unwrap()
+                .0
+                .contains("Second line")
+        );
+        assert!(
+            world
+                .query_filtered::<&Text, With<ProgressLabel>>()
+                .single(world)
+                .unwrap()
+                .0
+                .contains("elapsed")
+        );
+        {
+            let mut state = world.resource_mut::<State>();
+            state.busy = false;
+            state.progress.percent = 100;
+            state.progress.stage = "Completed".into();
+        }
+        app.update();
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<&Text, With<ProgressLabel>>()
+                .single(world)
+                .unwrap()
+                .0,
+            "Completed"
+        );
+    }
+    #[test]
+    fn gateway_endpoint_follows_server_edits_and_keeps_hosting_origin() {
+        let mut app = App::new();
+        app.init_resource::<State>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, input);
+        {
+            let mut state = app.world_mut().resource_mut::<State>();
+            state.open = true;
+            state.fields.insert("server".into(), "127.0.0.1".into());
+            state.fields.insert("port".into(), "9001".into());
+            state
+                .fields
+                .insert("gateway_origin".into(), "https://games.example".into());
+        }
+        let host = app
+            .world_mut()
+            .spawn((Field("server".into()), EditableText::new("192.0.2.10")))
+            .id();
+        let port = app
+            .world_mut()
+            .spawn((Field("port".into()), EditableText::new("9100")))
+            .id();
+        app.update();
+        let fields = &app.world().resource::<State>().fields;
+        assert_eq!(fields["gateway_url"], "wss://192.0.2.10:9101");
+        assert_eq!(fields["gateway_listen"], "0.0.0.0:9101");
+        assert_eq!(fields["gateway_origin"], "https://games.example");
+        // Idle frames must preserve an explicit reverse-proxy URL override.
+        app.world_mut()
+            .resource_mut::<State>()
+            .fields
+            .insert("gateway_url".into(), "wss://proxy.example/game".into());
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().fields["gateway_url"],
+            "wss://proxy.example/game"
+        );
+        for invalid in ["", "0", "65535", "70000"] {
+            *app.world_mut().get_mut::<EditableText>(port).unwrap() = EditableText::new(invalid);
+            app.update();
+            assert_eq!(
+                app.world().resource::<State>().fields["gateway_listen"],
+                "0.0.0.0:9101"
+            );
+        }
+        *app.world_mut().get_mut::<EditableText>(port).unwrap() = EditableText::new("9001");
+        *app.world_mut().get_mut::<EditableText>(host).unwrap() = EditableText::new("::1");
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().fields["gateway_url"],
+            "wss://[::1]:9002"
+        );
+        assert_eq!(
+            app.world().resource::<State>().fields["gateway_listen"],
+            "[::1]:9002"
+        );
+        *app.world_mut().get_mut::<EditableText>(host).unwrap() = EditableText::new("localhost");
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().fields["gateway_listen"],
+            "127.0.0.1:9002"
+        );
+    }
+    #[test]
+    fn gateway_fields_retain_edits_without_recreating_the_dialog() {
+        let mut app = App::new();
+        app.init_resource::<State>()
+            .init_resource::<View>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, (input, refresh).chain());
+        app.world_mut().resource_mut::<State>().open = true;
+        app.world_mut().resource_mut::<State>().tab = Tab::Browser;
+        app.update();
+        let world = app.world_mut();
+        let field = world
+            .query::<(Entity, &Field)>()
+            .iter(world)
+            .find(|(_, f)| f.0 == "gateway_url")
+            .unwrap()
+            .0;
+        *world.get_mut::<EditableText>(field).unwrap() =
+            EditableText::new("wss://network.example.com/play");
+        app.update();
+        assert_eq!(
+            app.world().resource::<State>().fields["gateway_url"],
+            "wss://network.example.com/play"
+        );
+        assert!(app.world().get::<Field>(field).is_some());
+        for tab in [Tab::Build, Tab::Deployment, Tab::Server, Tab::Browser] {
+            {
+                let mut state = app.world_mut().resource_mut::<State>();
+                state.tab = tab;
+                state.revision += 1;
+            }
+            app.update();
+            let world = app.world_mut();
+            let names: Vec<_> = world
+                .query::<&Field>()
+                .iter(world)
+                .map(|f| f.0.clone())
+                .collect();
+            assert_eq!(
+                names.contains(&"gateway_url".to_owned()),
+                tab == Tab::Browser
+            );
+            assert_eq!(names.contains(&"platform".to_owned()), tab == Tab::Build);
+            assert_eq!(
+                names.contains(&"remote_host".to_owned()),
+                tab == Tab::Deployment
+            );
+        }
+        assert_eq!(
+            app.world().resource::<State>().fields["gateway_url"],
+            "wss://network.example.com/play"
+        );
+    }
     #[test]
     fn multiplayer_settings_retain_fields_and_block_editor_shortcuts() {
         let (mut app, _dir, _) = crate::tests::app();

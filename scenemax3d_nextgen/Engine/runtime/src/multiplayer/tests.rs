@@ -1508,6 +1508,81 @@ fn axis_move_capture_substitutes_values_and_resumes_remaining_distance() {
 }
 
 #[test]
+fn held_character_move_transmits_the_same_speed_as_local_input() {
+    for direction in ["forward", "backward"] {
+        for dt in [1. / 30., 1. / 60., 1. / 144.] {
+            let mut world = world();
+            let (_server, _, client) = joins::tests::connection();
+            world.insert_resource(Multiplayer {
+                client: Some(client),
+                ..default()
+            });
+            let controller = SceneMaxCharacterController {
+                move_speed: 5.,
+                gravity: 60.,
+                capsule_radius: 0.5,
+                capsule_height: 2.,
+                capsule_center_y: 1.,
+                float_height: 0.1,
+            };
+            let p = scenemax_parser::parse_program(&format!(
+                "subject.move {direction} 0.2 for 0.5 seconds"
+            ))
+            .unwrap();
+            let Statement::Move(movement) = &p.statements[0] else {
+                panic!()
+            };
+            let mut motor = SceneMaxCharacterMotor::default();
+            set_character_move_intent_resolved(
+                &mut motor,
+                &controller,
+                movement,
+                &Transform::IDENTITY,
+                0.2,
+                0.5,
+                Some(dt),
+            );
+            let local_velocity = motor.desired_motion * controller.move_speed;
+            world.spawn((
+                SceneMaxEntity {
+                    name: "subject".into(),
+                    runtime_name: "subject".into(),
+                },
+                controller,
+                motor,
+            ));
+            capture_timed(
+                &mut world.commands(),
+                &p.statements[0],
+                &mut SceneMaxVars::default(),
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(dt),
+            );
+            world.flush();
+            let (_, source, _) = world.resource_mut::<Multiplayer>().pending.pop().unwrap();
+            let p = scenemax_parser::parse_program(&source.replace("{network_entity}", "remote"))
+                .unwrap();
+            let Statement::Move(remote) = &p.statements[0] else {
+                panic!()
+            };
+            let remote_move = timed_move_from_statement_resolved(
+                remote,
+                &Transform::IDENTITY,
+                remote.distance,
+                remote.duration_seconds,
+            );
+            assert!(
+                remote_move.velocity.abs_diff_eq(local_velocity, 0.001),
+                "{direction} dt={dt}: local={local_velocity:?}, remote={:?}",
+                remote_move.velocity
+            );
+        }
+    }
+}
+
+#[test]
 fn continuous_axis_delta_is_evaluated_and_clamped_without_a_retained_lifetime() {
     for (duration, expected) in [(2., -1.), (0., -8.)] {
         let mut world = world();

@@ -378,51 +378,39 @@ pub(super) fn layout(
             Transform::from_xyz(0., -size.y / 2. + accent_height / 2., -0.01),
             ChildOf(visual),
         ));
-        let mut page_materials = HashMap::new();
+        // Keep a label's coplanar glyphs in one mesh per atlas page. Besides
+        // reducing draw calls, this keeps transparent glyph submission coherent.
+        let mut pages: HashMap<_, Vec<&fonts::Glyph>> = HashMap::new();
         for glyph in &glyphs {
-            let atlas = glyph;
-            let Some(image) = images.get(atlas.texture) else {
+            pages
+                .entry((glyph.texture, glyph.is_alpha_mask))
+                .or_default()
+                .push(glyph);
+        }
+        for ((texture_id, is_alpha_mask), page) in pages {
+            let Some(image) = images.get(texture_id) else {
                 continue;
             };
             let dimensions = image.size().as_vec2();
-            let Some(texture) = images.get_strong_handle(atlas.texture) else {
+            let Some(texture) = images.get_strong_handle(texture_id) else {
                 continue;
             };
-            let material = page_materials
-                .entry((atlas.texture, atlas.is_alpha_mask))
-                .or_insert_with(|| {
-                    materials.add(StandardMaterial {
-                        base_color: if atlas.is_alpha_mask {
-                            colors[1]
-                        } else {
-                            Color::WHITE.with_alpha(colors[1].alpha())
-                        },
-                        base_color_texture: Some(texture),
-                        unlit: true,
-                        alpha_mode: AlphaMode::Blend,
-                        cull_mode: None,
-                        ..default()
-                    })
-                })
-                .clone();
-            let min = atlas.rect.min / dimensions;
-            let max = atlas.rect.max / dimensions;
-            let mut mesh = Mesh::from(Rectangle::from_size(glyph.size * scale));
-            // Rectangle vertices: top-right, top-left, bottom-left, bottom-right.
-            mesh.insert_attribute(
-                Mesh::ATTRIBUTE_UV_0,
-                vec![
-                    [max.x, min.y],
-                    [min.x, min.y],
-                    [min.x, max.y],
-                    [max.x, max.y],
-                ],
-            );
-            let position = (glyph.position - text_size / 2.) * scale;
+            let material = materials.add(StandardMaterial {
+                base_color: if is_alpha_mask {
+                    colors[1]
+                } else {
+                    Color::WHITE.with_alpha(colors[1].alpha())
+                },
+                base_color_texture: Some(texture),
+                unlit: true,
+                alpha_mode: AlphaMode::Blend,
+                cull_mode: None,
+                ..default()
+            });
             commands.spawn((
-                Mesh3d(meshes.add(mesh)),
+                Mesh3d(meshes.add(glyph_page_mesh(&page, text_size, scale, dimensions))),
                 MeshMaterial3d(material),
-                Transform::from_xyz(position.x, -position.y, 0.),
+                Transform::default(),
                 ChildOf(visual),
             ));
         }
@@ -442,6 +430,43 @@ pub(super) fn layout(
             ));
         }
     }
+}
+
+fn glyph_page_mesh(
+    glyphs: &[&fonts::Glyph],
+    text_size: Vec2,
+    scale: f32,
+    dimensions: Vec2,
+) -> Mesh {
+    let mut positions = Vec::new();
+    let mut uvs = Vec::new();
+    let mut indices = Vec::new();
+    for glyph in glyphs {
+        let center = (glyph.position - text_size / 2.) * scale;
+        let half = glyph.size * scale / 2.;
+        let base = positions.len() as u32;
+        positions.extend([
+            [center.x + half.x, -center.y + half.y, 0.],
+            [center.x - half.x, -center.y + half.y, 0.],
+            [center.x - half.x, -center.y - half.y, 0.],
+            [center.x + half.x, -center.y - half.y, 0.],
+        ]);
+        let min = glyph.rect.min / dimensions;
+        let max = glyph.rect.max / dimensions;
+        uvs.extend([
+            [max.x, min.y],
+            [min.x, min.y],
+            [min.x, max.y],
+            [max.x, max.y],
+        ]);
+        indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    let normals = vec![[0., 0., 1.]; positions.len()];
+    Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+        .with_inserted_indices(bevy::mesh::Indices::U32(indices))
 }
 
 pub(super) fn billboard(
@@ -467,6 +492,37 @@ pub(super) fn billboard(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn glyph_page_preserves_distinct_uvs_and_quad_indices() {
+        let a = fonts::Glyph {
+            texture: Handle::<Image>::default().id(),
+            rect: Rect::new(0., 0., 10., 20.),
+            position: Vec2::new(5., 10.),
+            size: Vec2::new(10., 20.),
+            is_alpha_mask: true,
+        };
+        let b = fonts::Glyph {
+            rect: Rect::new(40., 20., 48., 40.),
+            position: Vec2::new(18., 10.),
+            size: Vec2::new(8., 20.),
+            ..a
+        };
+        let mesh = glyph_page_mesh(&[&a, &b], Vec2::new(22., 20.), 1., Vec2::splat(100.));
+        let Some(bevy::mesh::VertexAttributeValues::Float32x2(uvs)) =
+            mesh.attribute(Mesh::ATTRIBUTE_UV_0)
+        else {
+            panic!("UVs")
+        };
+        assert_eq!(&uvs[..4], &[[0.1, 0.], [0., 0.], [0., 0.2], [0.1, 0.2]]);
+        assert_eq!(
+            &uvs[4..],
+            &[[0.48, 0.2], [0.4, 0.2], [0.4, 0.4], [0.48, 0.4]]
+        );
+        assert_eq!(
+            mesh.indices().unwrap().iter().collect::<Vec<_>>(),
+            vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]
+        );
+    }
     #[test]
     fn styles_and_evaluated_transparency_survive_snapshot_and_text_updates() {
         let program = scenemax_parser::parse_program("caption => label: multiplayer, text \"styled\", style \"Glass\", transparency fade + 5").unwrap();

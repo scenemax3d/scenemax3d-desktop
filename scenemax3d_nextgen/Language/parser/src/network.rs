@@ -165,9 +165,39 @@ pub(super) fn block(
     )))
 }
 
+// Register even while the guard is false; evaluate it for each delivered event.
+pub(super) fn guard_handler(statement: &mut Statement, condition: Condition) {
+    if let Statement::Network(NetworkStatement::On { actions, .. }) = statement {
+        *actions = vec![Statement::Guarded {
+            condition,
+            actions: std::mem::take(actions),
+        }];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn network_guards_apply_on_delivery_and_do_not_leak_to_next_function() {
+        let handler = "[enabled == 1]\nnetwork.on(\"tick\", 5) = {\n total = total + 1\n}\nnext() = {\n total = 0\n}";
+        for source in [handler.to_owned(), format!("setup() = {{\n{handler}\n}}")] {
+            let program = parse_program(&source).unwrap();
+            let actions = match &program.statements[0] {
+                Statement::FunctionDef(f) => &f.actions,
+                _ => &program.statements,
+            };
+            let Statement::Network(NetworkStatement::On { actions: body, .. }) = &actions[0] else {
+                panic!("handler must always register");
+            };
+            assert!(matches!(&body[0], Statement::Guarded { actions, .. } if actions.len() == 1));
+            if let Statement::FunctionDef(next) = &actions[1] {
+                assert!(next.guard.is_none());
+            } else {
+                assert!(matches!(&actions[1], Statement::Assignment(_)));
+            }
+        }
+    }
     #[test]
     fn nested_network_handlers_keep_function_and_branch_boundaries() {
         let program = parse_program(

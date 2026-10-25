@@ -12,6 +12,7 @@ fn temporary_export_does_not_replace_saved_publishing_preferences() {
     let path = root.path().join(".scenemax-studio/deployment.json");
     let before = fs::read(&path).unwrap();
     let request = Request {
+        multiplayer_override: None,
         project: root.path().into(),
         entry: root.path().join("scripts/main"),
         workspace: workspace(),
@@ -26,6 +27,7 @@ fn effect_folder_declaration_selects_binary_and_sidecars_without_catalog() {
     let root = tempfile::tempdir().unwrap();
     let output = root.path().join("snapshot");
     let request = Request {
+        multiplayer_override: None,
         entry: project.join("scripts/main"),
         project,
         workspace: workspace(),
@@ -64,6 +66,7 @@ fn effects_select_only_declared_runtime_dependencies_and_reject_missing_ones() {
     fs::write(effect.join("unused.efkproj"), b"editor data").unwrap();
     fs::write(effect.join("Texture/unused.png"), b"unused texture").unwrap();
     let request = Request {
+        multiplayer_override: None,
         entry: project.join("scripts/main"),
         project,
         workspace: workspace(),
@@ -124,6 +127,7 @@ fn animation_analyzer_records_survive_packaging_without_selecting_other_models()
         .unwrap();
     }
     let request = Request {
+        multiplayer_override: None,
         project: root.path().into(),
         entry: root.path().join("scripts/main"),
         workspace: workspace(),
@@ -303,6 +307,7 @@ fn dependency_package_follows_scenes_and_gltf_without_shipping_import_sources() 
     .unwrap();
     // A caller's currently active scene must not replace the project's root main.
     let request = Request {
+        multiplayer_override: None,
         project: root.path().to_owned(),
         entry: root.path().join("scripts/start/next/objects.code"),
         workspace: workspace(),
@@ -342,6 +347,7 @@ fn benchmark_dependency_snapshot() {
         .unwrap();
     let opened = crate::Filesystem::open_project(&project).unwrap();
     let request = Request {
+        multiplayer_override: None,
         entry: opened.entry_point().unwrap().to_owned(),
         settings: files::load_settings(&project).unwrap(),
         project,
@@ -663,6 +669,7 @@ fn model_inventory_excludes_legacy_and_unused_retargets_and_explains_gltf() {
     for all in [false, true] {
         let output = root.path().join(if all { "all" } else { "filtered" });
         let request = Request {
+            multiplayer_override: None,
             project: root.path().to_owned(),
             entry: root.path().join("scripts/main"),
             workspace: workspace(),
@@ -770,6 +777,7 @@ fn native_materials_package_only_when_reachable_with_their_textures() {
         fs::write(root.path().join("resources/textures").join(file), "fixture").unwrap();
     }
     let request = Request {
+        multiplayer_override: None,
         project: root.path().into(),
         entry: root.path().join("scripts/main"),
         workspace: workspace(),
@@ -813,6 +821,7 @@ fn ik_packages_by_asset_id_without_editor_preview_models() {
         fs::write(root.path().join("resources/Models").join(file), "fixture").unwrap();
     }
     let request = Request {
+        multiplayer_override: None,
         project: root.path().into(),
         entry: root.path().join("scripts/main"),
         workspace: workspace(),

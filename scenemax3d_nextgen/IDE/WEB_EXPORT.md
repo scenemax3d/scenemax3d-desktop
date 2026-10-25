@@ -124,7 +124,7 @@ establish Linux/macOS export support on a clean machine.
    reported problems, then **Build release**. First compilation can take a long
    time; subsequent builds reuse unchanged compiler output. Checks do not replace
    an actual build or browser test.
-7. After completion, choose **Run Web locally**. SceneMax runs its own localhost
+7. After completion, choose **Test With Local Server** or **Test With Remote Server**. SceneMax runs its own localhost
    server and opens the browser; no extra server software is needed. Rebuild after
    source/asset changes: this previews the completed ZIP. **Stop local server**
    stops it; exiting the IDE also stops it.
@@ -203,11 +203,14 @@ compiling again. The release version is entered manually; repeatedly uploading
 
 Single-player games require only static hosting. Multiplayer additionally needs
 the SceneMax WebSocket gateway and the UDP server on a server you operate; a
-browser cannot connect directly to raw UDP. Configure the exported `network.json`
-with a public `wss://` URL and allow the actual browser/iframe origin at the
-gateway. Static itch.io hosting does not run server processes. Gateway build,
-TLS and configuration instructions are in [DEPLOYMENT.md](DEPLOYMENT.md#browser-exports)
-and in each exported ZIP's `README.txt`.
+browser cannot connect directly to raw UDP. In **Project Settings — Multiplayer**,
+enable **Browser gateway**, enter its public `wss://` URL, listener and allowed
+browser/iframe origin, then Save. Web exports write this URL into `network.json`
+automatically. **Build Server** packages the gateway alongside the Zig server;
+**Run Server Locally** starts both for local `ws://localhost` testing.
+Static itch.io hosting does not run server processes. Public WSS still needs a
+TLS reverse proxy. See [multiplayer settings](../../docs/multiplayer.md#browser-clients)
+for local defaults and deployment details.
 
 ## Distribution maintainer checklist
 
@@ -220,3 +223,9 @@ change. Do not claim clean-install readiness based on a developer machine's cach
 Before releasing, test setup, Web compilation, local preview, first-interaction
 audio and effect rendering on a clean Windows x64 machine without preinstalled
 Rust/Visual Studio/Butler, then test the resulting ZIP on the hosting site.
+
+Browser test buttons in both forms use the Multiplayer Deployment progress view.
+Local testing starts an IDE-owned loopback Zig server and WebSocket gateway using
+temporary connection settings. Remote testing uses the saved deployed gateway.
+Both rebuild the browser game without publishing. Stop Test stops the preview
+and any owned local test processes; it never stops deployed remote services.

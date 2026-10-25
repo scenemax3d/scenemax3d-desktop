@@ -13,7 +13,7 @@ pub(super) fn load(root: &Path, context: &Context) -> io::Result<()> {
     context.edit(|report| {
         if let Some(path) = artifact {
             report.status =
-                "Existing Web build found. Run Web locally, or rebuild to include source changes."
+                "Existing Web build found. Choose Test With Local Server or Test With Remote Server to rebuild and test."
                     .into();
             report.web_artifact = Some(path.clone());
             report.artifacts.push(path);

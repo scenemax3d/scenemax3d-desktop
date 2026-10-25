@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         platform.runtime = runtime.to_string_lossy().into_owned();
     }
     let request = Request {
+        multiplayer_override: None,
         project: project.root().to_owned(),
         entry: project
             .entry_point()

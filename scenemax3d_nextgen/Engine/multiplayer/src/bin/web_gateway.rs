@@ -12,11 +12,14 @@ use tungstenite::{
     Error, Message,
     handshake::server::{ErrorResponse, Request, Response},
 };
+#[path = "gateway/liveness.rs"]
+mod liveness;
 fn serve(
     stream: TcpStream,
     upstream: SocketAddr,
     origin: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    stream.set_nodelay(true)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
     let config = tungstenite::protocol::WebSocketConfig::default()
@@ -52,6 +55,7 @@ fn serve(
     let mut last = Instant::now();
     let mut window = Instant::now();
     let mut packets = 0u32;
+    let mut liveness = liveness::Liveness::new(Instant::now());
     loop {
         if window.elapsed() > Duration::from_secs(1) {
             window = Instant::now();
@@ -68,6 +72,12 @@ fn serve(
                     last = Instant::now();
                 }
                 Ok(Message::Close(_)) => return Ok(()),
+                Ok(Message::Pong(bytes)) => {
+                    if let Some(heartbeat) = liveness.pong(&bytes) {
+                        udp.send(&heartbeat)?;
+                        last = Instant::now();
+                    }
+                }
                 Ok(_) => {}
                 Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => break,
                 Err(e) => return Err(e.into()),
@@ -75,12 +85,25 @@ fn serve(
         }
         for _ in 0..128 {
             match udp.recv(&mut buffer) {
-                Ok(n) => match socket.send(Message::Binary(buffer[..n].to_vec().into())) {
-                    Ok(()) => {}
-                    Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => break,
-                    Err(e) => return Err(e.into()),
-                },
+                Ok(n) => {
+                    liveness.receive(&buffer[..n]);
+                    match socket.send(Message::Binary(buffer[..n].to_vec().into())) {
+                        Ok(()) => {}
+                        Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => break,
+                        Err(e) => return Err(e.into()),
+                    }
+                }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        if liveness.expired(Instant::now()) {
+            return Err("Browser did not answer WebSocket ping".into());
+        }
+        if let Some(ping) = liveness.ping(Instant::now()) {
+            match socket.send(Message::Ping(ping.into())) {
+                Ok(()) => {}
+                Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => {}
                 Err(e) => return Err(e.into()),
             }
         }
@@ -96,7 +119,24 @@ fn serve(
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let mut args: Vec<_> = std::env::args().skip(1).collect();
+    // IDE bundles can be launched directly without a terminal or working-directory assumptions.
+    if args.is_empty() {
+        let config = std::env::current_exe()?.with_file_name("gateway.json");
+        let bytes = std::fs::read(&config)?;
+        if bytes.len() > 16384 {
+            return Err("Gateway configuration exceeds 16 KiB".into());
+        }
+        let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+        for key in ["listen", "upstream", "allowed_origin"] {
+            args.push(
+                value[key]
+                    .as_str()
+                    .ok_or("Invalid gateway configuration")?
+                    .to_owned(),
+            );
+        }
+    }
     if args.len() != 3 {
         eprintln!(
             "Usage: scenemax_web_gateway LISTEN_ADDRESS UDP_SERVER_ADDRESS ALLOWED_ORIGIN\nExample: scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080\nUse a TLS reverse proxy for public wss:// access. Each browser connection owns a distinct UDP socket."

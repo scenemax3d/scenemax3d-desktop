@@ -97,6 +97,13 @@ impl ReplayHistory {
             == Some(&(sequence, true))
     }
 
+    pub(super) fn active_successor(&self, id: u32, slot: u8, sequence: u16) -> bool {
+        self.entities
+            .get(&id)
+            .and_then(|entity| entity.slots.get(&slot))
+            .is_some_and(|(latest, active)| *active && newer(*latest, sequence))
+    }
+
     pub(super) fn destroy(&mut self, id: u32) {
         self.entities.remove(&id);
         if self.destroyed.insert(id) {

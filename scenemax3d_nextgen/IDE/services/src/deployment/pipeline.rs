@@ -293,8 +293,16 @@ pub(super) fn build_temporary(request: &Request, context: &Context) -> io::Resul
     let entry = canonical_entry
         .strip_prefix(&project)
         .map_err(io::Error::other)?;
-    crate::multiplayer::embed_settings(&project, &snapshot.join(entry))
-        .map_err(io::Error::other)?;
+    if let Some(settings) = &request.multiplayer_override {
+        context.log(format!(
+            "Browser test gateway: {} (game origin {})\n",
+            settings.browser_gateway.websocket_url, settings.browser_gateway.allowed_origin
+        ));
+        crate::multiplayer::embed_values(settings, &snapshot.join(entry))
+    } else {
+        crate::multiplayer::embed_settings(&project, &snapshot.join(entry))
+    }
+    .map_err(io::Error::other)?;
     let entry = entry
         .to_str()
         .ok_or_else(|| io::Error::other("Entry point must be Unicode."))?

@@ -1,6 +1,7 @@
 //! Source builds run only in the settings worker and own only their compiler.
 use super::read;
 use std::{
+    io::Read,
     path::Path,
     process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
@@ -73,10 +74,33 @@ fn prepare_with(
 }
 
 // A temporary output file avoids pipe deadlocks. Size and time are checked on
-// every poll; only the final bounded diagnostic is presented to the user.
-fn compile(command: &mut Command, cancel: &AtomicBool, timeout: Duration) -> Result<bool, String> {
+// every poll; a separate reader streams bounded chunks to the live console.
+pub(super) fn compile(
+    command: &mut Command,
+    cancel: &AtomicBool,
+    timeout: Duration,
+) -> Result<bool, String> {
+    compile_named(command, cancel, timeout, "Zig")
+}
+
+pub(super) fn compile_named(
+    command: &mut Command,
+    cancel: &AtomicBool,
+    timeout: Duration,
+    tool: &str,
+) -> Result<bool, String> {
+    run_output(command, cancel, timeout, tool).map(|output| output.is_some())
+}
+pub(super) fn run_output(
+    command: &mut Command,
+    cancel: &AtomicBool,
+    timeout: Duration,
+    tool: &str,
+) -> Result<Option<String>, String> {
     check(cancel)?;
     let log = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let mut live = log.reopen().map_err(|e| e.to_string())?;
+    super::progress::output(&format!("Starting {tool}…\n"));
     let stream = log.reopen().map_err(|e| e.to_string())?;
     command
         .stdin(Stdio::null())
@@ -94,31 +118,38 @@ fn compile(command: &mut Command, cancel: &AtomicBool, timeout: Duration) -> Res
     }
     let mut child = match command.spawn() {
         Ok(child) => child,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(format!("Could not start Zig: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("Could not start {tool}: {e}")),
     };
     let started = Instant::now();
     let result = (|| {
         loop {
             check(cancel)?;
             if started.elapsed() >= timeout {
-                return Err("Zig build exceeded its five-minute timeout".into());
+                return Err(format!(
+                    "{tool} build exceeded its {}-second timeout",
+                    timeout.as_secs()
+                ));
             }
             if log.as_file().metadata().map_err(|e| e.to_string())?.len() > 4 * 1024 * 1024 {
-                return Err("Zig output exceeded 4 MiB".into());
+                return Err(format!("{tool} output exceeded 4 MiB"));
             }
             if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                stream_log(&mut live)?;
                 return if status.success() {
-                    Ok(true)
+                    Ok(Some(
+                        String::from_utf8_lossy(&read(log.path(), 4 * 1024 * 1024)?).into_owned(),
+                    ))
                 } else {
                     let bytes = read(log.path(), 4 * 1024 * 1024)?;
                     let tail = &bytes[bytes.len().saturating_sub(16384)..];
                     Err(format!(
-                        "Zig build failed ({status}). Install Zig 0.16.x.\n{}",
+                        "{tool} build failed ({status}).\n{}",
                         String::from_utf8_lossy(tail)
                     ))
                 };
             }
+            stream_log(&mut live)?;
             std::thread::sleep(Duration::from_millis(50));
         }
     })();
@@ -145,6 +176,17 @@ fn compile(command: &mut Command, cancel: &AtomicBool, timeout: Duration) -> Res
     result
 }
 
+fn stream_log(file: &mut std::fs::File) -> Result<(), String> {
+    let mut bytes = Vec::new();
+    file.take(4 * 1024 * 1024)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    for chunk in bytes.chunks(16384) {
+        super::progress::output(&String::from_utf8_lossy(chunk));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +207,12 @@ mod tests {
     #[ignore = "owned subprocess fixture invoked by compiler lifecycle tests"]
     fn compiler_process_fixture() {
         match std::env::var("SCENEMAX_COMPILER_TEST_MODE").as_deref() {
+            Ok("live") => {
+                use std::io::Write;
+                println!("live-output-before-completion");
+                std::io::stdout().flush().unwrap();
+                std::thread::sleep(Duration::from_secs(30));
+            }
             Ok("wait") => std::thread::sleep(Duration::from_secs(30)),
             Ok("fail") => std::process::exit(7),
             Ok("output") => {
@@ -179,6 +227,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn console_output_arrives_while_subprocess_is_running() {
+        let progress =
+            std::sync::Arc::new(std::sync::Mutex::new(super::super::Progress::default()));
+        super::super::progress::attach(progress.clone());
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let observer_cancel = cancel.clone();
+        let observer = std::thread::spawn(move || {
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_secs(10) {
+                if progress
+                    .lock()
+                    .unwrap()
+                    .log
+                    .contains("live-output-before-completion")
+                {
+                    observer_cancel.store(true, Ordering::Relaxed);
+                    return true;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            observer_cancel.store(true, Ordering::Relaxed);
+            false
+        });
+        let result = compile(&mut fixture("live"), &cancel, Duration::from_secs(15));
+        assert!(
+            observer.join().unwrap(),
+            "Expected live output before the child exits"
+        );
+        assert!(result.unwrap_err().contains("cancelled"));
+    }
     #[test]
     fn compiler_failure_timeout_output_limit_and_active_cancellation_are_bounded() {
         let cancel = std::sync::Arc::new(AtomicBool::new(false));

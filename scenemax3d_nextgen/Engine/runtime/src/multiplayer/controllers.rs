@@ -20,7 +20,19 @@ pub(super) fn prune(world: &mut World, replay: &replay::ReplayHistory) {
         active.running.retain(|owner| !cancelled(Some(owner)));
     }
     for mut motor in world.query::<&mut SceneMaxCharacterMotor>().iter_mut(world) {
-        if cancelled(motor.timed_motion_owner.as_ref()) {
+        let awaiting_replacement = match motor.timed_motion_owner.as_ref() {
+            Some(SceneMaxControllerKey::NetworkAction {
+                entity,
+                slot,
+                sequence,
+            }) => replay.active_successor(*entity, *slot, *sequence),
+            _ => false,
+        };
+        // Physics runs before Update installs queued commands. Clearing the old
+        // motor in Last whenever another start arrives starves the next physics
+        // tick. Keep its bounded intent until the replacement overwrites it;
+        // explicit ends, destruction and history resets still cancel immediately.
+        if cancelled(motor.timed_motion_owner.as_ref()) && !awaiting_replacement {
             motor.timed_motion = Vec3::ZERO;
             motor.timed_motion_remaining_seconds = 0.;
             motor.timed_motion_owner = None;
@@ -140,6 +152,39 @@ mod tests {
             entity,
             slot,
             sequence,
+        }
+    }
+    #[test]
+    fn character_intent_survives_queued_successor_until_physics_but_not_stop() {
+        for terminal in ["end", "destroy", "reset"] {
+            let mut world = World::new();
+            let mut replay = replay::ReplayHistory::default();
+            replay.start(10, 1, u16::MAX);
+            let entity = world
+                .spawn(SceneMaxCharacterMotor {
+                    timed_motion_owner: Some(owner(10, 1, u16::MAX)),
+                    timed_motion: Vec3::Z,
+                    timed_motion_remaining_seconds: CHARACTER_INPUT_TTL_SECONDS,
+                    ..default()
+                })
+                .id();
+            replay.start(10, 1, 0);
+            prune(&mut world, &replay);
+            let motor = world.get::<SceneMaxCharacterMotor>(entity).unwrap();
+            assert_eq!(motor.timed_motion, Vec3::Z);
+            assert_eq!(
+                motor.timed_motion_remaining_seconds,
+                CHARACTER_INPUT_TTL_SECONDS
+            );
+            match terminal {
+                "end" => replay.end(10, 1, 0),
+                "destroy" => replay.destroy(10),
+                _ => replay = default(),
+            }
+            prune(&mut world, &replay);
+            let motor = world.get::<SceneMaxCharacterMotor>(entity).unwrap();
+            assert_eq!(motor.timed_motion, Vec3::ZERO, "{terminal}");
+            assert_eq!(motor.timed_motion_remaining_seconds, 0.);
         }
     }
     #[test]
@@ -330,6 +375,31 @@ mod tests {
             final_translation: Some(Vec3::splat(99.)),
             loop_condition: None,
         }
+    }
+    #[test]
+    fn applying_axis_motion_completes_the_character_motor_handoff() {
+        let mut world = World::new();
+        let entity = world
+            .spawn(SceneMaxCharacterMotor {
+                timed_motion_owner: Some(owner(10, 1, 1)),
+                timed_motion: Vec3::Z,
+                timed_motion_remaining_seconds: 4.,
+                desired_motion: Vec3::Y,
+                motion_ttl_seconds: 1.,
+                ..default()
+            })
+            .id();
+        append_timed_move(
+            &mut world.commands(),
+            entity,
+            movement(Some(owner(10, 1, 2))),
+        );
+        world.flush();
+        let motor = world.get::<SceneMaxCharacterMotor>(entity).unwrap();
+        assert_eq!(motor.timed_motion_remaining_seconds, 0.);
+        assert_eq!(motor.timed_motion, Vec3::ZERO);
+        assert_eq!(motor.desired_motion, Vec3::Y);
+        assert_eq!(world.get::<TimedMoves>(entity).unwrap().moves.len(), 1);
     }
     #[test]
     fn ends_and_supersession_cancel_only_owned_motion_and_preserve_local_input() {

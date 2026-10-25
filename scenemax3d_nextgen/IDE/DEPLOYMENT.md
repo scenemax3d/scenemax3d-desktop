@@ -46,7 +46,7 @@ compiles the shared runtime for Wasm, generates browser bindings, stages the
 selected scripts/assets and creates a static-site ZIP. Unchanged engine builds
 reuse Cargo's cache. Neither Java nor a separate game-specific runtime is used.
 
-After a Web artifact completes, **Run Web locally** in the right-hand build report
+After a Web artifact completes, **Test With Local Server** or **Test With Remote Server** in the right-hand build report
 extracts that ZIP into a private temporary folder, starts the IDE's loopback-only
 HTTP server on an available port, and opens the default browser. No Python or Node
 installation is needed. The report shows the URL and **Stop local server**; closing
@@ -89,14 +89,15 @@ Binary pin, checksums, licenses and maintainer update instructions are in
 `da76b5023bd7aa10fe66ee05f6fecd4b84debce3`).
 Custom Rust additions must compile for `wasm32-unknown-unknown`.
 
-For multiplayer, configure the exported `network.json` with `websocket_url`.
+For multiplayer, enable Browser gateway in Project Settings — Multiplayer and save
+its WebSocket URL, listener and allowed game origin. The exporter writes the saved
+URL into `network.json` automatically.
 Browsers use binary WebSocket messages through the supplied
 `scenemax_web_gateway`, which forwards each connection through its own UDP socket
-to the existing Zig server without changing the game protocol. Build the gateway
-with `cargo build --release -p scenemax_multiplayer --features web-gateway --bin scenemax_web_gateway`.
-It takes three arguments: listening socket address, fixed UDP upstream socket
-address, and allowed browser Origin. Example:
-`scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080`.
+to the existing Zig server without changing the game protocol. Build Server packages
+both executables and `gateway.json`; Run Server Locally starts and monitors both.
+The standalone gateway reads its adjacent configuration when launched without
+arguments. Local defaults are `ws://localhost:9002` and origin `http://localhost:8080`.
 Use a TLS reverse proxy for public WSS, and specify the actual hosting/iframe
 origin. Static hosting cannot run the gateway. The ZIP includes these deployment
 instructions. Desktop clients continue to connect directly over UDP.
@@ -239,3 +240,9 @@ The size report lists only models included in the artifact under Packaged Models
 Animation `bevyBakedRetargets` are optional target variants: only variants for selected models survive dependency expansion and staged catalog writing. An unused variant cannot pull its target model into the game. Source-model aliases still resolve to their supported glTF/GLB resource.
 
 JME `.j3o` payloads are excluded in both dependency and all-assets modes. Unsupported catalog entries without a source-model alias are removed from the staged catalog; source files remain untouched. A referenced unsupported model produces a build-log warning and a dependency diagnostic in package-size.json; excluded models do not appear in the size analysis. This does not convert the model or repair the scene: authors must supply a supported glTF/GLB resource or remove its scene reference.
+
+Browser test buttons in both forms use the Multiplayer Deployment progress view.
+Local testing starts an IDE-owned loopback Zig server and WebSocket gateway using
+temporary connection settings. Remote testing uses the saved deployed gateway.
+Both rebuild the browser game without publishing. Stop Test stops the preview
+and any owned local test processes; it never stops deployed remote services.

@@ -41,13 +41,24 @@ impl Preview {
     }
     /// Extract a completed ZIP in the background, serve it, and open the default browser.
     pub fn start(&mut self, artifact: PathBuf) -> io::Result<()> {
-        self.start_server(artifact, true)
+        self.start_server(artifact, true, None)
+    }
+    /// Serve at the exact local Origin accepted by the multiplayer gateway.
+    pub fn start_at_origin(&mut self, artifact: PathBuf, origin: &str) -> io::Result<()> {
+        let address = local_origin_address(origin)?;
+        self.stop();
+        self.start_server(artifact, true, Some((address, format!("{origin}/"))))
     }
     /// Serve the same exported ZIP without launching a browser (CLI/tests).
     pub fn serve(&mut self, artifact: PathBuf) -> io::Result<()> {
-        self.start_server(artifact, false)
+        self.start_server(artifact, false, None)
     }
-    fn start_server(&mut self, artifact: PathBuf, open: bool) -> io::Result<()> {
+    fn start_server(
+        &mut self,
+        artifact: PathBuf,
+        open: bool,
+        endpoint: Option<(std::net::SocketAddr, String)>,
+    ) -> io::Result<()> {
         let current = self.status();
         if current.active {
             if let Some(url) = current.url.filter(|_| open) {
@@ -79,7 +90,7 @@ impl Preview {
         let result = std::thread::Builder::new()
             .name("scenemax-web-preview".into())
             .spawn(move || {
-                let result = serve_archive(&artifact, &cancel, &state, open);
+                let result = serve_archive_at(&artifact, &cancel, &state, open, endpoint);
                 let mut state = state
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -179,21 +190,60 @@ fn unpack(artifact: &Path, root: &Path, cancel: &AtomicBool) -> io::Result<()> {
     }
     Ok(())
 }
+#[cfg(test)]
 fn serve_archive(
     artifact: &Path,
     cancel: &AtomicBool,
     state: &Mutex<Status>,
     open: bool,
 ) -> io::Result<()> {
+    serve_archive_at(artifact, cancel, state, open, None)
+}
+/// Validate a local HTTP origin without binding to an external network interface.
+pub fn local_origin_address(origin: &str) -> io::Result<std::net::SocketAddr> {
+    let authority = origin.strip_prefix("http://").ok_or_else(|| io::Error::other("Browser testing requires an allowed game origin such as http://localhost:8080. The deployed gateway must allow this same origin."))?;
+    let authority = authority
+        .strip_prefix("localhost:")
+        .map(|p| format!("127.0.0.1:{p}"))
+        .unwrap_or_else(|| authority.to_owned());
+    let address = authority.parse::<std::net::SocketAddr>().map_err(|_| io::Error::other("Browser testing requires a local HTTP origin with an explicit port, for example http://localhost:8080"))?;
+    if !address.ip().is_loopback() || address.port() == 0 {
+        return Err(io::Error::other(
+            "Browser testing only serves on a loopback address and a nonzero port",
+        ));
+    }
+    Ok(address)
+}
+fn serve_archive_at(
+    artifact: &Path,
+    cancel: &AtomicBool,
+    state: &Mutex<Status>,
+    open: bool,
+    endpoint: Option<(std::net::SocketAddr, String)>,
+) -> io::Result<()> {
     let directory = tempfile::Builder::new()
         .prefix("scenemax-web-preview-")
         .tempdir()?;
     unpack(artifact, directory.path(), cancel)?;
     check(cancel)?;
-    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+    let endpoint = match endpoint {
+        Some(endpoint) => Some(endpoint),
+        None => exported_endpoint(directory.path())?,
+    };
+    let address = endpoint
+        .as_ref()
+        .map(|(address, _)| *address)
+        .unwrap_or_else(|| (std::net::Ipv4Addr::LOCALHOST, 0).into());
+    let listener = TcpListener::bind(address).map_err(|e| io::Error::other(format!("Cannot serve local game at {address}: {e}. Stop any other server using this port and retry.")))?;
     listener.set_nonblocking(true)?;
     let host = listener.local_addr()?.to_string();
-    let url = format!("http://{host}/");
+    let url = endpoint
+        .map(|(_, url)| url)
+        .unwrap_or_else(|| format!("http://{host}/"));
+    let host = url
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_owned();
     {
         let mut state = state
             .lock()
@@ -242,6 +292,21 @@ fn serve_archive(
         Ok(())
     })
 }
+fn exported_endpoint(root: &Path) -> io::Result<Option<(std::net::SocketAddr, String)>> {
+    let path = root.join("network.json");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let network: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+    if network["websocket_url"].as_str().unwrap_or("").is_empty() {
+        return Ok(None);
+    }
+    let origin = network["allowed_origin"].as_str().filter(|s| !s.is_empty())
+        .ok_or_else(|| io::Error::other("This multiplayer export has no allowed game origin. Rebuild it, or use Project Settings > Multiplayer > Deployment > Test With Remote Server."))?;
+    let address = local_origin_address(origin)?;
+    Ok(Some((address, format!("{origin}/"))))
+}
+
 fn open_browser(url: &str) -> io::Result<()> {
     #[cfg(windows)]
     let program = "explorer.exe";

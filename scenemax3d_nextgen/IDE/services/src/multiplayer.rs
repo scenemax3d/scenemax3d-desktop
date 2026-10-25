@@ -12,9 +12,16 @@ use std::{
     },
     thread,
 };
+mod browser_test;
 mod build;
+pub use browser_test::{LocalTest, TestTarget};
+mod gateway;
 pub(crate) mod launch;
 pub mod local_server;
+mod progress;
+mod remote;
+pub use progress::Progress;
+pub use remote::RemoteAction;
 
 /// A configuration snapshot used for optimistic conflict detection.
 #[derive(Clone, Debug)]
@@ -26,15 +33,23 @@ pub struct Snapshot {
 }
 /// Completed background operation.
 pub struct Report {
+    /// Owned local test processes and their temporary bundle.
+    pub local_test: Option<browser_test::LocalTest>,
+    /// Built browser archive to serve locally after Test Game.
+    pub web_artifact: Option<PathBuf>,
     /// Current saved/loaded settings snapshot.
     pub snapshot: Snapshot,
     /// User-visible result.
     pub message: String,
     /// Newly created server, if this operation built one.
     pub server: Option<PathBuf>,
+    /// Optional browser adapter built alongside the UDP server.
+    pub gateway: Option<PathBuf>,
 }
 /// Work performed outside the IDE frame thread.
 pub enum Operation {
+    /// Save multiplayer settings and export the project for local browser testing.
+    TestGame(Snapshot, PathBuf, TestTarget),
     /// Load native settings, importing Java defaults if needed.
     Load,
     /// Save against a captured source snapshot.
@@ -43,10 +58,13 @@ pub enum Operation {
     Build(Snapshot),
     /// Build using an explicit session-only password, including an empty password.
     BuildWithPassword(Snapshot, String),
+    /// Test SSH, inspect services, or deploy an already-built bundle.
+    Remote(Snapshot, Option<PathBuf>, RemoteAction),
 }
 /// One owned bounded worker slot.
 #[derive(Default)]
 pub struct Worker {
+    progress: Arc<Mutex<Progress>>,
     result: Option<Mutex<mpsc::Receiver<Result<Report, String>>>>,
     handle: Option<thread::JoinHandle<()>>,
     cancel: Arc<AtomicBool>,
@@ -60,16 +78,54 @@ impl Worker {
         let (tx, rx) = mpsc::sync_channel(1);
         self.cancel = Arc::new(AtomicBool::new(false));
         let cancel = self.cancel.clone();
+        self.progress = Arc::new(Mutex::new(Progress::default()));
+        let progress = self.progress.clone();
         self.handle = Some(
             thread::Builder::new()
                 .name("multiplayer-settings".into())
                 .spawn(move || {
-                    let _ = tx.send(run(&root, operation, &cancel));
+                    progress::attach(progress);
+                    progress::stage(0, "Starting");
+                    let result = run(&root, operation, &cancel);
+                    let error = match &result {
+                        Err(error) => Some(error.as_str()),
+                        Ok(report)
+                            if report.message.starts_with("Remote operation failed:")
+                                || report.message.starts_with("Test Game failed:") =>
+                        {
+                            Some(report.message.as_str())
+                        }
+                        _ => None,
+                    };
+                    if let Some(error) = error {
+                        progress::stage(
+                            0,
+                            if cancel.load(Ordering::Relaxed) {
+                                "Cancelled"
+                            } else {
+                                "Failed"
+                            },
+                        );
+                        progress::output(error);
+                    } else {
+                        progress::stage(100, "Completed");
+                        if let Ok(report) = &result {
+                            progress::output(&report.message);
+                        }
+                    }
+                    let _ = tx.send(result);
                 })
                 .map_err(|e| e.to_string())?,
         );
         self.result = Some(Mutex::new(rx));
         Ok(())
+    }
+    /// Request cancellation of owned build work; never terminate a game server.
+    pub fn progress(&self) -> Progress {
+        self.progress
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
     /// Request cancellation of owned build work; never terminate a game server.
     pub fn cancel(&self) {
@@ -119,55 +175,158 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
     match operation {
         Operation::BuildWithPassword(..) => unreachable!("normalized above"),
         Operation::Load => Ok(Report {
+            local_test: None,
+            web_artifact: None,
             snapshot: load(&root)?,
             message: "Multiplayer settings loaded. Passwords are kept only for this IDE session."
                 .into(),
             server: None,
+            gateway: None,
         }),
+        Operation::Remote(mut snapshot, bundle, action) => {
+            progress::stage(5, "Saving deployment settings");
+            snapshot.settings.deployment.validate()?;
+            save(&root, &mut snapshot)?;
+            let message = remote::execute(&snapshot.settings, bundle.as_deref(), action, cancel)
+                .unwrap_or_else(|error| format!("Remote operation failed: {error}"));
+            Ok(Report {
+                local_test: None,
+                web_artifact: None,
+                snapshot,
+                message,
+                server: None,
+                gateway: None,
+            })
+        }
         Operation::Save(mut snapshot) => {
             save(&root, &mut snapshot)?;
             Ok(Report {
+                local_test: None,
+                web_artifact: None,
                 snapshot,
                 message: "Multiplayer settings saved.".into(),
                 server: None,
+                gateway: None,
             })
         }
         Operation::Build(mut snapshot) => {
+            progress::stage(5, "Validating build settings");
             snapshot.settings.validate()?;
             let s = &snapshot.settings;
             let installation = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+            progress::stage(15, "Building Zig UDP server");
             let (mut bytes, origin) = build::prepare(&installation, &s.platform, cancel)?;
             build::check(cancel)?;
             patch(&mut bytes, s, &root, password.as_deref())?;
+            progress::stage(45, "Packaging UDP server");
             let directory = root.join("multiplayer_server");
             ensure_directory(&root, &directory)?;
-            // Unique output prevents overwriting another build or a running server.
-            let mut pending = tempfile::Builder::new()
+            // A bundle becomes visible only after every requested executable is ready.
+            let bundle = tempfile::Builder::new()
                 .prefix("scenemax-mp-")
-                .suffix(if s.platform == "windows-x64" {
-                    ".exe"
-                } else {
-                    ""
-                })
-                .tempfile_in(&directory)
+                .tempdir_in(&directory)
                 .map_err(|e| e.to_string())?;
-            pending.write_all(&bytes).map_err(|e| e.to_string())?;
-            pending.as_file().sync_all().map_err(|e| e.to_string())?;
+            let path = bundle.path().join(if s.platform == "windows-x64" {
+                "scenemax-mp-server.exe"
+            } else {
+                "scenemax-mp-server"
+            });
+            fs::write(&path, &bytes).map_err(|e| e.to_string())?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                pending
-                    .as_file()
-                    .set_permissions(fs::Permissions::from_mode(0o700))
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
                     .map_err(|e| e.to_string())?;
             }
+            let gateway = if s.browser_gateway.enabled {
+                progress::stage(55, "Building browser gateway");
+                let bytes = gateway::prepare(&s.platform, cancel)?;
+                Some(gateway::install(bundle.path(), s, &bytes)?)
+            } else {
+                None
+            };
             build::check(cancel)?;
+            progress::stage(90, "Writing bundle manifest and settings");
+            remote::record_bundle(bundle.path(), &snapshot.settings)?;
             save(&root, &mut snapshot)?;
-            let (_, path) = pending.keep().map_err(|e| e.to_string())?;
+            let _ = bundle.keep();
             Ok(Report {
+                local_test: None,
+                web_artifact: None,
                 snapshot,
-                message: format!("{origin}. Server created: {}", path.display()),
+                message: format!(
+                    "{origin}. {} created: {}",
+                    if gateway.is_some() {
+                        "UDP server and browser gateway"
+                    } else {
+                        "Server"
+                    },
+                    path.parent().unwrap().display()
+                ),
                 server: Some(path),
+                gateway,
+            })
+        }
+        Operation::TestGame(mut snapshot, entry, target) => {
+            let settings = browser_test::settings(&snapshot.settings, target)?;
+            save(&root, &mut snapshot)?;
+            // Return the saved snapshot even on build failure so retry does not
+            // mistake our own save for an external edit.
+            let mut local_test = None;
+            let result = (|| -> Result<PathBuf, String> {
+                if target == TestTarget::Local {
+                    local_test = Some(browser_test::start_local(&root, &settings, cancel)?);
+                }
+                let mut request = crate::deployment::browser_test_request(root.clone(), entry)
+                    .map_err(|e| e.to_string())?;
+                request.multiplayer_override = Some(settings.clone());
+                let mut builder = crate::deployment::Builder::default();
+                builder
+                    .start(crate::deployment::Operation::BuildTemporary(request))
+                    .map_err(|e| e.to_string())?;
+                let mut revision = None;
+                loop {
+                    if cancel.load(Ordering::Relaxed) {
+                        builder.cancel();
+                    }
+                    if let Some(report) = builder.report() {
+                        if revision != Some(report.revision) {
+                            revision = Some(report.revision);
+                            progress::stage(report.progress as u8, &report.status);
+                            progress::replace_log(
+                                &report.logs.iter().cloned().collect::<Vec<_>>().join("\n"),
+                            );
+                        }
+                        if report.finished {
+                            if !report.success {
+                                return Err(report.status);
+                            }
+                            return report
+                                .web_artifact
+                                .ok_or("Web build did not produce a browser archive".into());
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            })();
+            let (web_artifact, message) = match result {
+                Ok(path) => (
+                    Some(path),
+                    "Browser game built; starting local preview…".into(),
+                ),
+                Err(error) => (None, format!("Test Game failed: {error}")),
+            };
+            Ok(Report {
+                local_test: if web_artifact.is_some() {
+                    local_test
+                } else {
+                    None
+                },
+                snapshot,
+                message,
+                server: None,
+                gateway: None,
+                web_artifact,
             })
         }
     }
@@ -191,7 +350,10 @@ fn ensure_directory(root: &Path, path: &Path) -> Result<(), String> {
             .file_type()
             .is_symlink()
             || path.canonicalize().map_err(|e| e.to_string())?
-                != root.join(path.file_name().ok_or("Invalid settings folder")?)
+                != root
+                    .canonicalize()
+                    .map_err(|e| e.to_string())?
+                    .join(path.file_name().ok_or("Invalid settings folder")?)
         {
             return Err("Linked multiplayer directories are not supported".into());
         }
@@ -258,7 +420,7 @@ fn save(root: &Path, snapshot: &mut Snapshot) -> Result<(), String> {
             "Multiplayer settings changed externally; close and reopen Project Settings.".into(),
         );
     }
-    let bytes = serde_json::to_vec_pretty(&snapshot.settings).map_err(|e| e.to_string())?;
+    let mut bytes = serde_json::to_vec_pretty(&snapshot.settings).map_err(|e| e.to_string())?;
     let parent = path.parent().ok_or("Invalid settings path")?;
     ensure_directory(root, parent)?;
     if let Some(original) = current {
@@ -266,6 +428,9 @@ fn save(root: &Path, snapshot: &mut Snapshot) -> Result<(), String> {
             scenemax_ide_core::Document::from_bytes(path, original).map_err(|e| e.to_string())?;
         document.replace_text(String::from_utf8(bytes.clone()).map_err(|e| e.to_string())?);
         crate::Filesystem::save_document(&mut document).map_err(|e| e.to_string())?;
+        // The document preserves disk line endings (and untouched formatting).
+        // Conflict detection must use the bytes actually saved, not JSON's LF encoding.
+        bytes = document.saved_bytes().to_vec();
     } else {
         let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
         tmp.write_all(&bytes).map_err(|e| e.to_string())?;
@@ -321,7 +486,12 @@ pub(crate) fn embed_settings(root: &Path, entry: &Path) -> Result<(), String> {
         return Ok(());
     }
     let s = load(root)?.settings;
+    embed_values(&s, entry)
+}
+
+pub(crate) fn embed_values(s: &Settings, entry: &Path) -> Result<(), String> {
     s.validate()?;
+    let s = s.clone();
     let fields = [
         ("multiplayer_server", s.server),
         ("multiplayer_port", s.port.to_string()),
@@ -352,6 +522,95 @@ pub(crate) fn embed_settings(root: &Path, entry: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires configured project and browser build toolchain"]
+    fn build_configured_browser_test() {
+        let root = PathBuf::from(std::env::var("SCENEMAX_TEST_BROWSER_PROJECT").unwrap());
+        let snapshot = load(&root).unwrap();
+        let target = if std::env::var("SCENEMAX_TEST_BROWSER_LOCAL").is_ok() {
+            TestTarget::Local
+        } else {
+            TestTarget::Remote
+        };
+        let gateway = browser_test::settings(&snapshot.settings, target)
+            .unwrap()
+            .browser_gateway
+            .websocket_url;
+        let before = read(&settings_path(&root).unwrap(), 65536).unwrap();
+        let report = run(
+            &root,
+            Operation::TestGame(snapshot, root.join("scripts/main"), target),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let archive = report.web_artifact.expect(&report.message);
+        let mut zip = zip::ZipArchive::new(fs::File::open(&archive).unwrap()).unwrap();
+        let mut network = String::new();
+        zip.by_name("network.json")
+            .unwrap()
+            .read_to_string(&mut network)
+            .unwrap();
+        assert!(network.contains(&gateway));
+        let after = read(&settings_path(&root).unwrap(), 65536).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&before).unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&after).unwrap()
+        );
+        println!("Browser test archive: {}\n{network}", archive.display());
+    }
+    #[test]
+    fn deployment_settings_survive_repeated_saves_with_windows_newlines() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let mut snapshot = load(&root).unwrap();
+        save(&root, &mut snapshot).unwrap();
+        let path = settings_path(&root).unwrap();
+        let text = fs::read_to_string(&path).unwrap().replace('\n', "\r\n");
+        fs::write(&path, text).unwrap();
+        let mut snapshot = load(&root).unwrap();
+        snapshot.settings.deployment.method = "putty".into();
+        snapshot.settings.deployment.host = "saved-session".into();
+        snapshot.settings.deployment.user = "deployer".into();
+        snapshot.settings.deployment.port = 2222;
+        snapshot.settings.deployment.identity_file = "C:/keys/deploy.ppk".into();
+        snapshot.settings.deployment.directory = "/opt/test-game".into();
+        snapshot.settings.deployment.service = "test-game".into();
+        snapshot.settings.deployment.sudo = false;
+        save(&root, &mut snapshot).unwrap();
+        assert_eq!(
+            snapshot.original.as_ref().unwrap(),
+            &fs::read(&path).unwrap()
+        );
+        // A second save is also the first step of Test Connection.
+        save(&root, &mut snapshot).unwrap();
+        assert_eq!(
+            load(&root).unwrap().settings.deployment,
+            snapshot.settings.deployment
+        );
+        snapshot.settings.deployment.host = "updated-session".into();
+        save(&root, &mut snapshot).unwrap();
+        assert_eq!(
+            load(&root).unwrap().settings.deployment.host,
+            "updated-session"
+        );
+        // Exercise Test Connection's save/report path without contacting a server.
+        snapshot.settings.deployment.identity_file =
+            root.join("missing-key.ppk").display().to_string();
+        for _ in 0..2 {
+            let report = run(
+                &root,
+                Operation::Remote(snapshot, None, RemoteAction::Test),
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert!(report.message.contains("SSH identity file was not found"));
+            snapshot = report.snapshot;
+            assert_eq!(
+                snapshot.original.as_ref().unwrap(),
+                &fs::read(&path).unwrap()
+            );
+        }
+    }
     #[test]
     fn save_preserves_unknown_fields_and_rejects_external_changes() {
         let dir = tempfile::tempdir().unwrap();
@@ -428,5 +687,139 @@ mod tests {
         assert!(!source.contains("stale"));
         assert!(!source.contains("password"));
         assert!(source.contains("var value = 1"));
+    }
+}
+
+/// Website origin accepted by the project's browser gateway.
+pub(crate) fn browser_allowed_origin(root: &Path, required: bool) -> Result<String, String> {
+    if !required {
+        return Ok(String::new());
+    }
+    Ok(load(root)?.settings.browser_gateway.allowed_origin)
+}
+
+/// Public browser endpoint from the project's saved multiplayer settings.
+pub(crate) fn browser_gateway_url(root: &Path, required: bool) -> Result<String, String> {
+    if !required {
+        return Ok(String::new());
+    }
+    let settings = load(root)?.settings;
+    if !settings.browser_gateway.enabled {
+        return Err("Enable Browser gateway and save its WebSocket URL in Project Settings > Multiplayer before exporting a multiplayer browser game.".into());
+    }
+    settings.browser_gateway.validate()?;
+    Ok(settings.browser_gateway.websocket_url)
+}
+
+#[cfg(test)]
+mod browser_settings_tests {
+    use super::*;
+    #[test]
+    fn export_uses_saved_url_and_rejects_missing_gateway_for_multiplayer() {
+        let project = tempfile::tempdir().unwrap();
+        assert_eq!(browser_gateway_url(project.path(), false).unwrap(), "");
+        let mut snapshot = load(project.path()).unwrap();
+        assert!(browser_gateway_url(project.path(), true).is_err());
+        snapshot.settings.browser_gateway.enabled = true;
+        snapshot.settings.browser_gateway.websocket_url = "wss://network.example.com/play".into();
+        snapshot.settings.browser_gateway.allowed_origin = "https://games.example.com".into();
+        save(project.path(), &mut snapshot).unwrap();
+        assert_eq!(
+            browser_gateway_url(project.path(), true).unwrap(),
+            "wss://network.example.com/play"
+        );
+        assert_eq!(
+            load(project.path()).unwrap().settings.browser_gateway,
+            snapshot.settings.browser_gateway
+        );
+    }
+
+    #[test]
+    #[ignore = "requires Zig and the native Rust gateway build toolchain"]
+    fn build_browser_bundle_then_run_and_stop_both() {
+        let project = tempfile::tempdir().unwrap();
+        let mut snapshot = load(project.path()).unwrap();
+        let udp = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        snapshot.settings.port = udp.local_addr().unwrap().port();
+        drop(udp);
+        let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = tcp.local_addr().unwrap().port();
+        drop(tcp);
+        snapshot.settings.platform = if cfg!(windows) {
+            "windows-x64"
+        } else if cfg!(target_os = "macos") {
+            "macos-x64"
+        } else {
+            "linux-x64"
+        }
+        .into();
+        snapshot.settings.browser_gateway.enabled = true;
+        snapshot.settings.browser_gateway.listen = format!("127.0.0.1:{port}");
+        snapshot.settings.browser_gateway.websocket_url = format!("ws://localhost:{port}");
+        let report = run(
+            project.path(),
+            Operation::BuildWithPassword(snapshot, String::new()),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let server = report.server.unwrap();
+        let gateway = report.gateway.unwrap();
+        assert_eq!(server.parent(), gateway.parent());
+        assert!(server.with_file_name("gateway.json").is_file());
+        assert_eq!(
+            browser_gateway_url(project.path(), true).unwrap(),
+            format!("ws://localhost:{port}")
+        );
+        let mut local = local_server::LocalServer::default();
+        local
+            .start_with_gateway(
+                &server,
+                report.snapshot.settings.port,
+                Some((&gateway, &report.snapshot.settings.browser_gateway)),
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let status = local.poll().unwrap_or_default();
+            if status.contains("Gateway listening") {
+                break;
+            }
+            assert!(
+                local.active() && std::time::Instant::now() < deadline,
+                "{status}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        local.stop();
+        assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_ok());
+        assert!(std::net::UdpSocket::bind(("127.0.0.1", report.snapshot.settings.port)).is_ok());
+        // The distributed executable also works without command-line arguments or a matching cwd.
+        let mut command = std::process::Command::new(&gateway);
+        command
+            .current_dir(project.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let connected = loop {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline || child.try_wait().unwrap().is_some() {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        };
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(
+            connected,
+            "bundled gateway must read its adjacent configuration"
+        );
     }
 }
