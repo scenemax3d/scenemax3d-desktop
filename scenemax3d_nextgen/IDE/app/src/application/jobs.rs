@@ -219,13 +219,24 @@ pub(crate) fn apply_storage(
             }
         }
         StorageResult::Search(result) => {
-            let report = result?;
+            let report = match result {
+                Ok(report) => report,
+                Err(error) => {
+                    session.search_summary = Some(format!("Search failed: {error}"));
+                    changes.write(ViewChange::SearchResultsChanged);
+                    return Err(error.into());
+                }
+            };
             if services.search_versions.iter().any(|(id, version)| {
                 !session
                     .workspace
                     .document(*id)
                     .is_ok_and(|doc| doc.revision() == *version)
             }) {
+                session.search_summary = Some(
+                    "Source changed while searching; search again for current locations".into(),
+                );
+                changes.write(ViewChange::SearchResultsChanged);
                 bail!("Source changed while searching; search again for current locations");
             }
             session.status = format!(
@@ -240,6 +251,7 @@ pub(crate) fn apply_storage(
                 }
             );
             session.search_hits = report.hits;
+            session.search_summary = Some(session.status.clone());
             changes.write(ViewChange::SearchResultsChanged);
         }
         StorageResult::RecoveryLoaded(result) => {
@@ -342,6 +354,7 @@ pub(crate) fn apply_storage(
             session.workspace.switch_project(project)?;
             session.closing_tab = None;
             session.search_hits.clear();
+            session.search_summary = None;
             changes.write(ViewChange::SearchResultsChanged);
             changes.write(ViewChange::ProjectOpened);
             if let Some(document) = initial {

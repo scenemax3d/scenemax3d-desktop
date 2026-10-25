@@ -107,6 +107,10 @@ pub(crate) fn hover(
 
 #[derive(Component)]
 pub(crate) struct Icon(Vec<Vec<Vec2>>);
+/// Antialiased strokes in a 20 by 20 coordinate system, sized by the host node.
+pub fn drawing(paths: Vec<Vec<Vec2>>) -> impl Bundle {
+    Icon(paths)
+}
 // Coverage is evaluated at four times the logical size; round caps and bilinear
 // sampling keep thin strokes smooth at fractional Windows display scales.
 pub(crate) fn rasterize(

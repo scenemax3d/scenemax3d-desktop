@@ -43,23 +43,90 @@ pub fn checkbox<T: Component>(
     caption: &str,
     checked: bool,
 ) -> Entity {
-    let title = caption.to_owned();
-    let entity = button(
-        commands,
-        parent,
-        &format!("{} {caption}", if checked { "☑" } else { "☐" }),
-        marker,
-    );
+    let entity = commands
+        .spawn((
+            Button,
+            marker,
+            Name::new(caption.to_owned()),
+            Node {
+                padding: UiRect::axes(px(10.), px(5.)),
+                margin: px(2.).all(),
+                column_gap: px(8.),
+                align_items: AlignItems::Center,
+                flex_shrink: 0.,
+                ..default()
+            },
+            BackgroundColor(PANEL),
+            ChildOf(parent),
+        ))
+        .id();
+    // Draw the indicator independently of the label font and its fallback glyphs.
+    let indicator = commands
+        .spawn((
+            Node {
+                width: px(18.),
+                height: px(18.),
+                border: px(2.).all(),
+                border_radius: BorderRadius::all(px(3.)),
+                flex_shrink: 0.,
+                ..default()
+            },
+            BackgroundColor(if checked { ACCENT } else { HEADER }),
+            BorderColor::all(if checked { ACCENT } else { MUTED }),
+            Pickable::IGNORE,
+            ChildOf(entity),
+        ))
+        .id();
+    let check = commands
+        .spawn((
+            Node {
+                width: px(14.),
+                height: px(14.),
+                display: if checked {
+                    Display::Flex
+                } else {
+                    Display::None
+                },
+                ..default()
+            },
+            Pickable::IGNORE,
+            ChildOf(indicator),
+        ))
+        .id();
+    for (a, b) in [
+        (Vec2::new(2., 7.), Vec2::new(5., 10.)),
+        (Vec2::new(5., 10.), Vec2::new(12., 3.)),
+    ] {
+        let stroke = crate::icons::line(commands, check, a, b, Color::WHITE);
+        commands
+            .entity(stroke)
+            .entry::<Node>()
+            .and_modify(move |mut node| {
+                node.height = px(2.);
+                node.top = px((a.y + b.y) / 2. - 1.);
+            });
+    }
+    commands.spawn((label(caption, 13.), Pickable::IGNORE, ChildOf(entity)));
     commands.entity(entity).insert(Checked(checked)).observe(
         move |event: On<Pointer<Click>>,
-              mut values: Query<(&mut Checked, &Children)>,
-              mut texts: Query<&mut Text>| {
-            if let Ok((mut value, children)) = values.get_mut(event.entity) {
+              mut values: Query<&mut Checked>,
+              mut indicators: Query<(&mut BackgroundColor, &mut BorderColor)>,
+              mut nodes: Query<&mut Node>| {
+            if event.button != PointerButton::Primary {
+                return;
+            }
+            if let Ok(mut value) = values.get_mut(entity) {
                 value.0 = !value.0;
-                for child in children.iter() {
-                    if let Ok(mut text) = texts.get_mut(child) {
-                        text.0 = format!("{} {title}", if value.0 { "☑" } else { "☐" });
-                    }
+                if let Ok((mut background, mut border)) = indicators.get_mut(indicator) {
+                    background.0 = if value.0 { ACCENT } else { HEADER };
+                    *border = BorderColor::all(if value.0 { ACCENT } else { MUTED });
+                }
+                if let Ok(mut node) = nodes.get_mut(check) {
+                    node.display = if value.0 {
+                        Display::Flex
+                    } else {
+                        Display::None
+                    };
                 }
             }
         },

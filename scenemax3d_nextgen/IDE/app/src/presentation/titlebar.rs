@@ -1,6 +1,71 @@
 //! Client title bar: native move/resize requests, with normal IDE close handling.
 use bevy::{math::CompassOctant, prelude::*};
-use scenemax_ide_ui::{button, label};
+use scenemax_ide_ui::{label, theme::*};
+
+#[derive(Component)]
+pub(crate) struct WindowControl {
+    close: bool,
+}
+
+fn control(
+    commands: &mut Commands,
+    parent: Entity,
+    title: &str,
+    close: bool,
+    strokes: &[(Vec2, Vec2)],
+) -> Entity {
+    let entity = commands
+        .spawn((
+            Button,
+            WindowControl { close },
+            Name::new(title.to_owned()),
+            scenemax_ide_ui::NoButtonFeedback,
+            Node {
+                width: px(40.),
+                height: px(28.),
+                margin: UiRect::left(px(2.)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                flex_shrink: 0.,
+                border_radius: BorderRadius::all(px(3.)),
+                ..default()
+            },
+            BackgroundColor(HEADER),
+            ChildOf(parent),
+        ))
+        .id();
+    commands.spawn((
+        Node {
+            width: px(12.),
+            height: px(12.),
+            flex_shrink: 0.,
+            ..default()
+        },
+        Pickable::IGNORE,
+        scenemax_ide_ui::icons::drawing(
+            strokes
+                .iter()
+                .map(|&(a, b)| vec![a * 1.25, b * 1.25])
+                .collect(),
+        ),
+        ChildOf(entity),
+    ));
+    entity
+}
+
+pub(crate) fn control_feedback(
+    mut controls: Query<(&Interaction, &WindowControl, &mut BackgroundColor), Changed<Interaction>>,
+) {
+    for (interaction, control, mut background) in &mut controls {
+        background.0 = match (interaction, control.close) {
+            (Interaction::Hovered, true) => Color::srgb_u8(210, 48, 58),
+            (Interaction::Pressed, true) => Color::srgb_u8(166, 32, 42),
+            (Interaction::Hovered, false) => Color::srgb_u8(83, 90, 99),
+            (Interaction::Pressed, false) => SELECTED,
+            (Interaction::None, _) => HEADER,
+        };
+    }
+}
 #[derive(Resource, Default)]
 pub(crate) struct Maximized(bool);
 
@@ -51,7 +116,13 @@ pub(crate) fn drag(commands: &mut Commands, parent: Entity) {
             }
         },
     );
-    let minimize = button(commands, parent, "−", Name::new("Minimize window"));
+    let minimize = control(
+        commands,
+        parent,
+        "Minimize window",
+        false,
+        &[(Vec2::new(2., 10.), Vec2::new(14., 10.))],
+    );
     commands
         .entity(minimize)
         .observe(|_: On<Pointer<Click>>, mut windows: Query<&mut Window>| {
@@ -59,11 +130,17 @@ pub(crate) fn drag(commands: &mut Commands, parent: Entity) {
                 window.set_minimized(true);
             }
         });
-    let maximize = button(
+    let maximize = control(
         commands,
         parent,
-        "□",
-        Name::new("Maximize or restore window"),
+        "Maximize or restore window",
+        false,
+        &[
+            (Vec2::new(2., 2.), Vec2::new(14., 2.)),
+            (Vec2::new(14., 2.), Vec2::new(14., 14.)),
+            (Vec2::new(14., 14.), Vec2::new(2., 14.)),
+            (Vec2::new(2., 14.), Vec2::new(2., 2.)),
+        ],
     );
     commands.entity(maximize).observe(
         |_: On<Pointer<Click>>,
@@ -75,13 +152,17 @@ pub(crate) fn drag(commands: &mut Commands, parent: Entity) {
             }
         },
     );
-    let close = button(commands, parent, "×", super::input::Action::Exit);
-    for control in [minimize, maximize, close] {
-        commands.entity(control).insert((
-            scenemax_ide_ui::ButtonSurface(scenemax_ide_ui::theme::HEADER),
-            BackgroundColor(scenemax_ide_ui::theme::HEADER),
-        ));
-    }
+    let close = control(
+        commands,
+        parent,
+        "Close window",
+        true,
+        &[
+            (Vec2::new(3., 3.), Vec2::new(13., 13.)),
+            (Vec2::new(13., 3.), Vec2::new(3., 13.)),
+        ],
+    );
+    commands.entity(close).insert(super::input::Action::Exit);
 }
 pub(crate) fn resize_edges(commands: &mut Commands, root: Entity) {
     for (direction, left, top, width, height) in [

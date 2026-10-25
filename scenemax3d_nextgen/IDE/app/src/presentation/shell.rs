@@ -175,7 +175,9 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             super::chrome::Panel::Search,
             Node {
                 display: Display::None,
-                padding: px(8.).all(),
+                padding: UiRect::axes(px(8.), px(4.)),
+                align_items: AlignItems::Center,
+                row_gap: px(4.),
                 column_gap: px(6.),
                 flex_shrink: 0.,
                 flex_wrap: FlexWrap::Wrap,
@@ -184,29 +186,22 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             ChildOf(root),
         ))
         .id();
-    field(&mut commands, find_bar, Field::Find, "", "Find text", 180.);
-    button(&mut commands, find_bar, "Previous", Action::FindPrevious);
-    button(&mut commands, find_bar, "Next", Action::FindNext);
-    field(
-        &mut commands,
-        find_bar,
-        Field::Replace,
-        "",
-        "Replace with",
-        160.,
-    );
-    button(&mut commands, find_bar, "Replace", Action::Replace);
-    button(&mut commands, find_bar, "Replace all", Action::ReplaceAll);
-    field(&mut commands, find_bar, Field::Line, "1", "Line", 60.);
-    button(&mut commands, find_bar, "Go", Action::GoToLine);
-    button(&mut commands, find_bar, "Comment", Action::Comment);
-    button(
+    search_field(&mut commands, find_bar, Field::Find, "", "Find", 140.);
+    search_button(&mut commands, find_bar, "Prev", Action::FindPrevious);
+    search_button(&mut commands, find_bar, "Next", Action::FindNext);
+    search_field(&mut commands, find_bar, Field::Replace, "", "Replace", 120.);
+    search_button(&mut commands, find_bar, "Replace", Action::Replace);
+    search_button(&mut commands, find_bar, "Replace all", Action::ReplaceAll);
+    search_field(&mut commands, find_bar, Field::Line, "1", "Line", 40.);
+    search_button(&mut commands, find_bar, "Go", Action::GoToLine);
+    search_button(&mut commands, find_bar, "Comment", Action::Comment);
+    search_button(
         &mut commands,
         find_bar,
         "Find in project",
         Action::FindProject,
     );
-    button(
+    search_button(
         &mut commands,
         find_bar,
         "Close",
@@ -281,13 +276,6 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         "Close",
         super::chrome::ChromeAction::Dismiss,
     );
-    commands.spawn((SearchResults, Node { display: Display::None, height: px(180.), flex_shrink: 0., flex_direction: FlexDirection::Column, overflow: Overflow::scroll_y(), ..default() }, ChildOf(sidebar)))
-        .observe(|event: On<Pointer<Scroll>>, mut query: Query<(&mut ScrollPosition, &ComputedNode), With<SearchResults>>| {
-            if let Ok((mut scroll, node)) = query.get_mut(event.entity) {
-                let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line { 40. } else { 1. };
-                scroll.y = (scroll.y-event.y*scale).clamp(0., ((node.content_size().y-node.size().y)*node.inverse_scale_factor()).max(0.));
-            }
-        });
     let tree_frame = commands
         .spawn((
             Node {
@@ -411,6 +399,23 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             ChildOf(center),
         ))
         .id();
+    commands.spawn((
+        SearchResults,
+        Node {
+            display: Display::None,
+            height: px(230.),
+            max_height: percent(40.),
+            min_height: px(0.),
+            flex_shrink: 0.,
+            flex_direction: FlexDirection::Column,
+            border: UiRect::top(px(1.)),
+            overflow: Overflow::clip(),
+            ..default()
+        },
+        BackgroundColor(PANEL),
+        BorderColor::all(EDGE),
+        ChildOf(center),
+    ));
     for (index, doc) in session.workspace.documents() {
         tab(&mut commands, tabs, index, doc);
         editor(
@@ -592,4 +597,44 @@ fn field(
         BackgroundColor(BG),
         ChildOf(host),
     ));
+}
+
+// Keep search controls on one baseline instead of stretching buttons to stacked labels.
+fn search_button<T: Component>(commands: &mut Commands, parent: Entity, caption: &str, action: T) {
+    let entity = button(commands, parent, caption, action);
+    commands.entity(entity).insert(Node {
+        height: px(28.),
+        padding: UiRect::horizontal(px(8.)),
+        align_items: AlignItems::Center,
+        flex_shrink: 0.,
+        ..default()
+    });
+}
+fn search_field(
+    commands: &mut Commands,
+    parent: Entity,
+    kind: Field,
+    value: &str,
+    caption: &str,
+    width: f32,
+) {
+    let host = commands
+        .spawn((
+            Node {
+                align_items: AlignItems::Center,
+                column_gap: px(6.),
+                ..default()
+            },
+            ChildOf(parent),
+        ))
+        .id();
+    commands.spawn((label(caption, 12.), ChildOf(host)));
+    let input = scenemax_ide_ui::property::input(commands, host, kind, value);
+    commands
+        .entity(input)
+        .entry::<Node>()
+        .and_modify(move |mut node| {
+            node.width = px(width);
+            node.height = px(28.);
+        });
 }

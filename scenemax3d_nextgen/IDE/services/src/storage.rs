@@ -67,12 +67,10 @@ pub enum StorageRequest {
         /// Immutable source snapshot.
         document: Document,
     },
-    /// Search a project inventory, using unsaved snapshots for open documents.
+    /// Refresh and search project text files, using unsaved snapshots for open documents.
     Search {
         /// Canonical project directory.
         root: PathBuf,
-        /// Script inventory to search.
-        paths: Vec<PathBuf>,
         /// Literal case-sensitive query.
         needle: String,
         /// Open buffer snapshots, which take precedence over disk contents.
@@ -311,10 +309,9 @@ fn perform(
         })()),
         StorageRequest::Search {
             root,
-            paths,
             needle,
             buffers,
-        } => StorageResult::Search(crate::search::search(root, paths, &needle, buffers)),
+        } => StorageResult::Search(crate::search::project_search(root, &needle, buffers)),
         StorageRequest::LoadRecovery(root) => {
             StorageResult::RecoveryLoaded(crate::recovery::RecoveryJournal::load(&root))
         }

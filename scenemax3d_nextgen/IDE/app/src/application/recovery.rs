@@ -92,6 +92,7 @@ impl EditorServices {
         session.workspace.switch_project(project)?;
         session.closing_tab = None;
         session.search_hits.clear();
+        session.search_summary = None;
         changes.write(ViewChange::SearchResultsChanged);
         changes.write(ViewChange::ProjectOpened);
         for document in batch.documents {
