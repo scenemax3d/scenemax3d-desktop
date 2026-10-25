@@ -149,7 +149,6 @@ pub(super) fn execute(
             let project = session.workspace.project();
             services.storage.request(StorageRequest::Search {
                 root: project.root().to_owned(),
-                paths: project.scripts().to_vec(),
                 needle,
                 buffers: session
                     .workspace
@@ -158,13 +157,14 @@ pub(super) fn execute(
                     .collect(),
             })?;
             session.search_hits.clear();
+            session.search_summary = Some("Searching project text files…".into());
             changes.write(ViewChange::SearchResultsChanged);
             services.search_versions = session
                 .workspace
                 .documents()
                 .map(|(id, doc)| (id, doc.revision()))
                 .collect();
-            session.status = "Searching project scripts...".into();
+            session.status = "Searching project text files...".into();
         }
         Command::OpenAt(path, line) => {
             if let Some(id) = session.workspace.find_document(&path) {

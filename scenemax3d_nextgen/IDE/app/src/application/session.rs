@@ -16,10 +16,12 @@ pub(crate) struct Session {
     pub(crate) composing: bool,
     pub(crate) recoverable: usize,
     pub(crate) search_hits: Vec<scenemax_ide_core::SearchHit>,
+    pub(crate) search_summary: Option<String>,
 }
 impl Session {
     pub(crate) fn new(project: Project) -> Self {
         Self { workspace: EditorWorkspace::new(project), catalog: Default::default(), asset_operation_pending: false, closing: false, restarting: false, restart_project: Default::default(), closing_tab: None, composing: false, recoverable: 0, search_hits: vec![], output: Default::default(), output_revision: 0,
+            search_summary: None,
             status: "Open a script. Ctrl+S: save | Ctrl+Enter: syntax check | F5: run active script | Shift+F5: stop".into() }
     }
     pub(crate) fn append_output(&mut self, message: &str) {

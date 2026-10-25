@@ -496,6 +496,9 @@ pub(crate) fn active_tabs(
 }
 
 impl ChromeState {
+    pub(crate) fn search_open(&self) -> bool {
+        self.panel == Some(Panel::Search)
+    }
     pub(crate) fn preview_projects(&mut self) {
         self.panel = Some(Panel::Project);
     }
