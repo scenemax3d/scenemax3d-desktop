@@ -370,7 +370,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
             text(
                 c,
                 detail,
-                "Test with Run Web locally after building. Players need WebGPU and HTTPS (or localhost); sound begins after a click or key press. Multiplayer needs a separately hosted WebSocket gateway.",
+                "Use Test With Local Server or Test With Remote Server. Players need WebGPU and HTTPS (or localhost); sound begins after a click or key press. Multiplayer needs a separately hosted WebSocket gateway.",
                 11.,
                 MUTED,
             );
@@ -572,8 +572,19 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         },
         PANEL,
     );
-    action(c, preview_actions, "Run Web locally", Action::RunWeb);
-    action(c, preview_actions, "Stop local server", Action::StopWeb);
+    action(
+        c,
+        preview_actions,
+        "Test With Local Server",
+        Action::TestWeb(scenemax_ide_services::multiplayer::TestTarget::Local),
+    );
+    action(
+        c,
+        preview_actions,
+        "Test With Remote Server",
+        Action::TestWeb(scenemax_ide_services::multiplayer::TestTarget::Remote),
+    );
+    action(c, preview_actions, "Stop Test", Action::StopWeb);
     let preview_status = text(c, preview, "", 11., MUTED);
     c.entity(preview_status).insert(PreviewStatus);
     action(c, right, "Upload / retry existing builds", Action::Upload);

@@ -168,8 +168,12 @@ pub(super) fn build(
         line.trim().starts_with("//$[multiplayer_server]=")
             && !line.trim().trim_end_matches(';').ends_with('=')
     });
-    let gateway_url = crate::multiplayer::browser_gateway_url(&request.project, multiplayer)
-        .map_err(io::Error::other)?;
+    let gateway_url = if let Some(settings) = &request.multiplayer_override {
+        settings.browser_gateway.websocket_url.clone()
+    } else {
+        crate::multiplayer::browser_gateway_url(&request.project, multiplayer)
+            .map_err(io::Error::other)?
+    };
     let aliases = package::deduplicate(&site, &listing, context)?;
     fs::write(
         site.join("game-manifest.json"),
@@ -177,7 +181,13 @@ pub(super) fn build(
             &serde_json::json!({"entry":format!("game/{script}"),"files":paths,"aliases":aliases,"multiplayer":multiplayer,"effects":has_effects,"effect_distortion":distortion}),
         )?,
     )?;
-    write_network_config(&site, &gateway_url)?;
+    let allowed_origin = if let Some(settings) = &request.multiplayer_override {
+        settings.browser_gateway.allowed_origin.clone()
+    } else {
+        crate::multiplayer::browser_allowed_origin(&request.project, multiplayer)
+            .map_err(io::Error::other)?
+    };
+    write_network_config(&site, &gateway_url, &allowed_origin)?;
     context.log(
         "Building the browser projector (WebGPU); Cargo reuses unchanged compilation outputs.\n",
     );
@@ -221,10 +231,12 @@ pub(super) fn build(
     Ok(artifact)
 }
 
-fn write_network_config(site: &Path, gateway_url: &str) -> io::Result<()> {
+fn write_network_config(site: &Path, gateway_url: &str, allowed_origin: &str) -> io::Result<()> {
     fs::write(
         site.join("network.json"),
-        serde_json::to_vec(&serde_json::json!({"websocket_url": gateway_url}))?,
+        serde_json::to_vec(
+            &serde_json::json!({"websocket_url": gateway_url, "allowed_origin": allowed_origin}),
+        )?,
     )
 }
 #[cfg(test)]
@@ -233,14 +245,19 @@ mod network_config_tests {
     #[test]
     fn writes_only_public_endpoint_to_browser_sidecar() {
         let dir = tempfile::tempdir().unwrap();
-        write_network_config(dir.path(), "wss://gateway.example.com/network?version=1").unwrap();
+        write_network_config(
+            dir.path(),
+            "wss://gateway.example.com/network?version=1",
+            "http://localhost:8080",
+        )
+        .unwrap();
         let actual: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.path().join("network.json")).unwrap()).unwrap();
         assert_eq!(
             actual,
-            serde_json::json!({"websocket_url":"wss://gateway.example.com/network?version=1"})
+            serde_json::json!({"websocket_url":"wss://gateway.example.com/network?version=1", "allowed_origin":"http://localhost:8080"})
         );
-        write_network_config(dir.path(), "").unwrap();
+        write_network_config(dir.path(), "", "").unwrap();
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(
                 &fs::read(dir.path().join("network.json")).unwrap()

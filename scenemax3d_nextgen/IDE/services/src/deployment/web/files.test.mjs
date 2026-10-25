@@ -27,3 +27,45 @@ test('failed canonical download cannot produce a successful alias mount',async()
     fetchFile:async()=>({ok:false,status:404}),mountAlias:()=>assert.fail('missing bytes'),progress:()=>{},
   }),/game\/a: HTTP 404/);
 });
+test('recovers from failed fetch and interrupted body without duplicate mounts',async()=>{
+  let calls=0;
+  const mounts=[], retries=[], pauses=[], updates=[];
+  await mountFiles({files:['game/large model.glb','game/copy.glb'],aliases:{'game/copy.glb':'game/large model.glb'}},{
+    fetchFile:async()=>{
+      calls++;
+      if(calls===1) throw TypeError('Failed to fetch');
+      return {ok:true,arrayBuffer:async()=>{
+        if(calls===2) throw TypeError('connection interrupted');
+        return new Uint8Array([42]).buffer;
+      }};
+    },
+    mountFile:(p,b)=>mounts.push([p,...b]),mountAlias:()=>mounts.push('alias'),
+    progress:(...p)=>updates.push(p),retry:(...r)=>retries.push(r),wait:async ms=>pauses.push(ms),
+  });
+  assert.equal(calls,3);
+  assert.deepEqual(mounts,[['game/large model.glb',42],'alias']);
+  assert.deepEqual(pauses,[250,500]);
+  assert.deepEqual(retries.map(r=>r[1]),[2,3]);
+  assert.deepEqual(updates,[[0,1],[1,1]]);
+});
+test('persistent network error identifies file and stops after three attempts',async()=>{
+  let calls=0;
+  await assert.rejects(mountFiles({files:['game/problem.bin']},{
+    fetchFile:async()=>{calls++;throw TypeError('Failed to fetch');},
+    mountFile:()=>assert.fail('no bytes'),mountAlias:()=>assert.fail('no alias'),
+    progress:()=>{},wait:async()=>{},
+  }),/game\/problem.bin: Failed to fetch.*3 attempt/);
+  assert.equal(calls,3);
+});
+test('late successful downloads cannot overwrite a fatal loading error',async()=>{
+  let resolve;
+  const late=new Promise(r=>resolve=r), updates=[];
+  await assert.rejects(mountFiles({files:['game/missing','game/late']},{
+    fetchFile:async p=>p.endsWith('missing')?{ok:false,status:404}:late,
+    mountFile:()=>assert.fail('late mount'),mountAlias:()=>assert.fail('alias'),
+    progress:(...p)=>updates.push(p),
+  }),/HTTP 404/);
+  resolve({ok:true,arrayBuffer:async()=>new ArrayBuffer(1)});
+  await new Promise(r=>setTimeout(r,0));
+  assert.deepEqual(updates,[[0,2]]);
+});

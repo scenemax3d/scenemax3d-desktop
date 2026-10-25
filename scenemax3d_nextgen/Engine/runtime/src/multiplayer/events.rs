@@ -486,6 +486,7 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                     remove_entity(world, net, id, &name);
                 }
                 net.locals.clear();
+                net.sent_poses.clear();
                 net.local_sequences.clear();
                 net.local_actions.clear();
                 net.remotes.clear();
@@ -493,6 +494,7 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                 net.sources.clear();
                 net.owners.clear();
                 net.poses.clear();
+                net.corrections.clear();
                 net.remote_pending.clear();
                 net.pending.clear();
                 net.entity_updates.clear();

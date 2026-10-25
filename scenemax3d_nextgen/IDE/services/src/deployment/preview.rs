@@ -201,15 +201,15 @@ fn serve_archive(
 }
 /// Validate a local HTTP origin without binding to an external network interface.
 pub fn local_origin_address(origin: &str) -> io::Result<std::net::SocketAddr> {
-    let authority = origin.strip_prefix("http://").ok_or_else(|| io::Error::other("Test Game requires an allowed game origin such as http://localhost:8080. The deployed gateway must allow this same origin."))?;
+    let authority = origin.strip_prefix("http://").ok_or_else(|| io::Error::other("Browser testing requires an allowed game origin such as http://localhost:8080. The deployed gateway must allow this same origin."))?;
     let authority = authority
         .strip_prefix("localhost:")
         .map(|p| format!("127.0.0.1:{p}"))
         .unwrap_or_else(|| authority.to_owned());
-    let address = authority.parse::<std::net::SocketAddr>().map_err(|_| io::Error::other("Test Game requires a local HTTP origin with an explicit port, for example http://localhost:8080"))?;
+    let address = authority.parse::<std::net::SocketAddr>().map_err(|_| io::Error::other("Browser testing requires a local HTTP origin with an explicit port, for example http://localhost:8080"))?;
     if !address.ip().is_loopback() || address.port() == 0 {
         return Err(io::Error::other(
-            "Test Game only serves on a loopback address and a nonzero port",
+            "Browser testing only serves on a loopback address and a nonzero port",
         ));
     }
     Ok(address)
@@ -226,6 +226,10 @@ fn serve_archive_at(
         .tempdir()?;
     unpack(artifact, directory.path(), cancel)?;
     check(cancel)?;
+    let endpoint = match endpoint {
+        Some(endpoint) => Some(endpoint),
+        None => exported_endpoint(directory.path())?,
+    };
     let address = endpoint
         .as_ref()
         .map(|(address, _)| *address)
@@ -288,6 +292,21 @@ fn serve_archive_at(
         Ok(())
     })
 }
+fn exported_endpoint(root: &Path) -> io::Result<Option<(std::net::SocketAddr, String)>> {
+    let path = root.join("network.json");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let network: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+    if network["websocket_url"].as_str().unwrap_or("").is_empty() {
+        return Ok(None);
+    }
+    let origin = network["allowed_origin"].as_str().filter(|s| !s.is_empty())
+        .ok_or_else(|| io::Error::other("This multiplayer export has no allowed game origin. Rebuild it, or use Project Settings > Multiplayer > Deployment > Test With Remote Server."))?;
+    let address = local_origin_address(origin)?;
+    Ok(Some((address, format!("{origin}/"))))
+}
+
 fn open_browser(url: &str) -> io::Result<()> {
     #[cfg(windows)]
     let program = "explorer.exe";

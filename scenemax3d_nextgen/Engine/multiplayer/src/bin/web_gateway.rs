@@ -12,6 +12,8 @@ use tungstenite::{
     Error, Message,
     handshake::server::{ErrorResponse, Request, Response},
 };
+#[path = "gateway/liveness.rs"]
+mod liveness;
 fn serve(
     stream: TcpStream,
     upstream: SocketAddr,
@@ -53,6 +55,7 @@ fn serve(
     let mut last = Instant::now();
     let mut window = Instant::now();
     let mut packets = 0u32;
+    let mut liveness = liveness::Liveness::new(Instant::now());
     loop {
         if window.elapsed() > Duration::from_secs(1) {
             window = Instant::now();
@@ -69,6 +72,12 @@ fn serve(
                     last = Instant::now();
                 }
                 Ok(Message::Close(_)) => return Ok(()),
+                Ok(Message::Pong(bytes)) => {
+                    if let Some(heartbeat) = liveness.pong(&bytes) {
+                        udp.send(&heartbeat)?;
+                        last = Instant::now();
+                    }
+                }
                 Ok(_) => {}
                 Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => break,
                 Err(e) => return Err(e.into()),
@@ -76,12 +85,25 @@ fn serve(
         }
         for _ in 0..128 {
             match udp.recv(&mut buffer) {
-                Ok(n) => match socket.send(Message::Binary(buffer[..n].to_vec().into())) {
-                    Ok(()) => {}
-                    Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => break,
-                    Err(e) => return Err(e.into()),
-                },
+                Ok(n) => {
+                    liveness.receive(&buffer[..n]);
+                    match socket.send(Message::Binary(buffer[..n].to_vec().into())) {
+                        Ok(()) => {}
+                        Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => break,
+                        Err(e) => return Err(e.into()),
+                    }
+                }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        if liveness.expired(Instant::now()) {
+            return Err("Browser did not answer WebSocket ping".into());
+        }
+        if let Some(ping) = liveness.ping(Instant::now()) {
+            match socket.send(Message::Ping(ping.into())) {
+                Ok(()) => {}
+                Err(Error::Io(e)) if e.kind() == io::ErrorKind::WouldBlock => {}
                 Err(e) => return Err(e.into()),
             }
         }

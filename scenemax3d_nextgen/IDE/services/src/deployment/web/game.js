@@ -37,13 +37,20 @@ try {
   if (manifest.multiplayer) {
     const network = await fetch("./network.json", {cache: "no-store"});
     if (!network.ok) throw Error("Multiplayer network.json could not be loaded.");
-    gateway = (await network.json()).websocket_url;
+    const config = await network.json();
+    gateway = config.websocket_url;
     if (typeof gateway !== "string" || !/^wss?:\/\//.test(gateway))
       throw Error("Set websocket_url in network.json to your SceneMax browser gateway. See README.txt in this export.");
+    if (config.allowed_origin && location.origin !== config.allowed_origin)
+      throw Error(`Multiplayer gateway allows ${config.allowed_origin}, but this game is running at ${location.origin}. Open the game at the allowed address, or update Allowed game origin in Project Settings > Multiplayer > Browser, redeploy the gateway, and rebuild the game.`);
   }
   await mountFiles(manifest, {
     fetchFile: url => fetch(url), mountFile: mount_file, mountAlias: mount_alias,
+    retry: (path, attempt, total) => {
+      if (!failed) $("status").textContent = `Retrying ${path} (${attempt}/${total})`;
+    },
     progress: (complete, total) => {
+      if (failed) return;
       $("progress").max = total;
       $("progress").value = complete;
       $("status").textContent = `${$("status").dataset.label}: ${complete} / ${total}`;

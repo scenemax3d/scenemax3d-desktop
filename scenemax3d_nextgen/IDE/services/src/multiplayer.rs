@@ -12,7 +12,9 @@ use std::{
     },
     thread,
 };
+mod browser_test;
 mod build;
+pub use browser_test::{LocalTest, TestTarget};
 mod gateway;
 pub(crate) mod launch;
 pub mod local_server;
@@ -31,6 +33,8 @@ pub struct Snapshot {
 }
 /// Completed background operation.
 pub struct Report {
+    /// Owned local test processes and their temporary bundle.
+    pub local_test: Option<browser_test::LocalTest>,
     /// Built browser archive to serve locally after Test Game.
     pub web_artifact: Option<PathBuf>,
     /// Current saved/loaded settings snapshot.
@@ -45,7 +49,7 @@ pub struct Report {
 /// Work performed outside the IDE frame thread.
 pub enum Operation {
     /// Save multiplayer settings and export the project for local browser testing.
-    TestGame(Snapshot, PathBuf),
+    TestGame(Snapshot, PathBuf, TestTarget),
     /// Load native settings, importing Java defaults if needed.
     Load,
     /// Save against a captured source snapshot.
@@ -171,6 +175,7 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
     match operation {
         Operation::BuildWithPassword(..) => unreachable!("normalized above"),
         Operation::Load => Ok(Report {
+            local_test: None,
             web_artifact: None,
             snapshot: load(&root)?,
             message: "Multiplayer settings loaded. Passwords are kept only for this IDE session."
@@ -185,6 +190,7 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
             let message = remote::execute(&snapshot.settings, bundle.as_deref(), action, cancel)
                 .unwrap_or_else(|error| format!("Remote operation failed: {error}"));
             Ok(Report {
+                local_test: None,
                 web_artifact: None,
                 snapshot,
                 message,
@@ -195,6 +201,7 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
         Operation::Save(mut snapshot) => {
             save(&root, &mut snapshot)?;
             Ok(Report {
+                local_test: None,
                 web_artifact: None,
                 snapshot,
                 message: "Multiplayer settings saved.".into(),
@@ -244,6 +251,7 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
             save(&root, &mut snapshot)?;
             let _ = bundle.keep();
             Ok(Report {
+                local_test: None,
                 web_artifact: None,
                 snapshot,
                 message: format!(
@@ -259,20 +267,19 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
                 gateway,
             })
         }
-        Operation::TestGame(mut snapshot, entry) => {
-            if !snapshot.settings.browser_gateway.enabled {
-                return Err("Enable the browser gateway before testing the game".into());
-            }
-            crate::deployment::preview::local_origin_address(
-                &snapshot.settings.browser_gateway.allowed_origin,
-            )
-            .map_err(|e| e.to_string())?;
+        Operation::TestGame(mut snapshot, entry, target) => {
+            let settings = browser_test::settings(&snapshot.settings, target)?;
             save(&root, &mut snapshot)?;
             // Return the saved snapshot even on build failure so retry does not
             // mistake our own save for an external edit.
+            let mut local_test = None;
             let result = (|| -> Result<PathBuf, String> {
-                let request = crate::deployment::browser_test_request(root.clone(), entry)
+                if target == TestTarget::Local {
+                    local_test = Some(browser_test::start_local(&root, &settings, cancel)?);
+                }
+                let mut request = crate::deployment::browser_test_request(root.clone(), entry)
                     .map_err(|e| e.to_string())?;
+                request.multiplayer_override = Some(settings.clone());
                 let mut builder = crate::deployment::Builder::default();
                 builder
                     .start(crate::deployment::Operation::BuildTemporary(request))
@@ -310,6 +317,11 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
                 Err(error) => (None, format!("Test Game failed: {error}")),
             };
             Ok(Report {
+                local_test: if web_artifact.is_some() {
+                    local_test
+                } else {
+                    None
+                },
                 snapshot,
                 message,
                 server: None,
@@ -474,7 +486,12 @@ pub(crate) fn embed_settings(root: &Path, entry: &Path) -> Result<(), String> {
         return Ok(());
     }
     let s = load(root)?.settings;
+    embed_values(&s, entry)
+}
+
+pub(crate) fn embed_values(s: &Settings, entry: &Path) -> Result<(), String> {
     s.validate()?;
+    let s = s.clone();
     let fields = [
         ("multiplayer_server", s.server),
         ("multiplayer_port", s.port.to_string()),
@@ -510,10 +527,19 @@ mod tests {
     fn build_configured_browser_test() {
         let root = PathBuf::from(std::env::var("SCENEMAX_TEST_BROWSER_PROJECT").unwrap());
         let snapshot = load(&root).unwrap();
-        let gateway = snapshot.settings.browser_gateway.websocket_url.clone();
+        let target = if std::env::var("SCENEMAX_TEST_BROWSER_LOCAL").is_ok() {
+            TestTarget::Local
+        } else {
+            TestTarget::Remote
+        };
+        let gateway = browser_test::settings(&snapshot.settings, target)
+            .unwrap()
+            .browser_gateway
+            .websocket_url;
+        let before = read(&settings_path(&root).unwrap(), 65536).unwrap();
         let report = run(
             &root,
-            Operation::TestGame(snapshot, root.join("scripts/main")),
+            Operation::TestGame(snapshot, root.join("scripts/main"), target),
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -525,6 +551,11 @@ mod tests {
             .read_to_string(&mut network)
             .unwrap();
         assert!(network.contains(&gateway));
+        let after = read(&settings_path(&root).unwrap(), 65536).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&before).unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&after).unwrap()
+        );
         println!("Browser test archive: {}\n{network}", archive.display());
     }
     #[test]
@@ -657,6 +688,14 @@ mod tests {
         assert!(!source.contains("password"));
         assert!(source.contains("var value = 1"));
     }
+}
+
+/// Website origin accepted by the project's browser gateway.
+pub(crate) fn browser_allowed_origin(root: &Path, required: bool) -> Result<String, String> {
+    if !required {
+        return Ok(String::new());
+    }
+    Ok(load(root)?.settings.browser_gateway.allowed_origin)
 }
 
 /// Public browser endpoint from the project's saved multiplayer settings.

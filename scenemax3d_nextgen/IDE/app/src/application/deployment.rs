@@ -19,7 +19,7 @@ pub(crate) enum Action {
     Reveal,
     Log,
     SizeReport,
-    RunWeb,
+    TestWeb(scenemax_ide_services::multiplayer::TestTarget),
     StopWeb,
     Browse(PathField),
 }
@@ -97,6 +97,7 @@ impl Deployment {
             resolve(&mut platform.recipe);
         }
         Ok(Request {
+            multiplayer_override: None,
             project: self.project.clone(),
             entry,
             workspace: scenemax_ide_services::deployment::workspace(),
@@ -106,6 +107,7 @@ impl Deployment {
 }
 pub(crate) fn update(
     mut state: ResMut<Deployment>,
+    mut multiplayer: ResMut<super::multiplayer::State>,
     mut commands: ResMut<CommandQueue>,
     session: Res<Session>,
     services: Res<EditorServices>,
@@ -202,19 +204,18 @@ pub(crate) fn update(
                     }
                 }
                 Action::DismissResult => state.notification = None,
-                Action::RunWeb => {
-                    if state.busy {
+                Action::TestWeb(target) => {
+                    if state.busy || multiplayer.busy {
                         return Ok(());
                     }
-                    let artifact = state
-                        .report
-                        .web_artifact
-                        .clone()
-                        .ok_or("Build a Web package first.")?;
-                    state.preview.start(artifact).map_err(|e| e.to_string())?;
-                    state.preview_status = state.preview.status();
+                    state.preview.stop();
+                    multiplayer.request_browser_test(session.workspace.project().root(), target);
+                    state.open = false;
                 }
                 Action::StopWeb => {
+                    multiplayer
+                        .actions
+                        .push_back(super::multiplayer::Action::StopTestGame);
                     state.preview.stop();
                     state.preview_status = state.preview.status();
                 }

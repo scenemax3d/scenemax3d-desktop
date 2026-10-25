@@ -37,6 +37,7 @@ fn main() -> io::Result<()> {
         }
         let mut builder = Builder::default();
         builder.start(Operation::BuildTemporary(Request {
+            multiplayer_override: None,
             entry: args
                 .get(1)
                 .map(PathBuf::from)

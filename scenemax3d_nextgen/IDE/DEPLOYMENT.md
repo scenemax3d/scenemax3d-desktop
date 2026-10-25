@@ -46,7 +46,7 @@ compiles the shared runtime for Wasm, generates browser bindings, stages the
 selected scripts/assets and creates a static-site ZIP. Unchanged engine builds
 reuse Cargo's cache. Neither Java nor a separate game-specific runtime is used.
 
-After a Web artifact completes, **Run Web locally** in the right-hand build report
+After a Web artifact completes, **Test With Local Server** or **Test With Remote Server** in the right-hand build report
 extracts that ZIP into a private temporary folder, starts the IDE's loopback-only
 HTTP server on an available port, and opens the default browser. No Python or Node
 installation is needed. The report shows the URL and **Stop local server**; closing
@@ -240,3 +240,9 @@ The size report lists only models included in the artifact under Packaged Models
 Animation `bevyBakedRetargets` are optional target variants: only variants for selected models survive dependency expansion and staged catalog writing. An unused variant cannot pull its target model into the game. Source-model aliases still resolve to their supported glTF/GLB resource.
 
 JME `.j3o` payloads are excluded in both dependency and all-assets modes. Unsupported catalog entries without a source-model alias are removed from the staged catalog; source files remain untouched. A referenced unsupported model produces a build-log warning and a dependency diagnostic in package-size.json; excluded models do not appear in the size analysis. This does not convert the model or repair the scene: authors must supply a supported glTF/GLB resource or remove its scene reference.
+
+Browser test buttons in both forms use the Multiplayer Deployment progress view.
+Local testing starts an IDE-owned loopback Zig server and WebSocket gateway using
+temporary connection settings. Remote testing uses the saved deployed gateway.
+Both rebuild the browser game without publishing. Stop Test stops the preview
+and any owned local test processes; it never stops deployed remote services.

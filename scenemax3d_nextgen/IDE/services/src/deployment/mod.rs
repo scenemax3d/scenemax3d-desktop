@@ -26,6 +26,8 @@ use std::{
 /// An immutable build input tied to the project visible when the user pressed Build.
 #[derive(Debug, Clone)]
 pub struct Request {
+    /// Test-only connection settings; never written to project preferences.
+    pub multiplayer_override: Option<scenemax_ide_core::multiplayer::Settings>,
     /// Canonical source project.
     pub project: PathBuf,
     /// Entry script inside this project.
@@ -57,6 +59,7 @@ pub fn browser_test_request(project: PathBuf, entry: PathBuf) -> io::Result<Requ
         }
     }
     Ok(Request {
+        multiplayer_override: None,
         project,
         entry,
         workspace: workspace(),

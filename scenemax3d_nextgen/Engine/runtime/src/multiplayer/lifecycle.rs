@@ -39,11 +39,13 @@ pub(super) fn cleanup_disconnected(world: &mut World, net: &mut Multiplayer) {
         }
     }
     net.locals.clear();
+    net.sent_poses.clear();
     net.local_actions.clear();
     net.local_sequences.clear();
     net.remotes.clear();
     net.replay = replay::ReplayHistory::default();
     net.poses.clear();
+    net.corrections.clear();
     net.pending.clear();
     net.entity_updates.clear();
     net.remote_pending.clear();

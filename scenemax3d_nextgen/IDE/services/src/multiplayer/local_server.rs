@@ -18,6 +18,10 @@ pub struct LocalServer {
     last_poll: Option<Instant>,
 }
 impl LocalServer {
+    /// Both configured transports confirmed their listening sockets.
+    pub fn ready(&self) -> bool {
+        self.listening && self.gateway.as_ref().is_none_or(|g| g.ready)
+    }
     /// Whether this IDE owns a running or starting server.
     pub fn active(&self) -> bool {
         self.child.is_some()

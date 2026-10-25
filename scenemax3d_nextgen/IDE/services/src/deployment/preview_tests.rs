@@ -15,27 +15,25 @@ fn multiplayer_preview_preserves_exact_local_origin() {
     let origin = format!("http://localhost:{port}");
     let address = local_origin_address(&origin).unwrap();
     let temp = tempfile::tempdir().unwrap();
-    let zip = archive(temp.path(), &[("index.html", b"local game")]);
+    let network = serde_json::to_vec(&serde_json::json!({
+        "websocket_url": "ws://gateway.example:9002", "allowed_origin": origin
+    }))
+    .unwrap();
+    let zip = archive(
+        temp.path(),
+        &[("index.html", b"local game"), ("network.json", &network)],
+    );
     let state = Arc::new(Mutex::new(Status::default()));
     let cancel = Arc::new(AtomicBool::new(false));
     assert!(
-        serve_archive_at(
-            &zip,
-            &cancel,
-            &state,
-            false,
-            Some((address, format!("{origin}/")))
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("Stop any other server")
+        serve_archive_at(&zip, &cancel, &state, false, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Stop any other server")
     );
     drop(reservation);
     let (c, s) = (cancel.clone(), state.clone());
-    let expected = format!("{origin}/");
-    let worker = std::thread::spawn(move || {
-        serve_archive_at(&zip, &c, &s, false, Some((address, expected)))
-    });
+    let worker = std::thread::spawn(move || serve_archive_at(&zip, &c, &s, false, None));
     let deadline = Instant::now() + Duration::from_secs(5);
     while state.lock().unwrap().url.is_none() {
         assert!(Instant::now() < deadline);
@@ -56,6 +54,26 @@ fn multiplayer_preview_preserves_exact_local_origin() {
     );
     cancel.store(true, Ordering::Relaxed);
     worker.join().unwrap().unwrap();
+}
+#[test]
+fn multiplayer_preview_never_falls_back_to_an_unapproved_random_origin() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("network.json");
+    fs::write(&path, r#"{"websocket_url":"ws://gateway.example:9002"}"#).unwrap();
+    assert!(
+        exported_endpoint(root.path())
+            .unwrap_err()
+            .to_string()
+            .contains("Rebuild")
+    );
+    fs::write(
+        &path,
+        r#"{"websocket_url":"wss://gateway.example","allowed_origin":"https://game.example"}"#,
+    )
+    .unwrap();
+    assert!(exported_endpoint(root.path()).is_err());
+    fs::write(&path, r#"{"websocket_url":"","allowed_origin":""}"#).unwrap();
+    assert!(exported_endpoint(root.path()).unwrap().is_none());
 }
 fn archive(root: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
     let path = root.join("web.zip");

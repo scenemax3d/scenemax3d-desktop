@@ -4137,6 +4137,20 @@ pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_m
         let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
             return;
         };
+        if let Some(SceneMaxControllerKey::NetworkAction { entity: next_entity, slot: next_slot, sequence: next_sequence }) = timed_move.controller_owner.as_ref() {
+            if let Some(mut motor) = entity_mut.get_mut::<SceneMaxCharacterMotor>() {
+                if matches!(motor.timed_motion_owner.as_ref(), Some(SceneMaxControllerKey::NetworkAction { entity, slot, sequence })
+                    if entity == next_entity && slot == next_slot && sequence != next_sequence)
+                {
+                    // Complete the deferred network handoff even if the new
+                    // movement uses a transform path (axis/move-to), not a motor.
+                    motor.timed_motion = Vec3::ZERO;
+                    motor.timed_motion_remaining_seconds = 0.;
+                    motor.timed_motion_owner = None;
+                    motor.network_lifetime = None;
+                }
+            }
+        }
         if timed_move.character_motion {
             if let Some(speed) = entity_mut
                 .get::<SceneMaxCharacterController>()

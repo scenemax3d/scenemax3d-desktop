@@ -470,9 +470,24 @@ pub(crate) fn refresh(
                         ("Test connection", Action::TestRemote),
                         ("Deploy & start", Action::DeployRemote),
                         ("Check status", Action::RemoteStatus),
-                        ("Test Game", Action::TestGame),
-                        ("Stop Test", Action::StopTestGame),
                         ("Cancel", Action::Cancel),
+                    ],
+                );
+                actions(
+                    &mut c,
+                    panel,
+                    &[
+                        (
+                            "Test With Local Server",
+                            Action::TestGame(scenemax_ide_services::multiplayer::TestTarget::Local),
+                        ),
+                        (
+                            "Test With Remote Server",
+                            Action::TestGame(
+                                scenemax_ide_services::multiplayer::TestTarget::Remote,
+                            ),
+                        ),
+                        ("Stop Test", Action::StopTestGame),
                     ],
                 );
             }

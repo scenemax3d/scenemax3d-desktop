@@ -124,7 +124,7 @@ establish Linux/macOS export support on a clean machine.
    reported problems, then **Build release**. First compilation can take a long
    time; subsequent builds reuse unchanged compiler output. Checks do not replace
    an actual build or browser test.
-7. After completion, choose **Run Web locally**. SceneMax runs its own localhost
+7. After completion, choose **Test With Local Server** or **Test With Remote Server**. SceneMax runs its own localhost
    server and opens the browser; no extra server software is needed. Rebuild after
    source/asset changes: this previews the completed ZIP. **Stop local server**
    stops it; exiting the IDE also stops it.
@@ -223,3 +223,9 @@ change. Do not claim clean-install readiness based on a developer machine's cach
 Before releasing, test setup, Web compilation, local preview, first-interaction
 audio and effect rendering on a clean Windows x64 machine without preinstalled
 Rust/Visual Studio/Butler, then test the resulting ZIP on the hosting site.
+
+Browser test buttons in both forms use the Multiplayer Deployment progress view.
+Local testing starts an IDE-owned loopback Zig server and WebSocket gateway using
+temporary connection settings. Remote testing uses the saved deployed gateway.
+Both rebuild the browser game without publishing. Stop Test stops the preview
+and any owned local test processes; it never stops deployed remote services.

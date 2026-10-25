@@ -1,14 +1,14 @@
 //! Project-scoped multiplayer settings orchestration.
 use super::{Command, CommandQueue, Session};
 use bevy::prelude::*;
-use scenemax_ide_services::multiplayer::{Operation, RemoteAction, Snapshot, Worker};
+use scenemax_ide_services::multiplayer::{Operation, RemoteAction, Snapshot, TestTarget, Worker};
 use std::{
     collections::{BTreeMap, VecDeque},
     path::PathBuf,
 };
 #[derive(Clone, Copy)]
 pub(crate) enum Action {
-    TestGame,
+    TestGame(TestTarget),
     StopTestGame,
     SelectTab(Tab),
     TestRemote,
@@ -37,7 +37,9 @@ pub(crate) enum Tab {
 pub(crate) struct State {
     preview: scenemax_ide_services::deployment::preview::Preview,
     preview_message: String,
-    test_after_save: bool,
+    test_after_save: Option<TestTarget>,
+    pub queued_test: Option<TestTarget>,
+    test_local: Option<scenemax_ide_services::multiplayer::LocalTest>,
     pub open: bool,
     pub tab: Tab,
     pub busy: bool,
@@ -61,6 +63,14 @@ pub(crate) struct State {
     pub local_status: String,
 }
 impl State {
+    pub fn request_browser_test(&mut self, root: &std::path::Path, target: TestTarget) {
+        if self.root == root && self.snapshot.is_some() {
+            self.open = true;
+        } else {
+            self.actions.push_back(Action::Open);
+        }
+        self.queued_test = Some(target);
+    }
     pub fn progress_label(&self) -> String {
         if self.busy {
             format!(
@@ -76,7 +86,8 @@ impl State {
         }
     }
     fn close(&mut self) {
-        self.test_after_save = false;
+        self.queued_test = None;
+        self.test_after_save = None;
         if self.saving {
             self.close_after_save = true;
             self.status = "Saving settings before closing…".into();
@@ -267,8 +278,9 @@ pub(crate) fn update(
 ) {
     if state.root != session.workspace.project().root() {
         state.preview.stop();
-        state.test_after_save = false;
+        state.test_after_save = None;
         state.local.stop();
+        state.test_local = None;
         state.local_status.clear();
         state.run_after_build = false;
         state.password = None;
@@ -279,15 +291,20 @@ pub(crate) fn update(
             .projector
             .set_password(session.workspace.project().root(), None);
     }
+    if let Some(local) = &mut state.test_local {
+        if let Some(status) = local.server.poll() {
+            state.local_status = status;
+        }
+    }
     if let Some(status) = state.local.poll() {
         state.local_status = status;
     }
-    if state.test_after_save && !services.is_saving() && !services.storage.is_pending() {
-        state.test_after_save = false;
+    if state.test_after_save.is_some() && !services.is_saving() && !services.storage.is_pending() {
+        let target = state.test_after_save.take().unwrap();
         if session.workspace.has_dirty_documents() {
             state.status = "Test Game cancelled: resolve the document save error and retry.".into();
         } else {
-            state.actions.push_back(Action::TestGame);
+            state.actions.push_back(Action::TestGame(target));
         }
     }
     let preview = state.preview.status();
@@ -315,10 +332,8 @@ pub(crate) fn update(
             Ok(report) => {
                 if let Some(artifact) = report.web_artifact {
                     if state.open && state.root == session.workspace.project().root() {
-                        let result = state.preview.start_at_origin(
-                            artifact,
-                            &report.snapshot.settings.browser_gateway.allowed_origin,
-                        );
+                        state.test_local = report.local_test;
+                        let result = state.preview.start(artifact);
                         if let Err(error) = result {
                             state
                                 .progress
@@ -414,6 +429,7 @@ pub(crate) fn update(
                 state.status = report.message;
             }
             Err(error) => {
+                state.queued_test = None;
                 state.run_after_build = false;
                 state.pending_password = None;
                 state.status = error;
@@ -423,23 +439,29 @@ pub(crate) fn update(
     if state.busy {
         state.progress = state.worker.progress();
     }
+    if !state.busy
+        && state.snapshot.is_some()
+        && !state.actions.iter().any(|a| matches!(a, Action::Open))
+    {
+        if let Some(target) = state.queued_test.take() {
+            state.tab = Tab::Deployment;
+            state.revision += 1;
+            state.actions.push_back(Action::TestGame(target));
+        }
+    }
     while let Some(action) = state.actions.pop_front() {
         match action {
-            Action::TestGame if !state.busy => {
+            Action::TestGame(target) if !state.busy => {
                 let result = (|| -> Result<(), String> {
-                    let snapshot = state.edited()?;
-                    if !snapshot.settings.browser_gateway.enabled {
-                        return Err("Enable the browser gateway before testing the game".into());
+                    if state.root != session.workspace.project().root() {
+                        return Err("The project changed before browser testing started. Try again from the current project.".into());
                     }
-                    scenemax_ide_services::deployment::preview::local_origin_address(
-                        &snapshot.settings.browser_gateway.allowed_origin,
-                    )
-                    .map_err(|e| e.to_string())?;
+                    let snapshot = state.edited()?;
                     if session.workspace.has_dirty_documents()
                         || services.is_saving()
                         || services.storage.is_pending()
                     {
-                        state.test_after_save = true;
+                        state.test_after_save = Some(target);
                         commands.0.push_back(Command::SaveAll);
                         state.status = "Saving game scripts before browser build…".into();
                         return Ok(());
@@ -452,7 +474,11 @@ pub(crate) fn update(
                         .to_owned();
                     state.preview.stop();
                     state.preview_message.clear();
-                    state.start(Operation::TestGame(snapshot, entry));
+                    state.test_local = None;
+                    if target == TestTarget::Local {
+                        state.local.stop();
+                    }
+                    state.start(Operation::TestGame(snapshot, entry, target));
                     Ok(())
                 })();
                 if let Err(error) = result {
@@ -461,6 +487,7 @@ pub(crate) fn update(
             }
             Action::StopTestGame => {
                 state.preview.stop();
+                state.test_local = None;
                 state.status = "Local browser test stopped.".into();
             }
             Action::SelectTab(tab) => {
@@ -521,12 +548,13 @@ pub(crate) fn update(
             }
             Action::Close => state.close(),
             Action::StopLocal => {
+                state.test_local = None;
                 state.run_after_build = false;
                 state.local.stop();
                 state.local_status = "Local server and gateway stopped".into();
             }
             Action::Cancel if state.busy => {
-                state.test_after_save = false;
+                state.test_after_save = None;
                 state.run_after_build = false;
                 state.worker.cancel();
                 state.status = "Cancelling multiplayer operation…".into();

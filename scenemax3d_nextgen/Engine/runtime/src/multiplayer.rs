@@ -8,6 +8,7 @@ use std::{net::ToSocketAddrs, time::Duration};
 use web_time::Instant;
 pub(super) mod collisions;
 mod controllers;
+mod correction;
 mod external_config;
 mod lifecycle;
 mod local;
@@ -34,6 +35,7 @@ pub(super) struct Multiplayer {
     locals: HashMap<String, (Entity, u32)>,
     remotes: HashMap<u32, String>,
     poses: HashMap<u32, Pose>,
+    corrections: HashMap<u32, correction::Correction>,
     pending: Vec<(String, String, Option<std::sync::Weak<()>>)>,
     entity_updates: Vec<(String, String, serde_json::Value)>,
     remote_pending: Vec<RemoteCommand>,
@@ -41,7 +43,7 @@ pub(super) struct Multiplayer {
     local_sequences: HashMap<u32, u16>,
     local_actions: local::LocalActions,
     rejected_declarations: HashSet<String>,
-    last_correction: Option<Instant>,
+    sent_poses: correction::SendSchedule,
     disconnected_cleaned: bool,
     player: String,
     events: events::EventState,
@@ -354,11 +356,13 @@ pub(super) fn scene_changed(commands: &mut Commands, scene: &str) {
             net.declarations.clear();
             net.local_sources.clear();
             net.locals.clear();
+            net.sent_poses.clear();
             net.local_sequences.clear();
             net.local_actions.clear();
             net.remotes.clear();
             net.replay = replay::ReplayHistory::default();
             net.poses.clear();
+            net.corrections.clear();
             net.pending.clear();
             net.entity_updates.clear();
             net.remote_pending.clear();
@@ -449,6 +453,7 @@ pub(super) fn capture_timed(
     let value = |v: &AssignmentValue| {
         resolve_assignment_value_scoped_with_guards(v, vars, scope, guards, Some(transforms), None)
     };
+    let mut character_step = None;
     let encoded = match action {
         Statement::ModelDecl {
             name,
@@ -469,6 +474,7 @@ pub(super) fn capture_timed(
             value(&a.distance_value)
                 .zip(value(&a.duration_value))
                 .map(|(d, t)| {
+                    let input_distance = d;
                     let curve = motion_ease::resolve(&a.easing, vars, scope, guards, transforms);
                     let easing = if continuous.is_none() { curve.wire() } else { String::new() };
                     let (d, t) = continuous
@@ -485,6 +491,14 @@ pub(super) fn capture_timed(
                         MoveDirection::AxisY => "y",
                         MoveDirection::AxisZ => "z",
                     };
+                    if let Some(dt) = continuous.filter(|_| !a.direction.is_axis()) {
+                        // Held character input treats distance as a per-frame
+                        // displacement, unlike ordinary timed entity motion.
+                        // Preserve the local intent lease across variable render
+                        // rates and fixed physics ticks, including key release.
+                        let distance = input_distance / dt.max(0.001) * CHARACTER_INPUT_TTL_SECONDS;
+                        character_step = Some(format!("{{network_entity}}.move {direction} {distance} in {CHARACTER_INPUT_TTL_SECONDS} seconds async"));
+                    }
                     let command = if a.direction.is_axis() {
                         let sign = if d < 0. { "-" } else { "+" };
                         format!("{{network_entity}}.move ({direction} {sign} {}) in {t} seconds{easing} async", d.abs())
@@ -573,6 +587,18 @@ pub(super) fn capture_timed(
     .then(|| std::sync::Arc::new(()));
     let lifetime = lease.as_ref().map(std::sync::Arc::downgrade);
     commands.queue(move |world: &mut World| {
+        let text = if let Some(character_step) = character_step {
+            let is_character = world
+                .query_filtered::<&SceneMaxEntity, (
+                    With<SceneMaxCharacterController>,
+                    With<SceneMaxCharacterMotor>,
+                )>()
+                .iter(world)
+                .any(|entity| entity.name == target);
+            if is_character { character_step } else { text }
+        } else {
+            text
+        };
         if let Some(mut net) = world.get_resource_mut::<Multiplayer>() {
             if net.client.is_some() && net.pending.len() < 4096 {
                 net.pending.push((target, text, lifetime));
@@ -628,6 +654,7 @@ fn update_connected(world: &mut World, net: &mut Multiplayer) {
     for (name, request) in removed {
         let _ = client.destroy(request);
         net.locals.remove(&name);
+        net.sent_poses.remove(request);
         net.local_sequences.remove(&request);
         net.local_actions.remove(request);
         if !entities.contains_key(&name) && !inactive.contains(&name) {
@@ -805,27 +832,26 @@ fn update_connected(world: &mut World, net: &mut Multiplayer) {
             net.entity_updates.push((name, field, value));
         }
     }
-    if net
-        .last_correction
-        .is_none_or(|last| last.elapsed() >= Duration::from_millis(250))
-    {
+    if client.state() == State::Ready {
+        let now = Instant::now();
         for (name, (_, request)) in &net.locals {
+            if client.network_id(*request).is_none() {
+                continue;
+            }
             if let Some((_, transform)) = entities.get(name) {
-                if let Err(error) = client.send(
-                    Some(*request),
-                    Outgoing::Transform {
-                        entity: 0,
-                        pose: Pose {
-                            position: transform.translation.to_array(),
-                            rotation: transform.rotation.to_array(),
-                        },
-                    },
-                ) {
-                    tracing::warn!(%error,"multiplayer transform rejected");
+                let pose = Pose {
+                    position: transform.translation.to_array(),
+                    rotation: transform.rotation.to_array(),
+                };
+                if !net.sent_poses.due(*request, pose, now) {
+                    continue;
+                }
+                match client.send(Some(*request), Outgoing::Transform { entity: 0, pose }) {
+                    Ok(()) => net.sent_poses.sent(*request, pose, now),
+                    Err(error) => tracing::warn!(%error,"multiplayer transform rejected"),
                 }
             }
         }
-        net.last_correction = Some(Instant::now());
     }
     let events = match client.poll() {
         Ok(events) => events,
@@ -888,6 +914,7 @@ fn update_connected(world: &mut World, net: &mut Multiplayer) {
             Incoming::Destroyed(id) => {
                 net.replay.destroy(id);
                 net.poses.remove(&id);
+                net.corrections.remove(&id);
                 net.remote_pending.retain(|command| command.entity != id);
                 if let Some(name) = net.remotes.remove(&id) {
                     events::remove_entity(world, net, id, &name);
@@ -915,14 +942,23 @@ fn update_connected(world: &mut World, net: &mut Multiplayer) {
             return true;
         };
         if let Some(mut t) = world.get_mut::<Transform>(*entity) {
-            let rotation = Quat::from_array(pose.rotation);
-            if rotation.length_squared() > 0.0001 {
-                t.rotation = rotation.normalize();
-            }
-            t.translation = Vec3::from_array(pose.position);
+            net.corrections
+                .entry(*id)
+                .or_default()
+                .receive(&mut t, *pose);
         }
         false
     });
+    let delta = world
+        .get_resource::<Time>()
+        .map_or(0., |time| time.delta_secs());
+    for (id, correction) in &mut net.corrections {
+        if let Some((entity, _)) = net.remotes.get(id).and_then(|name| entities.get(name)) {
+            if let Some(mut transform) = world.get_mut::<Transform>(*entity) {
+                correction.advance(&mut transform, delta);
+            }
+        }
+    }
 }
 
 fn dispatch_remote(
