@@ -504,7 +504,11 @@ impl Plugin for StudioPlugin {
                     presentation::projects::refresh,
                     presentation::browser::update_tree,
                     presentation::browser::selection,
-                    presentation::chrome::active_tabs,
+                    (
+                        presentation::chrome::active_tabs,
+                        presentation::titlebar::control_feedback,
+                    )
+                        .chain(),
                     presentation::reconcile::search_results,
                     presentation::editing::project_edits,
                     (
