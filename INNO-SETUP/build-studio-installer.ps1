@@ -132,6 +132,12 @@ $output = Join-Path $job 'output'
 & $Compiler "/DCleanupManifest=$cleanupPath" "/DPayload=$payload" "/DOutputDir=$output" "/DAppVersion=$AppVersion" (Join-Path $PSScriptRoot 'scenemax-studio.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 $installer = Get-Item -LiteralPath (Join-Path $output "scenemax-studio-$AppVersion.exe")
+# Publish only after compilation succeeds, keeping the isolated staging output.
+$finalOutput = Join-Path $PSScriptRoot 'Output'
+New-Item -ItemType Directory -Path $finalOutput -Force | Out-Null
+$finalInstaller = Join-Path $finalOutput $installer.Name
+Copy-Item -LiteralPath $installer.FullName -Destination $finalInstaller -Force
+$installer = Get-Item -LiteralPath $finalInstaller
 $report = [ordered]@{ installer=$installer.FullName; installer_bytes=$installer.Length; payload_bytes=$bytes; payload_files=$files.Count; sha256=(Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash; configuration='release'; signed=$false }
 $report | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $job 'size-report.json') -Encoding UTF8
 $report | ConvertTo-Json

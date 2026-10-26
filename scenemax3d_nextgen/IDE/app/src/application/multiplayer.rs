@@ -63,6 +63,12 @@ pub(crate) struct State {
     pub local_status: String,
 }
 impl State {
+    pub fn enabled(&self) -> bool {
+        self.fields.get("enabled").is_some_and(|v| v == "true")
+    }
+    pub fn enabled_for(&self, root: &std::path::Path) -> Option<bool> {
+        (self.root == root && self.snapshot.is_some()).then(|| self.enabled())
+    }
     pub fn request_browser_test(&mut self, root: &std::path::Path, target: TestTarget) {
         if self.root == root && self.snapshot.is_some() {
             self.open = true;
@@ -229,6 +235,10 @@ impl State {
     }
     fn edited(&self) -> Result<Snapshot, String> {
         let mut snapshot = self.snapshot.clone().ok_or("Wait for settings to load")?;
+        snapshot.settings.enabled = self.enabled();
+        if !snapshot.settings.enabled {
+            return Ok(snapshot);
+        }
         let get = |key: &str| self.fields.get(key).cloned().unwrap_or_default();
         snapshot.settings.server = get("server");
         snapshot.settings.project_guid = get("project_guid");
@@ -374,6 +384,7 @@ pub(crate) fn update(
                 if state.snapshot.is_none() {
                     let s = &report.snapshot.settings;
                     state.fields = BTreeMap::from([
+                        ("enabled".into(), s.enabled.to_string()),
                         ("server".into(), s.server.clone()),
                         ("port".into(), s.port.to_string()),
                         ("project_guid".into(), s.project_guid.clone()),
@@ -450,6 +461,24 @@ pub(crate) fn update(
         }
     }
     while let Some(action) = state.actions.pop_front() {
+        if !state.enabled()
+            && matches!(
+                action,
+                Action::TestGame(_)
+                    | Action::TestRemote
+                    | Action::RemoteStatus
+                    | Action::DeployRemote
+                    | Action::Build
+                    | Action::RunLocal
+                    | Action::SelectTab(_)
+                    | Action::OpenFolder
+                    | Action::UseEnvironment
+                    | Action::NoPassword
+            )
+        {
+            state.status = "Enable Multiplayer game in Project Settings first.".into();
+            continue;
+        }
         match action {
             Action::TestGame(target) if !state.busy => {
                 let result = (|| -> Result<(), String> {

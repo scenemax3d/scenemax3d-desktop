@@ -1,4 +1,4 @@
-param([ValidateSet('Scan','Rust','Cpp','Web')][string]$Operation='Scan', [string]$Toolchain, [string]$BindgenVersion='0.2.108')
+param([ValidateSet('Scan','Rust','Cpp','Web')][string]$Operation='Scan', [string]$Toolchain, [string]$BindgenVersion='0.2.129')
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $ProgressPreference='SilentlyContinue'
@@ -31,6 +31,19 @@ function Locate($name, $fallback) {
     if ($fallback -and (Test-Path -LiteralPath $fallback)) { return $fallback }
     return ''
 }
+function Merge-StudioSearchPath([string[]]$Values) {
+    # Preserve lookup order without growing PATH on every dependency scan.
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $paths = [Collections.Generic.List[string]]::new()
+    foreach ($value in $Values) {
+        foreach ($entry in ($value -split ';')) {
+            $entry = $entry.Trim()
+            $key = $entry.Trim('"').TrimEnd('\', '/')
+            if ($key -and $seen.Add($key)) { $paths.Add($entry) }
+        }
+    }
+    return $paths -join ';'
+}
 try {
     # A running IDE may predate a tool installation or custom Cargo home setting.
     foreach ($key in @('CARGO_HOME','RUSTUP_HOME')) {
@@ -40,7 +53,7 @@ try {
             if ($value) { [Environment]::SetEnvironmentVariable($key,$value,'Process') }
         }
     }
-    $env:PATH=$env:PATH+';'+[Environment]::GetEnvironmentVariable('PATH','User')+';'+[Environment]::GetEnvironmentVariable('PATH','Machine')
+    $env:PATH=Merge-StudioSearchPath @($env:PATH, [Environment]::GetEnvironmentVariable('PATH','User'), [Environment]::GetEnvironmentVariable('PATH','Machine'))
     $cargoHome=if($env:CARGO_HOME){$env:CARGO_HOME}else{Join-Path $env:USERPROFILE '.cargo'}
     $cargo=Locate 'cargo.exe' (Join-Path $cargoHome 'bin\cargo.exe')
     $rustup=Locate 'rustup.exe' (Join-Path $cargoHome 'bin\rustup.exe')
@@ -172,7 +185,7 @@ try {
     if ($cargo) { $paths+=Split-Path $cargo }
     if ($cmake) { $paths+=Split-Path $cmake }
     $paths+=if($environment['PATH']){$environment['PATH']}else{$env:PATH}
-    $environment['PATH']=$paths -join ';'
+    $environment['PATH']=Merge-StudioSearchPath $paths
     if ($env:CARGO_HOME) { $environment['CARGO_HOME']=$env:CARGO_HOME }
     if ($env:RUSTUP_HOME) { $environment['RUSTUP_HOME']=$env:RUSTUP_HOME }
     $wasmReady=$false

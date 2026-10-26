@@ -195,6 +195,9 @@ fn configured_settings(
             }
             let json: serde_json::Value =
                 serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            if json["enabled"].as_bool() != Some(true) {
+                return Ok(None);
+            }
             for (key, field) in [
                 ("multiplayer_server", "server"),
                 ("multiplayer_port", "port"),

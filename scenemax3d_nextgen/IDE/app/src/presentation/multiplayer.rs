@@ -5,6 +5,8 @@ use scenemax_ide_ui::{label, property, theme::*};
 #[derive(Component)]
 pub(crate) struct Field(String);
 #[derive(Component)]
+pub(crate) struct MultiplayerToggle;
+#[derive(Component)]
 pub(crate) struct Status;
 #[derive(Component)]
 pub(crate) struct LocalStatus;
@@ -90,9 +92,30 @@ pub(crate) fn input(
     mut state: ResMut<State>,
     fields: Query<(&Field, Option<&EditableText>, Option<&property::Choice>)>,
     passwords: Query<&scenemax_ide_ui::password::Password>,
+    toggles: Query<&property::Checked, With<MultiplayerToggle>>,
+    mut focus: Option<ResMut<bevy::input_focus::InputFocus>>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
     if !state.open {
+        return;
+    }
+    if let Ok(toggle) = toggles.single() {
+        if !state.busy && toggle.0 != state.enabled() {
+            state.fields.insert("enabled".into(), toggle.0.to_string());
+            state.revision += 1;
+            if let Some(focus) = focus.as_mut() {
+                focus.clear();
+            }
+            if !toggle.0 {
+                state.actions.push_back(Action::StopTestGame);
+                state.actions.push_back(Action::StopLocal);
+            }
+        }
+    }
+    if !state.enabled() {
+        if keys.just_pressed(KeyCode::Escape) {
+            state.actions.push_back(Action::Close);
+        }
         return;
     }
     let mut endpoint_changed = false;
@@ -312,7 +335,31 @@ pub(crate) fn refresh(
                     }
                 },
             );
-        text(&mut c, panel, "Project Settings — Multiplayer");
+        text(&mut c, panel, "Project Settings");
+        property::checkbox(
+            &mut c,
+            panel,
+            MultiplayerToggle,
+            "Multiplayer game",
+            state.enabled(),
+        );
+        if !state.enabled() {
+            text(
+                &mut c,
+                panel,
+                "Single-player game. Enable Multiplayer game to configure servers and multiplayer tests.",
+            );
+        }
+        let outer_panel = panel;
+        let panel = node(
+            &mut c,
+            outer_panel,
+            Node {
+                flex_direction: FlexDirection::Column,
+                row_gap: px(12.),
+                ..default()
+            },
+        );
         let tabs = node(
             &mut c,
             panel,
@@ -563,8 +610,31 @@ pub(crate) fn refresh(
                 },
             ));
         }
+        if !state.enabled() {
+            c.queue(move |world: &mut World| {
+                let mut nodes = vec![panel];
+                let mut index = 0;
+                while index < nodes.len() {
+                    if let Some(children) = world.get::<Children>(nodes[index]) {
+                        nodes.extend(children.iter());
+                    }
+                    index += 1;
+                }
+                for entity in nodes {
+                    world.entity_mut(entity).insert((
+                        bevy::ui::InteractionDisabled,
+                        Pickable::IGNORE,
+                        bevy::input_focus::tab_navigation::TabIndex(-1),
+                    ));
+                    if let Some(mut color) = world.get_mut::<TextColor>(entity) {
+                        color.0 = MUTED.with_alpha(0.45);
+                    }
+                }
+            });
+        }
+        let panel = outer_panel;
         let mut footer = vec![("Save", Action::Save)];
-        if state.tab != Tab::Server {
+        if state.enabled() && state.tab != Tab::Server {
             footer.push((
                 "Back",
                 Action::SelectTab(match state.tab {
@@ -574,7 +644,7 @@ pub(crate) fn refresh(
                 }),
             ));
         }
-        if state.tab != Tab::Deployment {
+        if state.enabled() && state.tab != Tab::Deployment {
             footer.push((
                 "Next",
                 Action::SelectTab(match state.tab {
@@ -703,6 +773,7 @@ mod tests {
         {
             let mut state = app.world_mut().resource_mut::<State>();
             state.open = true;
+            state.fields.insert("enabled".into(), "true".into());
             state.fields.insert("server".into(), "127.0.0.1".into());
             state.fields.insert("port".into(), "9001".into());
             state
@@ -768,6 +839,10 @@ mod tests {
             .add_systems(Update, (input, refresh).chain());
         app.world_mut().resource_mut::<State>().open = true;
         app.world_mut().resource_mut::<State>().tab = Tab::Browser;
+        app.world_mut()
+            .resource_mut::<State>()
+            .fields
+            .insert("enabled".into(), "true".into());
         app.update();
         let world = app.world_mut();
         let field = world
@@ -819,6 +894,7 @@ mod tests {
             let mut state = app.world_mut().resource_mut::<State>();
             state.open = true;
             state.revision = 1;
+            state.fields.insert("enabled".into(), "true".into());
             state.fields.insert("server".into(), "127.0.0.1".into());
         }
         app.update();
@@ -857,5 +933,46 @@ mod tests {
             .push_back(Action::Close);
         app.update();
         assert!(app.world().get_entity(field).is_err());
+    }
+}
+
+#[cfg(test)]
+mod project_mode_tests {
+    use super::*;
+    #[test]
+    fn unchecked_game_disables_fields_and_checkbox_reenables_them() {
+        let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
+        app.init_resource::<State>()
+            .init_resource::<View>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_systems(Update, (input, refresh).chain());
+        app.world_mut().resource_mut::<State>().open = true;
+        app.update();
+        let world = app.world_mut();
+        let fields: Vec<_> = world
+            .query_filtered::<Entity, With<Field>>()
+            .iter(world)
+            .collect();
+        assert!(!fields.is_empty());
+        assert!(
+            fields
+                .iter()
+                .all(|e| world.get::<bevy::ui::InteractionDisabled>(*e).is_some())
+        );
+        let toggle = world
+            .query_filtered::<Entity, With<MultiplayerToggle>>()
+            .single(world)
+            .unwrap();
+        world.get_mut::<property::Checked>(toggle).unwrap().0 = true;
+        app.update();
+        assert!(app.world().resource::<State>().enabled());
+        let world = app.world_mut();
+        assert!(
+            world
+                .query_filtered::<Has<bevy::ui::InteractionDisabled>, With<Field>>()
+                .iter(world)
+                .all(|disabled| !disabled)
+        );
     }
 }

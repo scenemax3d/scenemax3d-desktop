@@ -17,6 +17,7 @@ pub(crate) enum Action {
     DismissResult,
     Exit,
     Reveal,
+    OpenBrowser,
     Log,
     SizeReport,
     TestWeb(scenemax_ide_services::multiplayer::TestTarget),
@@ -35,6 +36,7 @@ pub(crate) enum PathField {
 #[derive(Resource, Default)]
 pub(crate) struct Deployment {
     pub open: bool,
+    pub multiplayer_enabled: bool,
     pub settings: Option<Settings>,
     pub report: Report,
     pub actions: VecDeque<Action>,
@@ -124,6 +126,7 @@ pub(crate) fn update(
         }
         state.busy = state.builder.busy() || state.pending.is_some();
         if state.loading && state.report.finished {
+            state.multiplayer_enabled = state.report.multiplayer_enabled;
             state.loading = false;
             state.report.progress = 0.;
             if let Some(settings) = state.report.settings.take() {
@@ -176,6 +179,9 @@ pub(crate) fn update(
             state.notification = Some((false, state.report.status.clone()));
         }
     }
+    if let Some(enabled) = multiplayer.enabled_for(session.workspace.project().root()) {
+        state.multiplayer_enabled = enabled;
+    }
     let actions: Vec<_> = state.actions.drain(..).collect();
     for action in actions {
         let result = (|| -> Result<(), String> {
@@ -208,7 +214,25 @@ pub(crate) fn update(
                     }
                 }
                 Action::DismissResult => state.notification = None,
+                Action::OpenBrowser => {
+                    if state.busy {
+                        return Ok(());
+                    }
+                    let artifact = state
+                        .report
+                        .web_artifact
+                        .clone()
+                        .ok_or("Complete a Web build first.")?;
+                    state
+                        .preview
+                        .start_standalone(artifact)
+                        .map_err(|e| e.to_string())?;
+                    state.preview_status = state.preview.status();
+                }
                 Action::TestWeb(target) => {
+                    if !state.multiplayer_enabled {
+                        return Err("Enable Multiplayer game in Project Settings first.".into());
+                    }
                     if state.busy || multiplayer.busy {
                         return Ok(());
                     }

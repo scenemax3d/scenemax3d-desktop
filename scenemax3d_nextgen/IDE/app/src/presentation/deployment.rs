@@ -50,6 +50,11 @@ struct PreviewControls;
 #[derive(Component)]
 struct PreviewStatus;
 #[derive(Component)]
+struct WebAction {
+    multiplayer: bool,
+    disabled: bool,
+}
+#[derive(Component)]
 struct Form;
 #[derive(Component)]
 struct Detail(usize);
@@ -82,8 +87,19 @@ pub(crate) fn menu_item(c: &mut Commands, parent: Entity) {
 }
 fn action(c: &mut Commands, p: Entity, title: &str, action: Action) -> Entity {
     let e = button(c, p, title, Name::new(title.to_owned()));
+    if matches!(action, Action::OpenBrowser | Action::TestWeb(_)) {
+        c.entity(e).insert(WebAction {
+            multiplayer: matches!(action, Action::TestWeb(_)),
+            disabled: false,
+        });
+    }
     c.entity(e).observe(
-        move |mut event: On<PointerClick>, mut state: ResMut<Deployment>| {
+        move |mut event: On<PointerClick>,
+              mut state: ResMut<Deployment>,
+              disabled: Query<(), With<bevy::ui::InteractionDisabled>>| {
+            if disabled.contains(e) {
+                return;
+            }
             if event.button == PointerButton::Primary {
                 event.propagate(false);
                 state.actions.push_back(action.clone());
@@ -546,8 +562,18 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
     property::checkbox(c, right, FollowLog, "Follow log", true);
     let artifacts = text(c, right, "", 11., INK);
     c.entity(artifacts).insert(Artifacts);
-    let links = area(c, right, row(), HEADER);
+    let links = area(
+        c,
+        right,
+        Node {
+            flex_wrap: FlexWrap::Wrap,
+            row_gap: px(6.),
+            ..row()
+        },
+        HEADER,
+    );
     action(c, links, "Open output", Action::Reveal);
+    action(c, links, "Open In Browser", Action::OpenBrowser);
     action(c, links, "Log folder", Action::Log);
     action(c, links, "Size report", Action::SizeReport);
     let preview = area(
@@ -699,6 +725,7 @@ pub(crate) struct Visuals<'w, 's> {
     nodes: VisualNodes<'w, 's>,
     texts: VisualText<'w, 's>,
     fields: Query<'w, 's, (&'static Field, &'static mut EditableText)>,
+    web_actions: Query<'w, 's, (Entity, &'static mut WebAction)>,
     follow: Query<'w, 's, &'static property::Checked, With<FollowLog>>,
     scroll: Query<'w, 's, (&'static mut ScrollPosition, &'static ComputedNode), With<LogViewport>>,
 }
@@ -727,6 +754,39 @@ pub(crate) fn refresh(
             view.host = Some(spawn(&mut c, settings, &mut focus));
         }
         return;
+    }
+    for (entity, mut action) in &mut visuals.web_actions {
+        let disabled = state.busy
+            || state.report.web_artifact.is_none()
+            || (action.multiplayer && !state.multiplayer_enabled);
+        if disabled != action.disabled {
+            action.disabled = disabled;
+            if disabled {
+                c.entity(entity).insert(bevy::ui::InteractionDisabled);
+            } else {
+                c.entity(entity).remove::<bevy::ui::InteractionDisabled>();
+            }
+            let color = if disabled { BG } else { PANEL };
+            c.entity(entity).insert((
+                BackgroundColor(color),
+                scenemax_ide_ui::ButtonSurface(color),
+            ));
+            c.queue(move |world: &mut World| {
+                let children = world
+                    .get::<Children>(entity)
+                    .map(|c| c.iter().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                for child in children {
+                    if let Some(mut text) = world.get_mut::<TextColor>(child) {
+                        text.0 = if disabled {
+                            MUTED.with_alpha(0.45)
+                        } else {
+                            INK
+                        };
+                    }
+                }
+            });
+        }
     }
     if state.busy && focus.get().is_some() {
         focus.clear();
@@ -897,7 +957,7 @@ pub(crate) fn refresh(
     for (mut text, status, log, artifact, summary, preview) in &mut visuals.texts {
         let value = if preview.is_some() {
             Some(if state.preview_status.message.is_empty() {
-                "Test the completed Web build in your browser. No additional server tools required."
+                "Open In Browser runs the completed Web build without a multiplayer server. Server tests require Multiplayer game in Project Settings."
                     .into()
             } else {
                 state.preview_status.message.clone()
@@ -1075,5 +1135,51 @@ mod tests {
         app.world_mut().resource_mut::<Deployment>().busy = false;
         app.world_mut().run_system_once(refresh).unwrap();
         assert_eq!(app.world().resource::<View>().host, Some(host));
+    }
+}
+
+#[cfg(test)]
+mod project_mode_tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+    #[test]
+    fn browser_open_and_server_tests_have_independent_availability() {
+        let mut app = App::new();
+        app.init_resource::<InputFocus>()
+            .init_resource::<Deployment>()
+            .init_resource::<View>();
+        {
+            let mut state = app.world_mut().resource_mut::<Deployment>();
+            state.open = true;
+            state.settings = Some(Settings::default());
+        }
+        for (artifact, multiplayer, busy) in [
+            (false, false, false),
+            (true, false, false),
+            (true, true, false),
+            (true, true, true),
+        ] {
+            {
+                let mut state = app.world_mut().resource_mut::<Deployment>();
+                state.report.web_artifact = artifact.then(|| "game-web.zip".into());
+                state.multiplayer_enabled = multiplayer;
+                state.busy = busy;
+            }
+            app.world_mut().run_system_once(refresh).unwrap();
+            app.world_mut().run_system_once(refresh).unwrap();
+            let world = app.world_mut();
+            let mut count = 0;
+            for (control, disabled) in world
+                .query::<(&WebAction, Has<bevy::ui::InteractionDisabled>)>()
+                .iter(world)
+            {
+                assert_eq!(
+                    disabled,
+                    busy || !artifact || (control.multiplayer && !multiplayer)
+                );
+                count += 1;
+            }
+            assert_eq!(count, 3);
+        }
     }
 }

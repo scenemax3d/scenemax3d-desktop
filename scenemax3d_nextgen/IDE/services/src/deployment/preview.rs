@@ -43,6 +43,14 @@ impl Preview {
     pub fn start(&mut self, artifact: PathBuf) -> io::Result<()> {
         self.start_server(artifact, true, None)
     }
+    /// Open an existing build on an available localhost port without consulting multiplayer settings.
+    pub fn start_standalone(&mut self, artifact: PathBuf) -> io::Result<()> {
+        self.start_server(
+            artifact,
+            true,
+            Some(((std::net::Ipv4Addr::LOCALHOST, 0).into(), String::new())),
+        )
+    }
     /// Serve at the exact local Origin accepted by the multiplayer gateway.
     pub fn start_at_origin(&mut self, artifact: PathBuf, origin: &str) -> io::Result<()> {
         let address = local_origin_address(origin)?;
@@ -239,6 +247,7 @@ fn serve_archive_at(
     let host = listener.local_addr()?.to_string();
     let url = endpoint
         .map(|(_, url)| url)
+        .filter(|url| !url.is_empty())
         .unwrap_or_else(|| format!("http://{host}/"));
     let host = url
         .trim_start_matches("http://")
@@ -250,8 +259,7 @@ fn serve_archive_at(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.active = true;
         state.url = Some(url.clone());
-        state.message =
-            format!("Running at {url} — close the IDE or use Stop local server to stop.");
+        state.message = format!("Running at {url} — close the IDE or use Stop Test to stop.");
     }
     if open {
         open_browser(&url)?;

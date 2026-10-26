@@ -9,11 +9,13 @@ use std::{
 
 pub(super) fn load(root: &Path, context: &Context) -> io::Result<()> {
     let settings = files::load_settings(root)?;
+    let multiplayer_enabled = crate::multiplayer::enabled(root).map_err(io::Error::other)?;
     let artifact = latest_web(&settings, context)?;
     context.edit(|report| {
+        report.multiplayer_enabled = multiplayer_enabled;
         if let Some(path) = artifact {
             report.status =
-                "Existing Web build found. Choose Test With Local Server or Test With Remote Server to rebuild and test."
+                "Existing Web build found. Choose Open In Browser to play it, or use the multiplayer test options to rebuild and test with a server."
                     .into();
             report.web_artifact = Some(path.clone());
             report.artifacts.push(path);
