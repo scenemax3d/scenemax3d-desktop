@@ -10,6 +10,7 @@ pub const INK: Color = Color::srgb_u8(195, 199, 206);
 pub const TEXT_SELECTION: Color = Color::srgb_u8(63, 70, 82);
 /// Consistent text selection and caret appearance without overriding syntax colors.
 pub const TEXT_CURSOR_STYLE: bevy::text::TextCursorStyle = bevy::text::TextCursorStyle {
+    selection_radius: 0.,
     color: Color::WHITE,
     selection_color: TEXT_SELECTION,
     unfocused_selection_color: TEXT_SELECTION,

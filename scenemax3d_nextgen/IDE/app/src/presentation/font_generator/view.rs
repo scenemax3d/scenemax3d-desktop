@@ -9,7 +9,7 @@ fn label(c: &mut Commands, parent: Entity, text: impl Into<String>, size: f32) -
 fn button(c: &mut Commands, parent: Entity, title: &str, action: Action) -> Entity {
     let e = scenemax_ide_ui::button(c, parent, title, Name::new(title.to_owned()));
     c.entity(e)
-        .observe(move |mut e: On<Pointer<Click>>, mut s: ResMut<State>| {
+        .observe(move |mut e: On<PointerClick>, mut s: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 s.actions.push(action.clone());
@@ -229,6 +229,7 @@ pub(super) fn shell(c: &mut Commands, s: &mut State) {
             overflow: Overflow::scroll_y(),
             ..default()
         },
+        bevy::ui_widgets::TextInput,
         EditableText {
             max_characters: Some(4096),
             ..EditableText::new(&o.characters)

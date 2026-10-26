@@ -160,6 +160,7 @@ pub(crate) fn update(
             .spawn((
                 CameraMarker,
                 Camera3d::default(),
+                bevy::pbr::ScreenSpaceTransmission::default(),
                 Camera {
                     order: -13,
                     clear_color: ClearColorConfig::Custom(Color::srgb(0.06, 0.07, 0.09)),
@@ -181,7 +182,7 @@ pub(crate) fn update(
             crate::presentation::scene3d::gizmo::Viewport(camera),
         ));
         if !s.render.bound {
-            c.entity(parts.viewport).observe(|mut e:On<Pointer<Drag>>,mut camera:Query<(&mut Orbit,&mut Transform),With<CameraMarker>>| {
+            c.entity(parts.viewport).observe(|mut e:On<PointerDrag>,mut camera:Query<(&mut Orbit,&mut Transform),With<CameraMarker>>| {
                 e.propagate(false);
                 for (mut o,mut t) in &mut camera {
                     match e.button {
@@ -192,7 +193,7 @@ pub(crate) fn update(
                 }
             });
             c.entity(parts.viewport).observe(
-                |mut e: On<Pointer<Scroll>>,
+                |mut e: On<PointerScroll>,
                  mut q: Query<(&mut Orbit, &mut Transform), With<CameraMarker>>| {
                     e.propagate(false);
                     let factor = if e.unit == bevy::input::mouse::MouseScrollUnit::Line {

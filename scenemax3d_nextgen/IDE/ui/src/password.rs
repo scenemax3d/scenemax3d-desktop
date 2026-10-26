@@ -143,10 +143,10 @@ fn keyboard(
             }
         }
         _ if !control => {
-            if let Some(value) = &event.input.text {
-                if value.chars().any(|c| !c.is_control()) {
-                    field.replace(value);
-                }
+            if let Some(value) = &event.input.text
+                && value.chars().any(|c| !c.is_control())
+            {
+                field.replace(value);
             }
         }
         _ => {}

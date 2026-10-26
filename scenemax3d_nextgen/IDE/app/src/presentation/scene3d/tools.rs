@@ -2,6 +2,7 @@
 use super::*;
 use crate::application::ViewChange;
 use scenemax_ide_core::scene3d::structure;
+use scenemax_ui_input::Interaction;
 use serde_json::{Value, json};
 #[derive(Component, Clone)]
 pub(crate) enum Action {
@@ -363,7 +364,7 @@ pub(crate) fn update(
                 ))
                 .id();
             commands.entity(popup).observe(
-                |mut event: On<Pointer<Scroll>>,
+                |mut event: On<PointerScroll>,
                  mut q: Query<(&mut ScrollPosition, &ComputedNode), With<Picker>>| {
                     event.propagate(false);
                     if let Ok((mut scroll, node)) = q.get_mut(event.entity) {
@@ -379,11 +380,11 @@ pub(crate) fn update(
                 "Cancel",
                 Name::new("Cancel model selection"),
             );
-            commands.entity(cancel).observe(
-                move |_: On<Pointer<Click>>, mut commands: Commands| {
+            commands
+                .entity(cancel)
+                .observe(move |_: On<PointerClick>, mut commands: Commands| {
                     commands.entity(popup).try_despawn();
-                },
-            );
+                });
             for name in scene
                 .catalog
                 .get("resourcePath")

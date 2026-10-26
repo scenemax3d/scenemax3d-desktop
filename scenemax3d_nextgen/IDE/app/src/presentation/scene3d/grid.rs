@@ -14,7 +14,7 @@ use bevy::{
 pub(crate) struct GridPlugin;
 impl Plugin for GridPlugin {
     fn build(&self, app: &mut App) {
-        bevy::asset::embedded_asset!(app, "grid.wgsl");
+        bevy::asset::embedded_asset!(app, "grid.wesl");
         app.add_plugins(MaterialPlugin::<GridMaterial>::default())
             .init_resource::<GridState>()
             .add_systems(Update, update.after(super::update));
@@ -27,7 +27,7 @@ struct GridMaterial {
 }
 impl Material for GridMaterial {
     fn vertex_shader() -> ShaderRef {
-        "embedded://scenemax_ide/presentation/scene3d/grid.wgsl".into()
+        "embedded://scenemax_ide/presentation/scene3d/grid.wesl".into()
     }
     fn fragment_shader() -> ShaderRef {
         Self::vertex_shader()

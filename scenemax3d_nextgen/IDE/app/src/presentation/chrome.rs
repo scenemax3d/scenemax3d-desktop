@@ -9,6 +9,7 @@ use bevy::{
     prelude::*,
 };
 use scenemax_ide_ui::{ButtonSurface, button, label, theme::*};
+use scenemax_ui_input::{Button, Interaction};
 
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Panel {
@@ -182,7 +183,7 @@ fn populate_menu(
         if entry.command == "create_ik_document" {
             let row = button(commands, host, entry.name, Name::new("Create IK"));
             commands.entity(row).observe(
-                |_: On<Pointer<Press>>,
+                |_: On<PointerPress>,
                  session: Res<crate::application::Session>,
                  mut menu: ResMut<super::tree_menu::State>| {
                     menu.create_ik(session.workspace.project().root().to_owned());
@@ -194,7 +195,7 @@ fn populate_menu(
         if entry.command == "create_throw_motion_document" {
             let row = button(commands, host, entry.name, Name::new("Create throw motion"));
             commands.entity(row).observe(
-                |_: On<Pointer<Press>>,
+                |_: On<PointerPress>,
                  session: Res<crate::application::Session>,
                  mut menu: ResMut<super::tree_menu::State>| {
                     menu.create_motion(session.workspace.project().root().to_owned());
@@ -206,7 +207,7 @@ fn populate_menu(
         if entry.command == "create_weapon_document" {
             let row = button(commands, host, entry.name, Name::new("Create weapon"));
             commands.entity(row).observe(
-                |_: On<Pointer<Press>>,
+                |_: On<PointerPress>,
                  session: Res<crate::application::Session>,
                  mut menu: ResMut<super::tree_menu::State>| {
                     menu.create_weapon(session.workspace.project().root().to_owned());
@@ -218,7 +219,7 @@ fn populate_menu(
         if entry.command == "create_material_document" {
             let row = button(commands, host, entry.name, Name::new("Create material"));
             commands.entity(row).observe(
-                |_: On<Pointer<Click>>,
+                |_: On<PointerClick>,
                  session: Res<crate::application::Session>,
                  mut menu: ResMut<super::tree_menu::State>| {
                     menu.create_material(session.workspace.project().root().join("scripts"));
@@ -230,7 +231,7 @@ fn populate_menu(
         if let Some(page) = crate::application::git::Page::menu(entry.command) {
             let row = button(commands, host, entry.name, Name::new(entry.name));
             commands.entity(row).observe(
-                move |_: On<Pointer<Press>>, mut git: ResMut<crate::application::git::State>| {
+                move |_: On<PointerPress>, mut git: ResMut<crate::application::git::State>| {
                     git.actions
                         .push_back(crate::application::git::Action::Open(page));
                 },
@@ -248,7 +249,7 @@ fn populate_menu(
             "open_install_folder" => {
                 let row = button(commands, host, entry.name, Name::new(entry.name));
                 commands.entity(row).observe(
-                    |_: On<Pointer<Press>>, mut queue: ResMut<crate::application::CommandQueue>| {
+                    |_: On<PointerPress>, mut queue: ResMut<crate::application::CommandQueue>| {
                         queue
                             .0
                             .push_back(crate::application::Command::OpenInstallationFolder);
@@ -259,7 +260,7 @@ fn populate_menu(
             "online_help" => {
                 let row = button(commands, host, entry.name, Name::new("Online help"));
                 commands.entity(row).observe(
-                    |_: On<Pointer<Press>>, mut queue: ResMut<crate::application::CommandQueue>| {
+                    |_: On<PointerPress>, mut queue: ResMut<crate::application::CommandQueue>| {
                         queue.0.push_back(crate::application::Command::OpenWeb(
                             "https://www.scenemax3d.com/tutorials".into(),
                         ));

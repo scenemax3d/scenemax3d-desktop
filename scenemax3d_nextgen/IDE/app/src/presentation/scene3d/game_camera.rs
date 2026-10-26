@@ -22,6 +22,7 @@ pub(super) fn spawn(
     image.texture_descriptor.usage |= TextureUsages::TEXTURE_BINDING;
     commands.spawn((
         Camera3d::default(),
+        bevy::pbr::ScreenSpaceTransmission::default(),
         Camera {
             order: -2,
             ..default()

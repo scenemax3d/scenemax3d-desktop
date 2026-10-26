@@ -5,10 +5,10 @@ $work = Join-Path $workspace 'target/effekseer-web-proof'
 $vendor = Join-Path $workspace 'Engine/effects/web/vendor'
 $site = Join-Path $work 'site'
 if (!$WasmBindgen) {
-    $managed = Join-Path $env:LOCALAPPDATA 'SceneMax/web-tools/0.2.108/bin/wasm-bindgen.exe'
+    $managed = Join-Path $env:LOCALAPPDATA 'SceneMax/web-tools/0.2.129/bin/wasm-bindgen.exe'
     $WasmBindgen = if (Test-Path -LiteralPath $managed) { $managed } else { 'wasm-bindgen' }
 }
-if ((& $WasmBindgen --version) -ne 'wasm-bindgen 0.2.108') { throw 'Use wasm-bindgen 0.2.108 (SceneMax Settings > Build Configuration > Web tools).' }
+if ((& $WasmBindgen --version) -ne 'wasm-bindgen 0.2.129') { throw 'Use wasm-bindgen 0.2.129 (SceneMax Settings > Build Configuration > Web tools).' }
 New-Item -ItemType Directory -Force $work,$site | Out-Null
 foreach ($line in Get-Content -LiteralPath (Join-Path $vendor 'SHA256SUMS')) {
     $expected, $name = $line -split '  ', 2

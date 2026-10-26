@@ -1,6 +1,7 @@
 //! Compact retained tree rows with independent disclosure and selection targets.
 use crate::{ButtonSurface, label, theme::*};
 use bevy::prelude::*;
+use scenemax_ui_input::{Button, Interaction};
 
 /// Visible caption of a retained tree row.
 #[derive(Component)]

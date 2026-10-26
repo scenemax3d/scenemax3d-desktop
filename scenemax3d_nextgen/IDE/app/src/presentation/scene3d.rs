@@ -11,6 +11,7 @@ use bevy::{
 use scenemax_ide_core::{DocumentId, DocumentRevision};
 use scenemax_ide_services::{StorageRequest, StorageResult, scene3d::Scene3d};
 use scenemax_ide_ui::{button, label, theme::*};
+use scenemax_ui_input::Interaction;
 
 #[derive(Component)]
 pub(crate) struct SceneHost;

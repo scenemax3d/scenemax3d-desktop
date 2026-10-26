@@ -1,5 +1,6 @@
 //! Cinematic camera preview in the document viewport; never starts the runtime.
 use super::*;
+use scenemax_ui_input::Interaction;
 use serde_json::{Value, json};
 
 #[derive(Component, Clone, Copy)]

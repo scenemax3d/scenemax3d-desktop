@@ -115,7 +115,7 @@ impl State {
 pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity {
     let e = scenemax_ide_ui::button(c, parent, title, Name::new("Font Generator"));
     c.entity(e)
-        .observe(|mut e: On<Pointer<Press>>, mut s: ResMut<State>| {
+        .observe(|mut e: On<PointerPress>, mut s: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 s.actions.push(Action::Open);

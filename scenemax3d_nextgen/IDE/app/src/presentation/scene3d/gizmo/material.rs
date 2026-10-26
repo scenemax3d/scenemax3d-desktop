@@ -18,7 +18,7 @@ pub(crate) struct GizmoMaterial {
 
 impl Material for GizmoMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://scenemax_ide/presentation/scene3d/gizmo/gizmo_material.wgsl".into()
+        "embedded://scenemax_ide/presentation/scene3d/gizmo/gizmo_material.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode {
@@ -32,7 +32,7 @@ impl Material for GizmoMaterial {
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         if let Some(ref mut depth_stencil) = descriptor.depth_stencil {
-            // wgpu 29: these `DepthStencilState` fields are now `Option`.
+            // Optional depth state fields preserve the always-on-top overlay.
             depth_stencil.depth_compare = Some(CompareFunction::Always);
             depth_stencil.depth_write_enabled = Some(false);
         }

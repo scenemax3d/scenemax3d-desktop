@@ -1,6 +1,7 @@
 //! Resolution-independent toolbar strokes with retained hover labels.
 use crate::{ButtonSurface, label, theme::*};
 use bevy::prelude::*;
+use scenemax_ui_input::{Button, Interaction};
 
 #[derive(Component)]
 pub(crate) struct Tip(Entity);

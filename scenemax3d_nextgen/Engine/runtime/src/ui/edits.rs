@@ -1,5 +1,6 @@
 //! Editable widget state; focus, caret and clipboard remain local to each client.
 use super::*;
+use scenemax_ui_input::Interaction;
 pub(crate) mod geometry;
 use bevy::input::{
     ButtonState,

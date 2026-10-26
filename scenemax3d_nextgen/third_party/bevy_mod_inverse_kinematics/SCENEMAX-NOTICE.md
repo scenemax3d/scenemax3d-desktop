@@ -7,3 +7,5 @@ Upstream package: 0.12.0, Bevy 0.19. License: MIT OR Apache-2.0 (see upstream RE
 SceneMax calls IkConstraint::solve from its own post-animation scheduling adapter rather than installing the upstream Update plugin. This preserves correct animation order and allows layer weighting, target resolution, validation and restoration. Upstream solver source is retained; local robustness changes, if any, are documented below.
 
 Redistributed under the Apache-2.0 option; license text is included in LICENSE-APACHE. Upstream author: Bram Buurlage (as listed in Cargo.toml). No changes to upstream Rust source.
+
+SceneMax updates the dependency to Bevy 0.20; the solver remains upstream code.

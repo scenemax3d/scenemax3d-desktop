@@ -2,6 +2,8 @@
 use super::*;
 use bevy::input_focus::InputFocus;
 use scenemax_ide_ui::property::{Checked, Choice};
+#[cfg(test)]
+use scenemax_ui_input::Button;
 #[derive(Default)]
 pub(super) struct Gesture {
     last: Option<(DocumentRevision, Entity, Option<Entity>, u64)>,

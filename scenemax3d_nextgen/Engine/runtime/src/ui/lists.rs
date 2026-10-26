@@ -1,5 +1,6 @@
 //! Stateful list controls. Script commands and snapshots share one normalization path.
 use super::*;
+use scenemax_ui_input::Interaction;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

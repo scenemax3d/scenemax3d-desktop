@@ -180,7 +180,7 @@ pub(super) fn build(
             ChildOf(viewport_frame),
         ))
         .observe(
-            move |event: On<Pointer<Drag>>,
+            move |event: On<PointerDrag>,
                   nav: Res<super::navigation::Navigation>,
                   mut cameras: Query<(&mut Orbit, &mut Transform)>| {
                 if event.button != PointerButton::Secondary {
@@ -203,7 +203,7 @@ pub(super) fn build(
             },
         )
         .observe(
-            move |event: On<Pointer<Scroll>>, mut cameras: Query<(&mut Orbit, &mut Transform)>| {
+            move |event: On<PointerScroll>, mut cameras: Query<(&mut Orbit, &mut Transform)>| {
                 if let Ok((mut orbit, mut transform)) = cameras.get_mut(camera) {
                     orbit.distance =
                         (orbit.distance * (1. - event.y * 0.1).clamp(0.2, 5.)).clamp(0.2, 100000.);
@@ -241,7 +241,7 @@ pub(super) fn build(
         },
     );
     commands.entity(toggle).observe(
-        move |_: On<Pointer<Click>>,
+        move |_: On<PointerClick>,
               mut nodes: Query<&mut Node>,
               children: Query<&Children>,
               mut texts: Query<&mut Text>| {

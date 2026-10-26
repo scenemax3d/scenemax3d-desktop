@@ -127,7 +127,7 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, en
             .entity(row)
             .insert((Row(i), BackgroundColor(PANEL)))
             .observe(
-                move |_: On<Pointer<Press>>, mut selection: ResMut<Selection>| {
+                move |_: On<PointerPress>, mut selection: ResMut<Selection>| {
                     selection.row = Some(i);
                 },
             );

@@ -1,5 +1,6 @@
 use super::*;
 use scenemax_ide_ui::{label, property, theme::*};
+use scenemax_ui_input::Button;
 pub(super) struct Parts {
     pub viewport: Entity,
     pub code: Entity,
@@ -31,7 +32,7 @@ fn row(c: &mut Commands, p: Entity) -> Entity {
 fn button(c: &mut Commands, p: Entity, t: &str, a: Action) -> Entity {
     let e = scenemax_ide_ui::button(c, p, t, Name::new(t.to_owned()));
     c.entity(e)
-        .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| s.actions.push(a));
+        .observe(move |_: On<PointerClick>, mut s: ResMut<State>| s.actions.push(a));
     e
 }
 fn button_label(c: &mut Commands, p: Entity, t: &str, a: Action) -> Entity {
@@ -48,7 +49,7 @@ fn button_label(c: &mut Commands, p: Entity, t: &str, a: Action) -> Entity {
         ))
         .id();
     c.entity(e)
-        .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| s.actions.push(a));
+        .observe(move |_: On<PointerClick>, mut s: ResMut<State>| s.actions.push(a));
     title(c, e, t)
 }
 fn display(value: &Value) -> String {

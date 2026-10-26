@@ -5,6 +5,7 @@ use scenemax_ide_ui::{
     ButtonSurface, label, spawn_editor,
     theme::{EDGE, PANEL},
 };
+use scenemax_ui_input::{Button, Interaction};
 pub(crate) fn editor(
     commands: &mut Commands,
     parent: Entity,
@@ -126,7 +127,7 @@ pub(crate) fn editor(
         Text::new("1"),
         TextColor(scenemax_ide_ui::theme::INK),
         TextFont {
-            font: bevy::text::FontSource::Monospace,
+            font: bevy::text::FontSource::monospace(),
             font_size: FontSize::Px(16.),
             ..default()
         },

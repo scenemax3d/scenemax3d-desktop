@@ -2,6 +2,7 @@
 use super::*;
 use bevy::text::EditableText;
 use scenemax_ide_ui::property::{self, Checked, Choice};
+use scenemax_ui_input::Interaction;
 use serde_json::{Value, json};
 
 #[derive(Component)]
@@ -73,7 +74,7 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
         ));
         commands
             .entity(editor)
-            .observe(|mut event: On<Pointer<Scroll>>| {
+            .observe(|mut event: On<PointerScroll>| {
                 event.propagate(false);
             });
         return;

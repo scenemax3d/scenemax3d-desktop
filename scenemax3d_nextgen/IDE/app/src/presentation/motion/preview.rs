@@ -123,6 +123,7 @@ pub(crate) fn update(
             .spawn((
                 PreviewCamera,
                 Camera3d::default(),
+                bevy::pbr::ScreenSpaceTransmission::default(),
                 Camera {
                     order: -11,
                     clear_color: ClearColorConfig::Custom(Color::srgb(0.045, 0.05, 0.058)),
@@ -138,7 +139,7 @@ pub(crate) fn update(
         s.render.camera = Some(camera);
         c.entity(viewport).insert(ViewportNode::new(camera));
         c.entity(viewport).observe(
-            |mut e: On<Pointer<Drag>>,
+            |mut e: On<PointerDrag>,
              mut q: Query<(&mut Orbit, &mut Transform), With<PreviewCamera>>| {
                 e.propagate(false);
                 for (mut o, mut t) in &mut q {
@@ -149,7 +150,7 @@ pub(crate) fn update(
             },
         );
         c.entity(viewport).observe(
-            |mut e: On<Pointer<Scroll>>,
+            |mut e: On<PointerScroll>,
              mut q: Query<(&mut Orbit, &mut Transform), With<PreviewCamera>>| {
                 e.propagate(false);
                 let delta = if e.unit == bevy::input::mouse::MouseScrollUnit::Line {

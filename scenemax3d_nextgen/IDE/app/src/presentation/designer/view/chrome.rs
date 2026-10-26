@@ -137,7 +137,7 @@ pub(super) fn document_actions(commands: &mut Commands, parent: Entity) {
 }
 pub(super) fn collapse(commands: &mut Commands, toggle: Entity, panel: Entity, host: Entity) {
     commands.entity(toggle).observe(
-        move |event: On<Pointer<Click>>,
+        move |event: On<PointerClick>,
               mut states: Query<&mut Designer>,
               mut nodes: Query<&mut Node>,
               children: Query<&Children>,

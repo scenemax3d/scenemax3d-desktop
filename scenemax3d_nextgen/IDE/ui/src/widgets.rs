@@ -1,12 +1,13 @@
 //! Reusable widgets with caller-owned action components.
 use crate::theme::*;
 use bevy::{prelude::*, text::FontSource};
+use scenemax_ui_input::{Button, Interaction};
 /// Create a themed proportional label.
 pub fn label(value: impl Into<String>, size: f32) -> impl Bundle {
     (
         Text::new(value),
         TextFont {
-            font: FontSource::SansSerif,
+            font: FontSource::sans_serif(),
             font_size: FontSize::Px(size),
             ..default()
         },

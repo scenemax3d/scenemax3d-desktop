@@ -35,6 +35,7 @@ pub(super) fn spawn_world(
     let camera = commands
         .spawn((
             Camera3d::default(),
+            bevy::pbr::ScreenSpaceTransmission::default(),
             bevy::camera::visibility::RenderLayers::from_layers(&[0, 1]),
             super::ambient::light(&scene.ambient),
             Camera {

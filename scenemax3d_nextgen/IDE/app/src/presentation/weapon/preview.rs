@@ -212,6 +212,7 @@ pub(crate) fn update(
             .spawn((
                 PreviewCamera,
                 Camera3d::default(),
+                bevy::pbr::ScreenSpaceTransmission::default(),
                 Camera {
                     order: -10,
                     clear_color: ClearColorConfig::Custom(Color::srgb(0.065, 0.075, 0.095)),
@@ -233,7 +234,7 @@ pub(crate) fn update(
         if !s.viewport_bound {
             s.viewport_bound = true;
             c.entity(viewport).observe(
-                |mut e: On<Pointer<Drag>>,
+                |mut e: On<PointerDrag>,
                  s: Res<State>,
                  mut q: Query<(&mut Orbit, &mut Transform), With<PreviewCamera>>| {
                     if e.button == PointerButton::Secondary {
@@ -249,7 +250,7 @@ pub(crate) fn update(
                 },
             );
             c.entity(viewport).observe(
-                |mut e: On<Pointer<Scroll>>,
+                |mut e: On<PointerScroll>,
                  s: Res<State>,
                  mut q: Query<(&mut Orbit, &mut Transform), With<PreviewCamera>>| {
                     e.propagate(false);

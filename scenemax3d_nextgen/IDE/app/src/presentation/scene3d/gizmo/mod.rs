@@ -8,7 +8,7 @@ pub(crate) use material::GizmoMaterial;
 pub(crate) struct GizmoPlugin;
 impl Plugin for GizmoPlugin {
     fn build(&self, app: &mut App) {
-        bevy::asset::embedded_asset!(app, "gizmo_material.wgsl");
+        bevy::asset::embedded_asset!(app, "gizmo_material.wesl");
         app.add_plugins(MaterialPlugin::<GizmoMaterial>::default())
             .init_resource::<State>()
             .add_systems(
@@ -76,7 +76,7 @@ pub(crate) fn toolbar(commands: &mut Commands, parent: Entity) {
         );
         commands
             .entity(control)
-            .observe(move |_: On<Pointer<Click>>, mut state: ResMut<State>| {
+            .observe(move |_: On<PointerClick>, mut state: ResMut<State>| {
                 if state.drag.is_none() {
                     state.mode = mode;
                 }
@@ -91,7 +91,7 @@ pub(crate) fn toolbar(commands: &mut Commands, parent: Entity) {
     );
     commands.entity(reset).remove::<ModeButton>();
     commands.entity(reset).observe(
-        |_: On<Pointer<Click>>, mut queue: ResMut<crate::application::CommandQueue>| {
+        |_: On<PointerClick>, mut queue: ResMut<crate::application::CommandQueue>| {
             queue.0.push_back(crate::application::Command::Edit(
                 crate::application::EditCommand::Undo,
             ));

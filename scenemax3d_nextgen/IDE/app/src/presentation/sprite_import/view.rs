@@ -86,7 +86,7 @@ fn control(c: &mut Commands, p: Entity, h: Entity, title: &str, action: Action) 
         scenemax_ide_ui::icons::button(c, p, tip, &paths, Tool)
     };
     c.entity(e)
-        .observe(move |mut e: On<Pointer<Click>>, mut s: ResMut<State>| {
+        .observe(move |mut e: On<PointerClick>, mut s: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 s.actions.push((h, action.clone()));
@@ -314,7 +314,7 @@ All frames are imported in row-major order.",
         Pickable::IGNORE,
     ));
     c.entity(sheet).observe(
-        move |mut e: On<Pointer<Click>>,
+        move |mut e: On<PointerClick>,
               q: Query<(&ComputedNode, &UiGlobalTransform)>,
               states: Query<&Import>,
               mut actions: ResMut<State>| {
@@ -328,7 +328,7 @@ All frames are imported in row-major order.",
                 && let Some(inverse) = transform.try_inverse()
             {
                 let local = inverse
-                    .transform_point2(e.pointer_location.position / node.inverse_scale_factor())
+                    .transform_point2(e.pointer.position / node.inverse_scale_factor())
                     + node.size() * 0.5;
                 let uv = local / node.size();
                 if let Some(index) = layout.hit(uv.x * p.width as f32, uv.y * p.height as f32) {
@@ -350,7 +350,7 @@ All frames are imported in row-major order.",
         },
     );
     c.entity(film).observe(
-        move |mut e: On<Pointer<Scroll>>, mut q: Query<&mut ScrollPosition>| {
+        move |mut e: On<PointerScroll>, mut q: Query<&mut ScrollPosition>| {
             e.propagate(false);
             if let Ok(mut s) = q.get_mut(film) {
                 s.x = (s.x - (e.x + e.y) * 30.).max(0.);

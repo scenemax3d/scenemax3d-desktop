@@ -130,6 +130,7 @@ pub(crate) fn update(mut c: Commands, mut s: ResMut<State>, mut r: Render) {
             .spawn((
                 CameraTag,
                 Camera3d::default(),
+                bevy::pbr::ScreenSpaceTransmission::default(),
                 Camera {
                     order: -13,
                     clear_color: ClearColorConfig::Custom(Color::srgb(0.075, 0.085, 0.10)),
@@ -166,7 +167,7 @@ pub(crate) fn update(mut c: Commands, mut s: ResMut<State>, mut r: Render) {
             ChildOf(root),
         ));
         c.entity(viewport).observe(
-            |mut e: On<Pointer<Drag>>,
+            |mut e: On<PointerDrag>,
              mut q: Query<(&mut Orbit, &mut Transform), With<CameraTag>>| {
                 e.propagate(false);
                 for (mut o, mut t) in &mut q {
@@ -177,7 +178,7 @@ pub(crate) fn update(mut c: Commands, mut s: ResMut<State>, mut r: Render) {
             },
         );
         c.entity(viewport).observe(
-            |mut e: On<Pointer<Scroll>>,
+            |mut e: On<PointerScroll>,
              mut q: Query<(&mut Orbit, &mut Transform), With<CameraTag>>| {
                 e.propagate(false);
                 let d = if e.unit == bevy::input::mouse::MouseScrollUnit::Line {

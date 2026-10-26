@@ -1,4 +1,5 @@
 //! Retained animation records editor; authoring lives in the model catalog document.
+use scenemax_ui_input::Interaction;
 pub(crate) mod preview;
 #[cfg(test)]
 mod tests;
@@ -73,7 +74,7 @@ pub(crate) struct State {
 pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity {
     let row = scenemax_ide_ui::button(c, parent, title, Name::new("Model Animation Analyzer"));
     c.entity(row)
-        .observe(|_: On<Pointer<Press>>, mut s: ResMut<State>| s.open = true);
+        .observe(|_: On<PointerPress>, mut s: ResMut<State>| s.open = true);
     row
 }
 fn load(s: &mut State, path: &std::path::Path) {

@@ -8,7 +8,7 @@ pub(crate) struct Travel {
 }
 pub(super) fn observe(commands: &mut Commands, row: Entity, camera: Entity, index: usize) {
     commands.entity(row).observe(
-        move |event: On<Pointer<Click>>,
+        move |event: On<PointerClick>,
               mut commands: Commands,
               state: Res<SceneState>,
               cameras: Query<&Orbit>,

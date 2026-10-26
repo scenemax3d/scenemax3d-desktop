@@ -7,6 +7,7 @@ use bevy::{
 };
 use scenemax_ide_core::git::Operation;
 use scenemax_ide_ui::{button, label, property, theme::*};
+use scenemax_ui_input::Interaction;
 
 #[derive(Component)]
 pub(crate) struct Field(&'static str);

@@ -8,6 +8,7 @@ use bevy::{
     ui::RelativeCursorPosition,
     world_serialization::WorldInstanceReady,
 };
+use scenemax_ui_input::{Button, Interaction};
 
 #[derive(Debug, Clone)]
 pub struct BevyShaderDesignerLaunch {
@@ -726,6 +727,7 @@ pub fn run_bevy_shader_designer(launch: BevyShaderDesignerLaunch) {
         .unwrap_or_else(|| "assets".to_owned());
     let state = BevyShaderDesignerState::load(launch, &catalog);
     App::new()
+        .add_plugins(scenemax_ui_input::UiInputPlugin)
         .insert_resource(ClearColor(Color::srgb(0.025, 0.035, 0.05)))
         .insert_resource(state)
         .insert_resource(catalog)
@@ -1048,6 +1050,7 @@ fn setup_bevy_shader_designer(
 ) {
     commands.spawn((
         Camera3d::default(),
+        bevy::pbr::ScreenSpaceTransmission::default(),
         Transform::from_xyz(-3.2, 2.6, 6.2).looking_at(Vec3::ZERO, Vec3::Y),
     ));
     commands.spawn((

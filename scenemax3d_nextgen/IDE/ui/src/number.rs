@@ -70,29 +70,19 @@ pub fn input<T: Component>(
         ChildOf(slider),
     ));
     commands.entity(slider).observe(
-        |mut event: On<Pointer<Press>>,
+        |mut event: On<PointerPress>,
          sliders: Query<(&Slider, &ComputedNode, &UiGlobalTransform)>,
          mut inputs: Query<&mut EditableText>| {
             event.propagate(false);
-            set(
-                event.entity,
-                event.pointer_location.position,
-                &sliders,
-                &mut inputs,
-            );
+            set(event.entity, event.pointer.position, &sliders, &mut inputs);
         },
     );
     commands.entity(slider).observe(
-        |mut event: On<Pointer<Drag>>,
+        |mut event: On<PointerDrag>,
          sliders: Query<(&Slider, &ComputedNode, &UiGlobalTransform)>,
          mut inputs: Query<&mut EditableText>| {
             event.propagate(false);
-            set(
-                event.entity,
-                event.pointer_location.position,
-                &sliders,
-                &mut inputs,
-            );
+            set(event.entity, event.pointer.position, &sliders, &mut inputs);
         },
     );
     input

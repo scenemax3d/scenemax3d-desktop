@@ -4,6 +4,7 @@ use crate::application::{Session, ViewChange};
 use bevy::prelude::*;
 use scenemax_ide_core::{Project, ProjectEntry};
 use scenemax_ide_ui::{ButtonSurface, button, label, theme::*};
+use scenemax_ui_input::{Button, Interaction};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -231,7 +232,7 @@ fn tree_row(
                 .entity(row)
                 .insert(bevy::input_focus::tab_navigation::TabIndex(0))
                 .observe(
-                    move |event: On<Pointer<Click>>,
+                    move |event: On<PointerClick>,
                           mut queue: ResMut<crate::application::CommandQueue>| {
                         if event.button == PointerButton::Primary && event.count == 2 {
                             queue
@@ -246,13 +247,13 @@ fn tree_row(
     let disclosure_path = tree_item.path.clone();
     let target = tree_item.path.clone();
     commands.entity(row).insert(tree_item).observe(
-        move |mut event: On<Pointer<Click>>,
+        move |mut event: On<PointerClick>,
               mut menu: Option<ResMut<super::tree_menu::State>>,
               mut focus: Option<ResMut<bevy::input_focus::InputFocus>>| {
             if event.button == PointerButton::Secondary {
                 event.propagate(false);
                 if let Some(menu) = menu.as_mut() {
-                    menu.open(target.clone(), directory, event.pointer_location.position);
+                    menu.open(target.clone(), directory, event.pointer.position);
                 }
                 if let Some(focus) = focus.as_mut() {
                     focus.set(row, bevy::input_focus::FocusCause::Navigated);
@@ -297,7 +298,7 @@ fn tree_row(
                 .insert((Button, Interaction::None, Folder(disclosure_path)));
             commands
                 .entity(chevron)
-                .observe(|mut event: On<Pointer<Click>>| {
+                .observe(|mut event: On<PointerClick>| {
                     event.propagate(false);
                 });
         }
@@ -612,23 +613,23 @@ mod tests {
             (PointerButton::Secondary, 2, 0),
             (PointerButton::Primary, 2, 1),
         ] {
-            world.trigger(Pointer::new(
-                PointerId::Mouse,
-                Location {
-                    target: bevy::camera::NormalizedRenderTarget::None {
-                        width: 100,
-                        height: 100,
+            world.trigger(PointerClick {
+                pointer: Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: bevy::camera::NormalizedRenderTarget::None {
+                            width: 100,
+                            height: 100,
+                        },
+                        position: Vec2::ZERO,
                     },
-                    position: Vec2::ZERO,
-                },
-                Click {
-                    button,
-                    count,
-                    duration: std::time::Duration::ZERO,
-                    hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
-                },
-                row,
-            ));
+                ),
+                entity: row,
+                button,
+                count,
+                duration: std::time::Duration::ZERO,
+                hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
+            });
             assert_eq!(
                 world.resource::<crate::application::CommandQueue>().0.len(),
                 expected

@@ -204,7 +204,7 @@ fn spawn(
         for target in targets {
             let key = key.clone();
             world.entity_mut(target).observe(
-                move |mut event: On<Pointer<Click>>, mut designers: Query<&mut Designer>| {
+                move |mut event: On<PointerClick>, mut designers: Query<&mut Designer>| {
                     if event.button != PointerButton::Primary {
                         return;
                     }
@@ -237,23 +237,23 @@ mod tests {
             backend::HitData,
             pointer::{Location, PointerId},
         };
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: bevy::camera::NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
+        world.trigger(PointerClick {
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::ZERO,
                 },
-                position: Vec2::ZERO,
-            },
-            Click {
-                count: 1,
-                button: PointerButton::Primary,
-                hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
-                duration: std::time::Duration::from_millis(10),
-            },
-            target,
-        ));
+            ),
+            entity: target,
+            count: 1,
+            button: PointerButton::Primary,
+            hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+            duration: std::time::Duration::from_millis(10),
+        });
         world.flush();
     }
     #[test]

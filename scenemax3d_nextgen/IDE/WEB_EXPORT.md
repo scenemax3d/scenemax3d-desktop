@@ -91,7 +91,7 @@ downloads start when you choose an installation button.
 
 Keep the IDE running until setup finishes; closing Settings leaves its worker
 running. Failed installation details appear in the console area. The current
-source pins Rust **1.97.1** and wasm-bindgen **0.2.108**; use the versions requested
+source pins Rust **1.97.1** and wasm-bindgen **0.2.129**; use the versions requested
 by your IDE, not an arbitrary latest binding generator. Web tools keeps its
 binding generator in `%LOCALAPPDATA%\SceneMax\web-tools\<version>\bin` and preserves
 other installed versions. Detection saves paths in
@@ -102,7 +102,7 @@ for manual C++ installation.
 Automatic prerequisite setup supports **Windows x64 only**. On other hosts,
 install Rust through rustup and your host's compiler/linker prerequisites manually.
 From the matching workspace, run `rustup target add wasm32-unknown-unknown` and
-`cargo install wasm-bindgen-cli --version 0.2.108 --locked`, using the version
+`cargo install wasm-bindgen-cli --version 0.2.129 --locked`, using the version
 required by that workspace. Ensure Cargo, rustc and wasm-bindgen are on PATH.
 These hosts still need platform-specific validation; Windows testing does not
 establish Linux/macOS export support on a clean machine.

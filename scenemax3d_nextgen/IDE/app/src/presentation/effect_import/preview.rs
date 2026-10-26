@@ -16,7 +16,7 @@ struct WorldOwner(Entity);
 pub(crate) struct Lines;
 pub(super) fn observe(commands: &mut Commands, viewport: Entity, host: Entity) {
     commands.entity(viewport).observe(
-        move |mut e: On<Pointer<Drag>>,
+        move |mut e: On<PointerDrag>,
               states: Query<&Import>,
               mut cameras: Query<(&mut Orbit, &mut Transform), With<Camera>>| {
             if !matches!(e.button, PointerButton::Secondary | PointerButton::Middle) {
@@ -45,7 +45,7 @@ pub(super) fn observe(commands: &mut Commands, viewport: Entity, host: Entity) {
         },
     );
     commands.entity(viewport).observe(
-        move |mut e: On<Pointer<Scroll>>,
+        move |mut e: On<PointerScroll>,
               states: Query<&Import>,
               mut cameras: Query<(&mut Orbit, &mut Transform), With<Camera>>| {
             e.propagate(false);
@@ -158,6 +158,7 @@ pub(crate) fn update(
                 .spawn((
                     Camera,
                     Camera3d::default(),
+                    bevy::pbr::ScreenSpaceTransmission::default(),
                     RenderLayers::layer(4),
                     bevy::prelude::Camera {
                         order: -3,

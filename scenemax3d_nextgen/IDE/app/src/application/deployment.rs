@@ -185,6 +185,10 @@ pub(crate) fn update(
                     if state.busy {
                         return Ok(());
                     }
+                    if let Some(settings) = state.settings.as_mut() {
+                        settings.upload = false;
+                        state.form_revision += 1;
+                    }
                     if state.settings.is_some()
                         && state.project == session.workspace.project().root()
                     {
@@ -279,6 +283,11 @@ pub(crate) fn update(
                             commands.0.push_back(Command::SaveAll);
                         } else {
                             state.start(Operation::Build(request))?;
+                        }
+                        // The captured request owns this build's upload opt-in.
+                        if let Some(settings) = state.settings.as_mut() {
+                            settings.upload = false;
+                            state.form_revision += 1;
                         }
                     }
                 }
@@ -388,6 +397,7 @@ mod tests {
         state.actions.push_back(Action::Build);
         let mut app = App::new();
         app.insert_resource(state)
+            .init_resource::<super::super::multiplayer::State>()
             .insert_resource(session)
             .insert_resource(EditorServices::new(PathBuf::new()).unwrap())
             .init_resource::<CommandQueue>()
@@ -412,6 +422,40 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
             app.update();
         }
+    }
+    #[test]
+    fn reopening_deployment_clears_upload_opt_in() {
+        let (mut app, _dir, _path) = setup();
+        {
+            let mut state = app.world_mut().resource_mut::<Deployment>();
+            state.actions.clear();
+            state.settings.as_mut().unwrap().upload = true;
+            state.actions.push_back(Action::Close);
+            state.actions.push_back(Action::Open);
+        }
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<Deployment>()
+                .settings
+                .as_ref()
+                .unwrap()
+                .upload
+        );
+    }
+    #[test]
+    fn build_consumes_upload_opt_in_but_preserves_it_in_request() {
+        let (mut app, _dir, _path) = setup();
+        {
+            let mut state = app.world_mut().resource_mut::<Deployment>();
+            let settings = state.settings.as_mut().unwrap();
+            settings.upload = true;
+            settings.itch_page = "example/game".into();
+        }
+        app.update();
+        let state = app.world().resource::<Deployment>();
+        assert!(!state.settings.as_ref().unwrap().upload);
+        assert!(state.pending.as_ref().unwrap().settings.upload);
     }
     #[test]
     fn build_saves_dirty_buffers_before_tool_preflight() {

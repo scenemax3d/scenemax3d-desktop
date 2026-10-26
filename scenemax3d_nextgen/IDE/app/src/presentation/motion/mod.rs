@@ -1,4 +1,5 @@
 //! Retained throw-motion document workbench.
+use scenemax_ui_input::Interaction;
 pub(crate) mod preview;
 #[cfg(test)]
 mod tests;

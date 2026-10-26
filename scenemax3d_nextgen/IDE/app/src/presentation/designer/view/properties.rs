@@ -339,6 +339,7 @@ fn control(
             || key == "buttonText"
         {
             commands.entity(entity).insert((
+                bevy::ui_widgets::TextInput,
                 EditableText {
                     allow_newlines: true,
                     max_characters: Some(10000),

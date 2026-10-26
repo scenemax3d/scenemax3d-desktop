@@ -245,6 +245,7 @@ pub(crate) fn update(
             .spawn((
                 PreviewCamera,
                 Camera3d::default(),
+                bevy::pbr::ScreenSpaceTransmission::default(),
                 Camera {
                     order: -9,
                     clear_color: ClearColorConfig::Custom(Color::srgb(0.065, 0.075, 0.095)),
@@ -315,8 +316,8 @@ pub(crate) fn update(
             state.render.waiting = true;
         }
         c.entity(viewport).insert(ViewportNode::new(camera));
-        c.entity(viewport).observe(move |mut e:On<Pointer<Drag>>,mut cameras:Query<(&mut Orbit,&mut Transform),With<PreviewCamera>>|{if e.button==PointerButton::Secondary{e.propagate(false);if let Ok((mut o,mut t))=cameras.get_mut(camera){o.yaw-=e.delta.x*0.007;o.pitch=(o.pitch+e.delta.y*0.007).clamp(-1.45,1.45);*t=o.transform();}}});
-        c.entity(viewport).observe(move |mut e:On<Pointer<Scroll>>,mut cameras:Query<(&mut Orbit,&mut Transform),With<PreviewCamera>>|{e.propagate(false);if let Ok((mut o,mut t))=cameras.get_mut(camera){o.distance=(o.distance*(1.+e.y*0.001)).clamp(0.05,100000.);*t=o.transform();}});
+        c.entity(viewport).observe(move |mut e:On<PointerDrag>,mut cameras:Query<(&mut Orbit,&mut Transform),With<PreviewCamera>>|{if e.button==PointerButton::Secondary{e.propagate(false);if let Ok((mut o,mut t))=cameras.get_mut(camera){o.yaw-=e.delta.x*0.007;o.pitch=(o.pitch+e.delta.y*0.007).clamp(-1.45,1.45);*t=o.transform();}}});
+        c.entity(viewport).observe(move |mut e:On<PointerScroll>,mut cameras:Query<(&mut Orbit,&mut Transform),With<PreviewCamera>>|{e.propagate(false);if let Ok((mut o,mut t))=cameras.get_mut(camera){o.distance=(o.distance*(1.+e.y*0.001)).clamp(0.05,100000.);*t=o.transform();}});
         state.render.root = Some(root);
         state.render.camera = Some(camera);
         state.render.object = Some(object);

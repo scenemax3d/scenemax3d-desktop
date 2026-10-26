@@ -113,7 +113,7 @@ pub(crate) struct GutterState {
 pub(crate) fn update_gutters(
     session: Res<Session>,
     zoom: Res<EditorZoom>,
-    inputs: Query<(&Editor, &bevy::ui::widget::TextScroll, &ComputedNode)>,
+    inputs: Query<(&Editor, &EditableText, &ComputedNode)>,
     mut gutters: Query<(&Gutter, &mut Text, &mut Node), Without<CaretLabel>>,
     mut caret: Single<(&mut Text, &mut Node), With<CaretLabel>>,
     mut previous: Local<Option<GutterState>>,
@@ -181,7 +181,7 @@ pub(crate) fn update_gutters(
             id: editor.0,
             revision: doc.revision(),
             selection: doc.selection(),
-            scroll: scroll.0,
+            scroll: scroll.viewport.offset,
             viewport: node.size(),
             line_height: zoom.line_height(),
         };
@@ -190,7 +190,7 @@ pub(crate) fn update_gutters(
         }
         *previous = Some(state);
         let scale = node.inverse_scale_factor();
-        let y = scroll.0.y * scale;
+        let y = scroll.viewport.offset.y * scale;
         let first = (y / zoom.line_height()).floor() as usize;
         let count = ((node.size().y * scale / zoom.line_height()).ceil() as usize + 2).min(200);
         let total = doc.text().bytes().filter(|b| *b == b'\n').count() + 1;

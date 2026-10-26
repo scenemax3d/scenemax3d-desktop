@@ -1,10 +1,10 @@
 # Browser handle access
 
-Source: crates.io `wgpu` 29.0.4, upstream commit
-`e99f5305ded96ff7006f0714d043a7f735bd45c2` (the published crate's VCS metadata).
+Source: crates.io `wgpu` 30.0.0, upstream commit
+`8bf3e5ff4ab45e2c150e0d6c70d01d25f5b126c1` (the published crate's VCS metadata).
 MIT / Apache-2.0 licenses are included unchanged.
 Published `.crate` SHA-256:
-`76e8840e1ba2881d4cbb18d2147627a56af426ff064c0401eb0c8410c6325d07`.
+`6d8f4bd44d92da5270f03409dba9f952dab24f128e05d6a554926101d1bf9114`.
 
 SceneMax adds four methods, compiled only for the browser WebGPU backend:
 `Device::browser_device`, `RenderPass::browser_render_pass`,

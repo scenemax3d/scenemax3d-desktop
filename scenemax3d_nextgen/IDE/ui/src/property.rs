@@ -1,6 +1,7 @@
 //! Compact retained property controls shared by designer inspectors.
 use crate::{button, label, theme::*};
 use bevy::{prelude::*, text::EditableText};
+use scenemax_ui_input::Button;
 
 /// Editable single-line value with normal native focus and selection behavior.
 pub fn input<T: Component>(
@@ -19,6 +20,7 @@ pub fn input<T: Component>(
             flex_shrink: 0.,
             ..default()
         },
+        bevy::ui_widgets::TextInput,
         EditableText {
             allow_newlines: false,
             max_characters: Some(8192),
@@ -35,6 +37,37 @@ pub fn input<T: Component>(
 /// Checkbox value, read by the owning feature when applying a transaction.
 #[derive(Component)]
 pub struct Checked(pub bool);
+#[derive(Component)]
+struct CheckboxIndicator {
+    indicator: Entity,
+    check: Entity,
+}
+
+/// Update a checkbox and its visual state programmatically.
+pub fn set_checked(commands: &mut Commands, entity: Entity, checked: bool) {
+    commands.queue(move |world: &mut World| {
+        let Some(visual) = world.get::<CheckboxIndicator>(entity) else {
+            return;
+        };
+        let (indicator, check) = (visual.indicator, visual.check);
+        if let Some(mut value) = world.get_mut::<Checked>(entity) {
+            value.0 = checked;
+        }
+        if let Some(mut background) = world.get_mut::<BackgroundColor>(indicator) {
+            background.0 = if checked { ACCENT } else { HEADER };
+        }
+        if let Some(mut border) = world.get_mut::<BorderColor>(indicator) {
+            *border = BorderColor::all(if checked { ACCENT } else { MUTED });
+        }
+        if let Some(mut node) = world.get_mut::<Node>(check) {
+            node.display = if checked {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+    });
+}
 /// Create a toggle with a visible checkmark.
 pub fn checkbox<T: Component>(
     commands: &mut Commands,
@@ -107,8 +140,11 @@ pub fn checkbox<T: Component>(
             });
     }
     commands.spawn((label(caption, 13.), Pickable::IGNORE, ChildOf(entity)));
+    commands
+        .entity(entity)
+        .insert(CheckboxIndicator { indicator, check });
     commands.entity(entity).insert(Checked(checked)).observe(
-        move |event: On<Pointer<Click>>,
+        move |event: On<PointerClick>,
               mut values: Query<&mut Checked>,
               mut indicators: Query<(&mut BackgroundColor, &mut BorderColor)>,
               mut nodes: Query<&mut Node>| {
@@ -170,8 +206,7 @@ pub fn scroll_column(commands: &mut Commands, parent: Entity) -> Entity {
         ))
         .id();
     commands.entity(content).observe(
-        move |mut event: On<Pointer<Scroll>>,
-              mut q: Query<(&mut ScrollPosition, &ComputedNode)>| {
+        move |mut event: On<PointerScroll>, mut q: Query<(&mut ScrollPosition, &ComputedNode)>| {
             if let Ok((mut scroll, node)) = q.get_mut(content) {
                 let step = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
                     30.
@@ -273,7 +308,7 @@ pub fn dropdown_labeled<T: Component>(
         .id();
     commands
         .entity(control)
-        .observe(move |_: On<Pointer<Click>>, mut nodes: Query<&mut Node>| {
+        .observe(move |_: On<PointerClick>, mut nodes: Query<&mut Node>| {
             if let Ok(mut node) = nodes.get_mut(popup) {
                 node.display = if node.display == Display::None {
                     Display::Flex
@@ -283,7 +318,7 @@ pub fn dropdown_labeled<T: Component>(
             }
         });
     commands.entity(popup).observe(
-        move |mut event: On<Pointer<Scroll>>, mut q: Query<&mut ScrollPosition>| {
+        move |mut event: On<PointerScroll>, mut q: Query<&mut ScrollPosition>| {
             event.propagate(false);
             if let Ok(mut scroll) = q.get_mut(popup) {
                 scroll.y = (scroll.y - event.y * 24.).max(0.);
@@ -300,7 +335,7 @@ pub fn dropdown_labeled<T: Component>(
             Choice(option.clone()),
         );
         commands.entity(row).observe(
-            move |_: On<Pointer<Click>>,
+            move |_: On<PointerClick>,
                   mut controls: Query<(&mut Choice, &Children)>,
                   mut text: Query<&mut Text>,
                   mut nodes: Query<&mut Node>| {
@@ -338,7 +373,7 @@ mod tests {
     use bevy::{
         ecs::system::RunSystemOnce,
         picking::{
-            events::Scroll,
+            events::PointerScroll,
             pointer::{Location, PointerId},
         },
     };
@@ -362,24 +397,24 @@ mod tests {
         });
         let child = world.spawn((Node::default(), ChildOf(content))).id();
         world.flush();
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: bevy::camera::NormalizedRenderTarget::None {
-                    width: 1000,
-                    height: 1000,
+        world.trigger(PointerScroll {
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 1000,
+                        height: 1000,
+                    },
+                    position: Vec2::ZERO,
                 },
-                position: Vec2::ZERO,
-            },
-            Scroll {
-                unit: bevy::input::mouse::MouseScrollUnit::Line,
-                x: 0.,
-                y: -3.,
-                hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
-                phase: bevy::input::touch::TouchPhase::Moved,
-            },
-            child,
-        ));
+            ),
+            entity: child,
+            unit: bevy::input::mouse::MouseScrollUnit::Line,
+            x: 0.,
+            y: -3.,
+            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
+            phase: bevy::input::touch::TouchPhase::Moved,
+        });
         assert_eq!(world.get::<ScrollPosition>(content).unwrap().y, 90.);
         assert!(
             world

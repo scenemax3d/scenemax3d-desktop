@@ -170,6 +170,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         asset_root.as_deref(),
     );
     let mut app = App::new();
+    app.add_plugins(scenemax_ui_input::UiInputPlugin);
     #[cfg(target_arch = "wasm32")]
     {
         let root = asset_root.clone().unwrap_or_else(|| "assets".into());

@@ -1,4 +1,5 @@
 use super::*;
+use scenemax_ui_input::Interaction;
 fn settle(app: &mut App) {
     for _ in 0..500 {
         app.update();

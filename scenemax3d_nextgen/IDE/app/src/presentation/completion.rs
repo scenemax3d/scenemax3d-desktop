@@ -4,7 +4,6 @@ use bevy::{
     input_focus::{FocusCause, InputFocus},
     prelude::*,
     text::{EditableText, FontCx, LayoutCx, TextEdit, TextLayoutInfo},
-    ui::widget::TextScroll,
 };
 use scenemax_ide_core::completion::{Completions, complete_with_symbols};
 
@@ -176,7 +175,6 @@ type CompletionInput<'a> = (
     &'a EditableText,
     Option<&'a TextLayoutInfo>,
     Option<&'a ComputedNode>,
-    Option<&'a TextScroll>,
 );
 
 #[derive(bevy::ecs::system::SystemParam)]
@@ -205,7 +203,7 @@ pub(crate) fn refresh(
         && let Some(active) = &state.active
         && active.index_revision != index.revision
         && focused == Some(active.entity)
-        && inputs.get(active.entity).is_ok_and(|(_, input, _, _, _)| {
+        && inputs.get(active.entity).is_ok_and(|(_, input, _, _)| {
             input.value() == active.source.as_str()
                 && input.editor().raw_selection().focus().index() == active.caret
                 && input.editor().raw_selection().anchor().index() == active.caret
@@ -214,7 +212,7 @@ pub(crate) fn refresh(
         state.trigger = Some((active.entity, true));
     }
     if let Some((entity, explicit)) = state.trigger.take() {
-        if let Ok((_, input, _, _, _)) = inputs.get(entity) {
+        if let Ok((_, input, _, _)) = inputs.get(entity) {
             let selection = input.editor().raw_selection();
             let caret = selection.focus().index();
             let source = input.value().to_string();
@@ -248,7 +246,7 @@ pub(crate) fn refresh(
         }
     }
     if let Some(active) = &state.active {
-        let valid = inputs.get(active.entity).is_ok_and(|(_, input, _, _, _)| {
+        let valid = inputs.get(active.entity).is_ok_and(|(_, input, _, _)| {
             active.index_revision == index.revision
                 && focused == Some(active.entity)
                 && !input.is_composing()
@@ -271,11 +269,11 @@ pub(crate) fn refresh(
             let (position, size) = inputs
                 .get(active.entity)
                 .ok()
-                .and_then(|(_, _, layout, node, scroll)| {
+                .and_then(|(_, input, layout, node)| {
                     Some(popup_bounds(
                         layout?,
                         node?,
-                        scroll,
+                        input.viewport.offset,
                         active.list.items.len(),
                     ))
                 })
@@ -299,7 +297,7 @@ pub(crate) fn refresh(
                     CompletionRow,
                 );
                 commands.entity(row).observe(
-                    move |mut event: On<Pointer<Press>>,
+                    move |mut event: On<PointerPress>,
                           mut state: ResMut<CompletionState>,
                           mut focus: ResMut<InputFocus>| {
                         event.propagate(false);
@@ -331,16 +329,17 @@ pub(crate) fn refresh(
         }
     }
     if let (Some(active), Some(popup)) = (&state.active, state.popup)
-        && let Ok((_, _, Some(layout), Some(node), scroll)) = inputs.get(active.entity)
+        && let Ok((_, input, Some(layout), Some(node))) = inputs.get(active.entity)
         && let Some((_, cursor)) = layout.cursor
         && let Ok(mut popup_node) = popups.get_mut(popup)
     {
-        let (position, size) = popup_bounds(layout, node, scroll, active.list.items.len());
+        let (position, size) =
+            popup_bounds(layout, node, input.viewport.offset, active.list.items.len());
         let left = px(position.x);
         let top = px(position.y);
         let width = size.x;
         let height = size.y;
-        let point = (cursor.max - scroll.map_or(Vec2::ZERO, |s| s.0)) * node.inverse_scale_factor();
+        let point = (cursor.max - input.viewport.offset) * node.inverse_scale_factor();
         let viewport = node.content_box().size() * node.inverse_scale_factor();
         let display =
             if point.y < 0. || point.y > viewport.y || point.x < 0. || point.x > viewport.x {
@@ -368,12 +367,12 @@ struct CompletionRow;
 fn popup_bounds(
     layout: &TextLayoutInfo,
     node: &ComputedNode,
-    scroll: Option<&TextScroll>,
+    scroll: Vec2,
     count: usize,
 ) -> (Vec2, Vec2) {
     let scale = node.inverse_scale_factor();
     let cursor = layout.cursor.map_or(Vec2::ZERO, |(_, r)| r.max);
-    let point = (cursor - scroll.map_or(Vec2::ZERO, |s| s.0)) * scale + Vec2::splat(16.);
+    let point = (cursor - scroll) * scale + Vec2::splat(16.);
     let viewport = node.size() * scale;
     let size = Vec2::new(
         360_f32.min(viewport.x.max(0.)),

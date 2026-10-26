@@ -1378,9 +1378,7 @@ fn transformed_mesh_bounds(
     meshes: &Assets<Mesh>,
 ) -> Option<VisualBounds> {
     let mesh_handle = transform_queries.p3().get(entity).ok()?.clone();
-    let aabb = meshes
-        .get(&mesh_handle.0)
-        .and_then(MeshAabb::compute_aabb)?;
+    let aabb = meshes.get(&mesh_handle.0).and_then(MeshAabb::get_aabb)?;
     VisualBounds::from_points(
         aabb_corners(aabb)
             .into_iter()

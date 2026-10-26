@@ -2,6 +2,7 @@
 use super::*;
 use scenemax_assets::material::{PRESETS, SCALARS, TEXTURES};
 use scenemax_ide_ui::{button, label, number, property, theme::*};
+use scenemax_ui_input::Button;
 pub(super) struct Parts {
     pub viewport: Entity,
     pub status: Entity,
@@ -349,7 +350,7 @@ pub(super) fn build(
         Name::new("Copy material assignment"),
     );
     commands.entity(copy).observe(
-        move |_: On<Pointer<Click>>,
+        move |_: On<PointerClick>,
               clipboard: Option<ResMut<bevy::clipboard::Clipboard>>,
               mut session: ResMut<Session>| {
             if let Some(mut clipboard) = clipboard {

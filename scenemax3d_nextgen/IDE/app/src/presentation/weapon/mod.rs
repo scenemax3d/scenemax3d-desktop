@@ -1,4 +1,5 @@
 //! Native weapon documents with retained controls and normal document history.
+use scenemax_ui_input::Interaction;
 pub(crate) mod attachment;
 pub(crate) mod playback;
 pub(crate) mod preview;

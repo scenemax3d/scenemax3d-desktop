@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+scenemax_ui_input = { path = "../../Common/ui_input" }
 scenemax_physics = { path = "../../Engine/physics" }
 avian3d.workspace = true
 scenemax_animation = { path = "../../Engine/animation" }

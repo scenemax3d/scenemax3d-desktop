@@ -7,7 +7,10 @@ use bevy::{
     text::{EditableText, TextCursorStyle, TextLayoutInfo},
     ui_render::{ExtractedUiItem, ExtractedUiNode, ExtractedUiNodes, NodeType, RenderUiSystems},
 };
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 /// Non-overlapping, sorted UTF-8 source ranges with foreground colors.
 #[derive(Component, Default)]
@@ -25,9 +28,6 @@ pub struct TextEmphasis {
     pub ranges: Vec<Range<usize>>,
 }
 
-#[derive(Resource, Default)]
-struct TextPassStart(usize);
-
 #[derive(Default)]
 struct GlyphCache {
     ticks: Option<(
@@ -39,7 +39,15 @@ struct GlyphCache {
     tabs: Vec<bool>,
 }
 
+#[derive(Resource, Default)]
+struct TextPassStart(HashSet<Entity>);
+
 pub(crate) fn install(app: &mut App) {
+    // Highlight-only changes must invalidate Bevy's retained UI geometry too.
+    app.add_systems(
+        PostUpdate,
+        invalidate_highlights.before(bevy::ui::UiSystems::Prepare),
+    );
     if let Some(render) = app.get_sub_app_mut(RenderApp) {
         render.init_resource::<TextPassStart>().add_systems(
             ExtractSchedule,
@@ -55,7 +63,18 @@ pub(crate) fn install(app: &mut App) {
     }
 }
 fn mark_text_start(nodes: Res<ExtractedUiNodes>, mut start: ResMut<TextPassStart>) {
-    start.0 = nodes.uinodes.len();
+    start.0.clear();
+    for main in &nodes.changed {
+        if let Some((_, items)) = nodes.uinodes.get(main) {
+            start.0.extend(items.keys().copied());
+        }
+    }
+}
+type HighlightChanges = Or<(Changed<TextHighlights>, Changed<TextEmphasis>)>;
+fn invalidate_highlights(mut query: Query<&mut TextColor, HighlightChanges>) {
+    for mut color in &mut query {
+        color.set_changed();
+    }
 }
 type HighlightInput<'a> = (
     Entity,
@@ -74,19 +93,18 @@ fn color_text(
 ) {
     // Only rendered document entities are visited. This does not create another
     // text surface or modify the input buffer, undo history, or selection.
-    let mut outlines = Vec::new();
-    let mut offsets = HashMap::<Entity, usize>::new();
     cache.retain(|entity, _| query.contains(*entity));
-    let ExtractedUiNodes { uinodes, glyphs } = &mut *nodes;
-    for node in &uinodes[start.0..] {
-        let ExtractedUiItem::Glyphs { range } = &node.item else {
-            continue;
-        };
+    let ExtractedUiNodes { uinodes, changed } = &mut *nodes;
+    for main_entity in changed.iter() {
         let Ok((entity, input, highlights, info, cursor_style, emphasis)) =
-            query.get(node.main_entity.id())
+            query.get(main_entity.entity())
         else {
             continue;
         };
+        let Some((_, render_nodes)) = uinodes.get_mut(main_entity) else {
+            continue;
+        };
+        let mut outlines = Vec::new();
         if input.is_composing() {
             continue;
         }
@@ -143,69 +161,76 @@ fn color_text(
         if palette.len() != info.glyphs.len() {
             continue;
         }
-        let offset = offsets.entry(entity).or_default();
-        if *offset + range.len() > palette.len() {
-            continue;
-        }
-        for (index, glyph) in glyphs[range.clone()].iter_mut().enumerate() {
-            let i = *offset + index;
-            if cached.tabs[i] {
-                glyph.color = LinearRgba::NONE;
+        let mut offset = 0;
+        for (render_entity, node) in render_nodes.iter_mut() {
+            // Shadows also contain glyphs; only recolor the foreground text.
+            if start.0.contains(render_entity) {
                 continue;
             }
-            if highlights_current
-                && emphasis.is_some_and(|emphasis| {
-                    emphasis.ranges.iter().any(|r| r.contains(&cached.bytes[i]))
-                })
-            {
-                let bounds = Rect::from_center_size(
-                    info.glyphs[i].position,
-                    info.glyphs[i].atlas_info.rect.size() + Vec2::splat(4.0 * info.scale_factor),
-                );
-                for rect in outline_rects(bounds, info.scale_factor.max(1.0)) {
-                    outlines.push(ExtractedUiNode {
-                        z_order: node.z_order + 0.01,
-                        image: Default::default(),
-                        clip: node.clip,
-                        extracted_camera_entity: node.extracted_camera_entity,
-                        main_entity: node.main_entity,
-                        render_entity: commands
-                            .spawn(bevy::render::sync_world::TemporaryRenderEntity)
-                            .id(),
-                        transform: node.transform
-                            * bevy::math::Affine2::from_translation(rect.center()),
-                        item: ExtractedUiItem::Node {
-                            color: Color::srgba_u8(166, 187, 194, 135).to_linear(),
-                            rect: Rect::from_corners(Vec2::ZERO, rect.size()),
-                            atlas_scaling: None,
-                            flip_x: false,
-                            flip_y: false,
-                            border: Default::default(),
-                            border_radius: Default::default(),
-                            node_type: NodeType::Rect,
-                        },
+            let ExtractedUiItem::Glyphs { glyphs } = &mut node.item else {
+                continue;
+            };
+            if offset + glyphs.len() > palette.len() {
+                continue;
+            }
+            for (index, glyph) in glyphs.iter_mut().enumerate() {
+                let i = offset + index;
+                if cached.tabs[i] {
+                    glyph.color = LinearRgba::NONE;
+                    continue;
+                }
+                if highlights_current
+                    && emphasis.is_some_and(|emphasis| {
+                        emphasis.ranges.iter().any(|r| r.contains(&cached.bytes[i]))
+                    })
+                {
+                    let bounds = Rect::from_center_size(
+                        info.glyphs[i].position,
+                        info.glyphs[i].atlas_info.rect.size()
+                            + Vec2::splat(4.0 * info.scale_factor),
+                    );
+                    for rect in outline_rects(bounds, info.scale_factor.max(1.0)) {
+                        outlines.push(ExtractedUiNode {
+                            z_order: node.z_order + 0.01,
+                            image: Default::default(),
+                            clip: node.clip.clone(),
+                            transform: node.transform
+                                * bevy::math::Affine2::from_translation(rect.center()),
+                            item: ExtractedUiItem::Node {
+                                color: Color::srgba_u8(166, 187, 194, 135).to_linear(),
+                                rect: Rect::from_corners(Vec2::ZERO, rect.size()),
+                                atlas_scaling: None,
+                                flip_x: false,
+                                flip_y: false,
+                                border: Default::default(),
+                                border_radius: Default::default(),
+                                node_type: NodeType::Rect,
+                            },
+                        });
+                    }
+                }
+                let selected_override = cursor_style
+                    .is_some_and(|style| style.selected_text_color.is_some())
+                    && info.selection_rects.iter().any(|rect| {
+                        let glyph_rect = Rect::from_center_size(
+                            info.glyphs[i].position,
+                            info.glyphs[i].atlas_info.rect.size(),
+                        );
+                        rect.contains(glyph_rect.min) && rect.contains(glyph_rect.max)
                     });
+                if !selected_override
+                    && info.glyphs[i].atlas_info.is_alpha_mask
+                    && let Some(color) = palette[i]
+                {
+                    glyph.color = color;
                 }
             }
-            let selected_override = cursor_style
-                .is_some_and(|style| style.selected_text_color.is_some())
-                && info.selection_rects.iter().any(|rect| {
-                    let glyph_rect = Rect::from_center_size(
-                        info.glyphs[i].position,
-                        info.glyphs[i].atlas_info.rect.size(),
-                    );
-                    rect.contains(glyph_rect.min) && rect.contains(glyph_rect.max)
-                });
-            if !selected_override
-                && info.glyphs[i].atlas_info.is_alpha_mask
-                && let Some(color) = palette[i]
-            {
-                glyph.color = color;
-            }
+            offset += glyphs.len();
         }
-        *offset += range.len();
+        for outline in outlines {
+            render_nodes.insert(commands.spawn_empty().id(), outline);
+        }
     }
-    uinodes.extend(outlines);
 }
 
 fn outline_rects(bounds: Rect, width: f32) -> [Rect; 4] {

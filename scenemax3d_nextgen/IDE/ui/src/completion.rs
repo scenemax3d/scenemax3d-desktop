@@ -4,6 +4,7 @@ use crate::{
     theme::{EDGE, PANEL, SELECTED},
 };
 use bevy::prelude::*;
+use scenemax_ui_input::Button;
 /// Build a bounded suggestion popup anchored in its editor's coordinate space.
 pub fn suggestion_popup(
     commands: &mut Commands,

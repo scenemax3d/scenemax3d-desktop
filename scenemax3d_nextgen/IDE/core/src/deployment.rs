@@ -131,7 +131,8 @@ pub struct Settings {
     pub rebuild_runtime: bool,
     /// Preserve every resource for projects using dynamically constructed asset names.
     pub include_all_resources: bool,
-    /// Upload only after all selected artifacts have been built successfully.
+    /// One-build opt-in; never restored from saved deployment preferences.
+    #[serde(skip)]
     pub upload: bool,
     /// itch.io page URL or user/game.
     pub itch_page: String,

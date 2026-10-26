@@ -1,4 +1,5 @@
 //! Native PBR material workbench hosted as an ordinary IDE document.
+use scenemax_ui_input::Interaction;
 pub(crate) mod preview;
 mod view;
 use super::components::EditorHost;

@@ -9,6 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
+    'scenemax_ui_input': 'Common/ui_input',
     'scenemax_script_values': 'Common/script_values',
     'scenemax_physics': 'Engine/physics',
     'scenemax_game_launcher': 'Projector/launcher',
@@ -24,9 +25,9 @@ EXPECTED = {
 }
 IDE_ALLOWED = {
     'IDE/core': set(),
-    'IDE/ui': set(),
+    'IDE/ui': {'Common/ui_input'},
     'IDE/services': {'IDE/core', 'Language/parser', 'Common/assets', 'Engine/runtime_ui'},
-    'IDE/app': {'IDE/core', 'IDE/services', 'IDE/ui', 'Common/assets', 'Engine/effects', 'Engine/materials', 'Engine/ik', 'Engine/animation', 'Engine/physics'},
+    'IDE/app': {'Common/ui_input', 'IDE/core', 'IDE/services', 'IDE/ui', 'Common/assets', 'Engine/effects', 'Engine/materials', 'Engine/ik', 'Engine/animation', 'Engine/physics'},
 }
 
 def dependency_allowed(source, destination):
