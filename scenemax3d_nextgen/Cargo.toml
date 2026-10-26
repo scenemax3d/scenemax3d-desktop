@@ -30,14 +30,14 @@ wgpu = { path = "third_party/wgpu" }
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.97.1"
 
 [workspace.dependencies]
 anyhow = "1"
-avian3d = "0.7"
-bevy-tnua = "0.32.0"
-bevy-tnua-avian3d = "0.12.1"
-bevy = { version = "=0.19.0", default-features = false }
+avian3d = "0.8"
+bevy-tnua = "0.33.0"
+bevy-tnua-avian3d = "0.13.0"
+bevy = { version = "=0.20.0", default-features = false }
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
