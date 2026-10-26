@@ -5,6 +5,7 @@ pub use preferences::SettingsWriter;
 mod assets;
 mod existing;
 mod pipeline;
+mod prebuilt;
 pub mod preview;
 mod process;
 mod size_report;

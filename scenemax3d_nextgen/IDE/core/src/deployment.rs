@@ -128,6 +128,7 @@ pub struct Settings {
     /// Build the native Effekseer bridge with the projector.
     pub native_effects: bool,
     /// Explicitly rebuild the engine instead of reusing the installed release binaries.
+    #[serde(skip)]
     pub rebuild_runtime: bool,
     /// Preserve every resource for projects using dynamically constructed asset names.
     pub include_all_resources: bool,

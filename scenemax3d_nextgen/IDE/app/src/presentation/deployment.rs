@@ -432,13 +432,13 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         c,
         scroll,
         Rebuild,
-        "Require source build instead of installed runtime",
+        "Rebuild engine from source",
         settings.rebuild_runtime,
     );
     text(
         c,
         scroll,
-        "Source installations always check for engine updates. Unchanged builds are reused.",
+        "Normal exports use bundled runtimes. Rebuilding requires Rust and platform build tools.",
         12.,
         INK,
     );
