@@ -633,6 +633,7 @@ mod tests {
     #[test]
     fn operation_console_and_progress_update_without_rebuilding_fields() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<View>()
             .add_systems(Update, refresh);
@@ -695,6 +696,7 @@ mod tests {
     #[test]
     fn gateway_endpoint_follows_server_edits_and_keeps_hosting_origin() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<ButtonInput<KeyCode>>()
             .add_systems(Update, input);
@@ -759,6 +761,7 @@ mod tests {
     #[test]
     fn gateway_fields_retain_edits_without_recreating_the_dialog() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<View>()
             .init_resource::<ButtonInput<KeyCode>>()

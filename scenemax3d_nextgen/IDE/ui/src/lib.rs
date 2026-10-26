@@ -2,8 +2,10 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 pub mod canvas;
+pub mod color;
 pub mod completion;
 mod editor;
+mod feathers;
 pub mod icons;
 pub mod number;
 mod syntax;
@@ -20,6 +22,7 @@ pub struct StudioUiPlugin;
 impl Plugin for StudioUiPlugin {
     fn build(&self, app: &mut App) {
         syntax::install(app);
+        feathers::install(app);
         app.add_plugins(scenemax_ui_input::UiInputPlugin);
         app.add_systems(PreStartup, editor::share_font_cache);
         app.add_systems(
@@ -29,6 +32,8 @@ impl Plugin for StudioUiPlugin {
                 icons::hover,
                 icons::rasterize,
                 number::update,
+                color::update,
+                property::synchronize_choices,
             )
                 .before(bevy::ui::UiSystems::Prepare),
         );

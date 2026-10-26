@@ -39,19 +39,22 @@ pub(super) fn spawn(
         ("color", "Color (#RRGGBB)", "#ffffff"),
     ] {
         commands.spawn((label(title, 12.), ChildOf(panel)));
-        property::input(
-            commands,
-            panel,
-            Field(key),
-            p[key].as_str().unwrap_or(fallback),
-        );
+        let value = p[key].as_str().unwrap_or(fallback);
+        if key == "color" {
+            scenemax_ide_ui::color::input(commands, panel, Field(key), value);
+        } else {
+            property::input(commands, panel, Field(key), value);
+        }
     }
     commands.spawn((label("Brightness", 12.), ChildOf(panel)));
-    property::input(
+    scenemax_ide_ui::number::input(
         commands,
         panel,
         Field("brightness"),
         &p["brightness"].as_f64().unwrap_or(220.).to_string(),
+        0.,
+        1000.,
+        1.,
     );
     property::checkbox(
         commands,

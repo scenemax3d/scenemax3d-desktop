@@ -144,11 +144,14 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, en
         ] {
             let cell = cell(commands, row, width);
             let value = segment[key].as_f64().unwrap_or(default).to_string();
-            property::input(
+            scenemax_ide_ui::number::input(
                 commands,
                 cell,
                 Property(format!("segment:{i}:{key}"), value.clone()),
                 &value,
+                0.,
+                1000.,
+                1.,
             );
         }
     }

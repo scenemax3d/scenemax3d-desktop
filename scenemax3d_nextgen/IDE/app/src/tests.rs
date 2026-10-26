@@ -128,6 +128,7 @@ pub(crate) fn app() -> (App, tempfile::TempDir, PathBuf) {
         .open_document(Filesystem::open_document(session.workspace.project(), &path).unwrap())
         .unwrap();
     let mut app = App::new();
+    ui_resources(&mut app);
     app.init_resource::<bevy::input_focus::InputFocus>()
         .init_resource::<bevy::picking::pointer::PointerMap>()
         .insert_resource(session)
@@ -1984,4 +1985,26 @@ fn restart_shortcut_can_cancel_unsaved_work_and_restarts_only_after_state_is_dur
         "// unsaved restart edit"
     );
     assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
+}
+
+/// Asset/scene resources needed by real Feathers widgets in headless designer tests.
+pub(crate) fn ui_resources(app: &mut App) {
+    bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    bevy::tasks::ComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    app.add_plugins((
+        bevy::asset::AssetPlugin::default(),
+        bevy::scene::ScenePlugin,
+    ))
+    .init_asset::<Image>()
+    .init_asset::<bevy::text::Font>()
+    .init_resource::<bevy::input_focus::InputFocus>()
+    .insert_resource(bevy::feathers::theme::UiTheme(
+        bevy::feathers::dark_theme::create_dark_theme(),
+    ))
+    .init_resource::<bevy::feathers::controls::UnitsRegistry>()
+    .init_resource::<bevy::feathers::controls::ColorInputSettings>();
+    app.world_mut()
+        .resource_mut::<bevy::feathers::controls::UnitsRegistry>()
+        .insert(&bevy::feathers::controls::Dimensionless);
 }

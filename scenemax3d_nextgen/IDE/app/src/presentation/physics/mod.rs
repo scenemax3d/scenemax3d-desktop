@@ -380,6 +380,7 @@ mod tests {
     #[test]
     fn retained_form_validates_steps_and_releases_the_world() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.add_plugins(MinimalPlugins)
             .init_resource::<State>()
             .insert_non_send(Sandbox::default())

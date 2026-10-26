@@ -166,6 +166,7 @@ mod tests {
             .unwrap();
         let revision = session.workspace.document(id).unwrap().revision();
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.insert_resource(session)
             .init_resource::<InputFocus>()
             .add_message::<ViewChange>()

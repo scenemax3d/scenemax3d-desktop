@@ -647,6 +647,7 @@ mod tests {
             Dialog::Move,
         ] {
             let mut app = App::new();
+            crate::tests::ui_resources(&mut app);
             app.init_resource::<State>()
                 .init_resource::<InputFocus>()
                 .init_resource::<InputFocusVisible>()
@@ -764,6 +765,7 @@ mod tests {
     #[test]
     fn popup_targets_clicked_file_and_dialog_escape_dismisses() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         let mut session = Session::new(scenemax_ide_core::Project::new(
             "project".into(),
             vec!["project/second.code".into()],
@@ -956,6 +958,7 @@ mod tests {
     #[test]
     fn throw_motion_dialog_uses_selected_template() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<InputFocus>()
@@ -998,6 +1001,7 @@ mod tests {
     #[test]
     fn ik_dialog_uses_selected_solver() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<InputFocus>()

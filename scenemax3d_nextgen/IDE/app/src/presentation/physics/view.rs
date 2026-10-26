@@ -155,7 +155,7 @@ fn vector(c: &mut Commands, p: Entity, data: &Value, key: &str, caption: &str) {
         title(c, col, axis);
         let path = format!("/{key}/{i}");
         let text = display(data.pointer(&path).unwrap_or(&Value::Null));
-        property::input(c, col, Field(path, text.clone()), &text);
+        scenemax_ide_ui::number::input(c, col, Field(path, text.clone()), &text, -100., 100., 0.1);
     }
 }
 pub(super) fn build(c: &mut Commands, data: &Value) -> (Entity, Parts) {

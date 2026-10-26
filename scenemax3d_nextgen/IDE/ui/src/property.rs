@@ -1,5 +1,5 @@
 //! Compact retained property controls shared by designer inspectors.
-use crate::{button, label, theme::*};
+use crate::{label, theme::*};
 use bevy::{prelude::*, text::EditableText};
 use scenemax_ui_input::Button;
 
@@ -173,6 +173,33 @@ pub fn checkbox<T: Component>(
 /// Selected serialized choice value.
 #[derive(Component)]
 pub struct Choice(pub String);
+#[derive(Component)]
+pub(crate) struct ChoiceOptions(Vec<String>);
+
+// Selection can also change through undo, document reloads and preview controls.
+pub(crate) fn synchronize_choices(
+    mut commands: Commands,
+    choices: Query<(Entity, &Choice, &ChoiceOptions), Changed<Choice>>,
+    children: Query<&Children>,
+    rows: Query<(
+        &bevy::feathers::controls::OptionIndex,
+        Has<bevy::ui::Selected>,
+    )>,
+) {
+    for (entity, choice, options) in &choices {
+        if let Some(index) = options.0.iter().position(|value| *value == choice.0) {
+            for row in children.iter_descendants(entity) {
+                if let Ok((option, selected)) = rows.get(row)
+                    && option.0 == index
+                    && !selected
+                {
+                    commands.trigger(bevy::ui_widgets::SetSelected { entity, row });
+                    break;
+                }
+            }
+        }
+    }
+}
 
 /// Scrollable property column with wheel bubbling and a native draggable scrollbar.
 pub fn scroll_column(commands: &mut Commands, parent: Entity) -> Entity {
@@ -267,93 +294,48 @@ pub fn dropdown_labeled<T: Component>(
     value: &str,
     options: &[(String, String)],
 ) {
-    let caption = options
-        .iter()
-        .find(|(id, _)| id == value)
-        .map(|(_, label)| label.as_str())
-        .unwrap_or(value);
-    let control = button(
-        commands,
-        parent,
-        &format!("{} ↓", if caption.is_empty() { "None" } else { caption }),
-        marker,
+    use bevy::{
+        feathers::controls::{FeathersSelect, OptionIndex, list_rows_from_strings},
+        scene::prelude::*,
+        ui_widgets::ValueChange,
+    };
+    // Preserve imported values, including empty ones, until explicitly changed.
+    let mut options = options.to_vec();
+    if !options.iter().any(|(id, _)| id == value) {
+        options.insert(0, (value.to_owned(), value.to_owned()));
+    }
+    let selected = options.iter().position(|(id, _)| id == value);
+    let rows = list_rows_from_strings(
+        options
+            .iter()
+            .map(|(_, caption)| if caption.is_empty() { "None" } else { caption }),
+        selected,
     );
-    commands.entity(control).insert((
-        Choice(value.into()),
-        crate::ButtonSurface(BG),
-        BackgroundColor(BG),
-        BorderColor::all(EDGE),
-        Node {
-            width: percent(100.),
-            padding: UiRect::axes(px(6.), px(4.)),
-            border: px(1.).all(),
-            flex_shrink: 0.,
-            ..default()
-        },
-    ));
-    let popup = commands
-        .spawn((
-            Node {
-                display: Display::None,
-                width: percent(100.),
-                max_height: px(180.),
-                flex_shrink: 0.,
-                flex_direction: FlexDirection::Column,
-                overflow: Overflow::scroll_y(),
-                ..default()
-            },
-            BackgroundColor(BG),
-            ChildOf(parent),
+    let control = commands
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: rows, @max_visible: 8usize }
+            Node { width: percent(100.), min_width: px(0.), flex_shrink: 0. }
+            ChildOf(parent)
+        })
+        .insert((
+            marker,
+            Choice(value.to_owned()),
+            ChoiceOptions(options.iter().map(|(id, _)| id.clone()).collect()),
         ))
         .id();
-    commands
-        .entity(control)
-        .observe(move |_: On<PointerClick>, mut nodes: Query<&mut Node>| {
-            if let Ok(mut node) = nodes.get_mut(popup) {
-                node.display = if node.display == Display::None {
-                    Display::Flex
-                } else {
-                    Display::None
-                };
-            }
-        });
-    commands.entity(popup).observe(
-        move |mut event: On<PointerScroll>, mut q: Query<&mut ScrollPosition>| {
-            event.propagate(false);
-            if let Ok(mut scroll) = q.get_mut(popup) {
-                scroll.y = (scroll.y - event.y * 24.).max(0.);
+    commands.entity(control).observe(
+        move |event: On<ValueChange<Entity>>,
+              rows: Query<&OptionIndex>,
+              mut choices: Query<&mut Choice>| {
+            if event.source == control
+                && let Ok(index) = rows.get(event.value)
+                && let Some((value, _)) = options.get(index.0)
+                && let Ok(mut choice) = choices.get_mut(control)
+            {
+                choice.0.clone_from(value);
             }
         },
     );
-    for (option, caption) in options {
-        let value = option.clone();
-        let caption = caption.clone();
-        let row = button(
-            commands,
-            popup,
-            if caption.is_empty() { "None" } else { &caption },
-            Choice(option.clone()),
-        );
-        commands.entity(row).observe(
-            move |_: On<PointerClick>,
-                  mut controls: Query<(&mut Choice, &Children)>,
-                  mut text: Query<&mut Text>,
-                  mut nodes: Query<&mut Node>| {
-                if let Ok((mut choice, children)) = controls.get_mut(control) {
-                    choice.0.clone_from(&value);
-                    for child in children.iter() {
-                        if let Ok(mut text) = text.get_mut(child) {
-                            text.0 =
-                                format!("{} ↓", if caption.is_empty() { "None" } else { &caption });
-                        }
-                    }
-                }
-                if let Ok(mut node) = nodes.get_mut(popup) {
-                    node.display = Display::None;
-                }
-            },
-        );
-    }
 }
 /// A section heading in a property grid.
 pub fn heading(commands: &mut Commands, parent: Entity, title: &str) {

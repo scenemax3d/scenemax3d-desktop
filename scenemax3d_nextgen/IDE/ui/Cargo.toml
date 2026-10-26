@@ -6,7 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 scenemax_ui_input = { path = "../../Common/ui_input" }
-bevy = { workspace = true, features = ["ui", "default_font", "system_font_discovery", "system_clipboard", "png"] }
+bevy = { workspace = true, features = ["ui", "bevy_feathers", "default_font", "system_font_discovery", "system_clipboard", "png"] }
 
 [lints]
 workspace = true
