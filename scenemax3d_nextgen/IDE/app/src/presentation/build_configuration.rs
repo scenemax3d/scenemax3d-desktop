@@ -32,7 +32,7 @@ fn area(c: &mut Commands, parent: Entity, node: Node, color: Color) -> Entity {
         .id();
     if scrolls {
         c.entity(entity).observe(
-            |mut event: On<Pointer<Scroll>>,
+            |mut event: On<PointerScroll>,
              mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
                 if let Ok((mut scroll, node)) = nodes.get_mut(event.entity) {
                     let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
@@ -53,7 +53,7 @@ fn area(c: &mut Commands, parent: Entity, node: Node, color: Color) -> Entity {
 fn action(c: &mut Commands, parent: Entity, title: &str, action: Action) -> Entity {
     let e = button(c, parent, title, Name::new(title.to_owned()));
     c.entity(e).observe(
-        move |mut event: On<Pointer<Click>>, mut state: ResMut<State>| {
+        move |mut event: On<PointerClick>, mut state: ResMut<State>| {
             if event.button == PointerButton::Primary {
                 event.propagate(false);
                 if !state.report.busy || matches!(action, Action::Close) {
@@ -67,7 +67,7 @@ fn action(c: &mut Commands, parent: Entity, title: &str, action: Action) -> Enti
 pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity {
     let e = button(c, parent, title, Name::new("Settings"));
     c.entity(e)
-        .observe(|mut event: On<Pointer<Press>>, mut state: ResMut<State>| {
+        .observe(|mut event: On<PointerPress>, mut state: ResMut<State>| {
             if event.button == PointerButton::Primary {
                 event.propagate(false);
                 state.actions.push_back(Action::Open);
@@ -276,14 +276,17 @@ pub(crate) fn refresh(
         }
     }
     for mut bar in &mut bars {
-        bar.width = percent(if r.busy && (r.progress == 0. || r.progress >= 100.) {
+        let width = percent(if r.busy && (r.progress == 0. || r.progress >= 100.) {
             20. + (time.elapsed_secs() * 30.) % 70.
         } else {
             r.progress
         });
+        if bar.width != width {
+            bar.width = width;
+        }
     }
     for mut color in &mut buttons {
-        color.0 = if r.busy { BG } else { HEADER };
+        color.set_if_neq(BackgroundColor(if r.busy { BG } else { HEADER }));
     }
     if r.busy {
         for (mut position, node) in &mut scroll {
