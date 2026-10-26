@@ -68,7 +68,7 @@ pub(crate) fn smoke(
 pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity {
     let e = scenemax_ide_ui::button(c, parent, title, Name::new("Project Settings"));
     c.entity(e)
-        .observe(|_: On<Pointer<Press>>, mut s: ResMut<State>| s.actions.push_back(Action::Open));
+        .observe(|_: On<PointerPress>, mut s: ResMut<State>| s.actions.push_back(Action::Open));
     e
 }
 fn node(c: &mut Commands, p: Entity, mut n: Node) -> Entity {
@@ -135,9 +135,7 @@ fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) {
     for &(caption, action) in items {
         let e = scenemax_ide_ui::button(c, row, caption, Name::new(caption.to_owned()));
         c.entity(e)
-            .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| {
-                s.actions.push_back(action)
-            });
+            .observe(move |_: On<PointerClick>, mut s: ResMut<State>| s.actions.push_back(action));
     }
 }
 fn fields(c: &mut Commands, parent: Entity, state: &State, items: &[(&str, &str)]) {
@@ -298,7 +296,7 @@ pub(crate) fn refresh(
         c.entity(panel)
             .insert((BackgroundColor(PANEL), ScrollPosition::default()))
             .observe(
-                |mut event: On<Pointer<Scroll>>,
+                |mut event: On<PointerScroll>,
                  mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
                     if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
                         let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
@@ -337,7 +335,7 @@ pub(crate) fn refresh(
                 ));
             }
             c.entity(e)
-                .observe(move |_: On<Pointer<Click>>, mut s: ResMut<State>| {
+                .observe(move |_: On<PointerClick>, mut s: ResMut<State>| {
                     s.actions.push_back(Action::SelectTab(tab))
                 });
         }
@@ -500,7 +498,7 @@ pub(crate) fn refresh(
                 Name::new("Copy multiplayer log"),
             );
             c.entity(copy).observe(
-                |_: On<Pointer<Click>>,
+                |_: On<PointerClick>,
                  mut state: ResMut<State>,
                  clipboard: Option<ResMut<bevy::clipboard::Clipboard>>| {
                     state.status = if let Some(mut clipboard) = clipboard {
@@ -548,7 +546,7 @@ pub(crate) fn refresh(
                 },
             );
             c.entity(console).insert((LogViewport, ScrollPosition::default(), BackgroundColor(Color::srgb(0.08, 0.09, 0.1))))
-                .observe(|mut event: On<Pointer<Scroll>>, mut nodes: Query<(&mut ScrollPosition, &ComputedNode), With<LogViewport>>| {
+                .observe(|mut event: On<PointerScroll>, mut nodes: Query<(&mut ScrollPosition, &ComputedNode), With<LogViewport>>| {
                     if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
                         let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line { 40. } else { 1. };
                         scroll.y = (scroll.y - event.y * scale).clamp(0., (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor());
@@ -635,6 +633,7 @@ mod tests {
     #[test]
     fn operation_console_and_progress_update_without_rebuilding_fields() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<View>()
             .add_systems(Update, refresh);
@@ -697,6 +696,7 @@ mod tests {
     #[test]
     fn gateway_endpoint_follows_server_edits_and_keeps_hosting_origin() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<ButtonInput<KeyCode>>()
             .add_systems(Update, input);
@@ -761,6 +761,7 @@ mod tests {
     #[test]
     fn gateway_fields_retain_edits_without_recreating_the_dialog() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<View>()
             .init_resource::<ButtonInput<KeyCode>>()

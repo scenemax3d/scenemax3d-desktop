@@ -1,4 +1,5 @@
 //! Native PBR material workbench hosted as an ordinary IDE document.
+use scenemax_ui_input::Interaction;
 pub(crate) mod preview;
 mod view;
 use super::components::EditorHost;
@@ -25,7 +26,6 @@ enum Action {
     Undo,
     Redo,
     Preset(String),
-    Color(String, String),
     Shape(u8),
     Frame,
     Light,
@@ -208,7 +208,6 @@ pub(crate) fn update(
                 .0
                 .push_back(Command::Edit(crate::application::EditCommand::Redo)),
             Action::Preset(p) => edit = Some(("preset".into(), json!(p))),
-            Action::Color(k, v) => edit = Some((k.clone(), json!(v))),
             Action::Slot(slot) => edit = Some(("/targetSlot".into(), json!(slot))),
             Action::Shape(shape) => {
                 state.shape = *shape;

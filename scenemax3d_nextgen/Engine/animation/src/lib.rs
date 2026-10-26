@@ -13,13 +13,13 @@ struct IntervalCurve {
     source: VariableCurve,
     start: f32,
     end: f32,
-    domain: bevy::math::curve::Interval,
+    domain: bevy::curve::Interval,
 }
 impl AnimationCurve for IntervalCurve {
     fn clone_value(&self) -> Box<dyn AnimationCurve> {
         Box::new(self.clone())
     }
-    fn domain(&self) -> bevy::math::curve::Interval {
+    fn domain(&self) -> bevy::curve::Interval {
         self.domain
     }
     fn evaluator_id(&self) -> EvaluatorId<'_> {
@@ -60,8 +60,8 @@ pub fn slice(source: &AnimationClip, start: f32, end: f32) -> Result<AnimationCl
     {
         return Err("Invalid animation interval".into());
     }
-    let domain = bevy::math::curve::Interval::new(0., (end - start).max(0.001))
-        .map_err(|e| e.to_string())?;
+    let domain =
+        bevy::curve::Interval::new(0., (end - start).max(0.001)).map_err(|e| e.to_string())?;
     let mut clip = AnimationClip::default();
     for (target, curves) in source.curves() {
         for curve in curves {

@@ -1,4 +1,5 @@
 use super::*;
+use scenemax_ui_input::Interaction;
 #[test]
 fn retained_records_save_same_frame_and_undo_without_losing_unknown_fields() {
     bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);

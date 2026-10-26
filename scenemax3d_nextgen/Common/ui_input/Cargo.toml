@@ -1,0 +1,9 @@
+[package]
+name = "scenemax_ui_input"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+[dependencies]
+bevy = { workspace = true, features = ["bevy_ui", "bevy_ui_widgets", "bevy_picking"] }
+[lints]
+workspace = true

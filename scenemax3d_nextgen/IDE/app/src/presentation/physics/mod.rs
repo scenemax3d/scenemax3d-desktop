@@ -72,7 +72,7 @@ impl Default for State {
 pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity {
     let e = scenemax_ide_ui::button(c, parent, title, Name::new("Physics Simulation"));
     c.entity(e)
-        .observe(|_: On<Pointer<Press>>, mut s: ResMut<State>| s.open = true);
+        .observe(|_: On<PointerPress>, mut s: ResMut<State>| s.open = true);
     e
 }
 #[derive(bevy::ecs::system::SystemParam)]
@@ -380,6 +380,7 @@ mod tests {
     #[test]
     fn retained_form_validates_steps_and_releases_the_world() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.add_plugins(MinimalPlugins)
             .init_resource::<State>()
             .insert_non_send(Sandbox::default())

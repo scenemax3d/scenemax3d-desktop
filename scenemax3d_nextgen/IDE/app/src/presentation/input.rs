@@ -2,6 +2,7 @@ use super::components::{Editor, Field};
 use crate::application::{Command, CommandQueue, EditCommand, Session};
 use bevy::{prelude::*, text::EditableText, window::WindowCloseRequested};
 use scenemax_ide_core::DocumentId;
+use scenemax_ui_input::{Button, Interaction};
 use std::path::PathBuf;
 
 #[derive(Component, Clone)]

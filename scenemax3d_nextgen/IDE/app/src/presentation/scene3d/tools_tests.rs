@@ -1,5 +1,6 @@
 use super::*;
 use scenemax_ide_core::{Document, Project};
+use scenemax_ui_input::Interaction;
 #[test]
 fn toolbar_add_and_delete_use_document_history_and_select_inserted_entry() {
     let dir = tempfile::tempdir().unwrap();

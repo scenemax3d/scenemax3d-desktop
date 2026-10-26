@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.87.0"
 name = "wgpu"
-version = "29.0.4"
+version = "30.0.0"
 authors = ["gfx-rs developers"]
 build = "build.rs"
 exclude = ["Cargo.lock"]
@@ -59,7 +59,9 @@ default = [
     "wgsl",
     "webgpu",
 ]
+drm = ["wgpu-core?/drm"]
 dx12 = ["wgpu-core?/dx12"]
+exhaust = ["wgpu-types/exhaust"]
 fragile-send-sync-non-atomic-wasm = [
     "wgpu-core?/fragile-send-sync-non-atomic-wasm",
     "wgpu-types/fragile-send-sync-non-atomic-wasm",
@@ -102,6 +104,7 @@ strict_asserts = [
 trace = [
     "serde",
     "wgpu-core?/trace",
+    "wgpu-types/trace",
 ]
 vulkan = ["wgpu-core?/vulkan"]
 vulkan-portability = ["wgpu-core?/vulkan-portability"]
@@ -123,6 +126,7 @@ webgpu = [
     "dep:wasm-bindgen-futures",
     "web-sys/Document",
     "web-sys/Event",
+    "web-sys/MediaQueryList",
     "web-sys/Navigator",
     "web-sys/NodeList",
     "web-sys/Window",
@@ -156,7 +160,7 @@ version = "1"
 version = "0.2.10"
 
 [dependencies.hashbrown]
-version = "0.16"
+version = "0.17"
 features = [
     "default-hasher",
     "inline-more",
@@ -167,7 +171,7 @@ default-features = false
 version = "0.4.29"
 
 [dependencies.naga]
-version = "29.0.1"
+version = "30.0.0"
 features = ["termcolor"]
 optional = true
 
@@ -188,11 +192,11 @@ default-features = false
 version = "1.1"
 
 [dependencies.wgpu-core]
-version = "29.0.1"
+version = "30.0.0"
 optional = true
 
 [dependencies.wgpu-types]
-version = "29.0.1"
+version = "30.0.0"
 default-features = false
 
 [dev-dependencies.bytemuck]
@@ -234,18 +238,18 @@ optional = true
 default-features = false
 
 [target.'cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))'.dependencies.wgpu-core]
-version = "29.0.1"
+version = "30.0.0"
 optional = true
 
 [target.'cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))'.dependencies.wgpu-hal]
-version = "29.0.1"
+version = "30.0.0"
 optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.smallvec]
 version = "1.14"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.wgpu-core]
-version = "29.0.1"
+version = "30.0.0"
 features = [
     "renderdoc",
     "wgsl",
@@ -253,7 +257,7 @@ features = [
 ]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.wgpu-hal]
-version = "29.0.1"
+version = "30.0.0"
 
 [target.'cfg(not(target_has_atomic = "64"))'.dependencies.portable-atomic]
 version = "1.10"
@@ -262,7 +266,13 @@ version = "1.10"
 version = "1.14"
 
 [target.'cfg(target_os = "emscripten")'.dependencies.wgpu-core]
-version = "29.0.1"
+version = "30.0.0"
 
 [target.'cfg(target_os = "emscripten")'.dependencies.wgpu-hal]
-version = "29.0.1"
+version = "30.0.0"
+
+[lints.clippy]
+ref_as_ptr = "warn"
+
+[lints.rust]
+missing_debug_implementations = "warn"

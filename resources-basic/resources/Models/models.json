@@ -21,7 +21,7 @@
   {
     "scaleX": 0.03,
     "scaleY": 0.03,
-    "path": "Models/Ninja/Ninja.mesh.j3o",
+    "path": "Models/Ninja/Ninja.glb",
     "transZ": 0,
     "transX": 0,
     "transY": -4,

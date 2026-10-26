@@ -72,7 +72,7 @@ fn control(c: &mut Commands, p: Entity, h: Entity, title: &str, action: Action) 
         scenemax_ide_ui::icons::button(c, p, tip, &paths, Tool)
     };
     c.entity(e)
-        .observe(move |mut e: On<Pointer<Click>>, mut s: ResMut<State>| {
+        .observe(move |mut e: On<PointerClick>, mut s: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 s.actions.push((h, action.clone()));
@@ -141,7 +141,7 @@ fn section(c: &mut Commands, p: Entity, title: &str, expanded: bool) -> Entity {
     );
     let title = title.to_owned();
     c.entity(header).observe(
-        move |mut e: On<Pointer<Click>>,
+        move |mut e: On<PointerClick>,
               mut nodes: Query<&mut Node>,
               children: Query<&Children>,
               mut texts: Query<&mut Text>| {

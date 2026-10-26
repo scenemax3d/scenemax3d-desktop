@@ -9,6 +9,7 @@ use bevy::{
     ui::RelativeCursorPosition,
     window::PrimaryWindow,
 };
+use scenemax_ui_input::{Button, Interaction};
 use serde::{Deserialize, Serialize};
 use web_time::Instant;
 
@@ -218,6 +219,7 @@ pub fn run_bevy_ambient_light_designer(launch: BevyAmbientLightDesignerLaunch) {
     let state = AmbientLightDesignerState::load(launch, asset_root);
 
     let mut app = App::new();
+    app.add_plugins(scenemax_ui_input::UiInputPlugin);
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
         let source_path = builtin_asset_root.to_string_lossy().to_string();
         app.register_asset_source(
@@ -385,6 +387,7 @@ fn setup_ambient_light_designer(
 
     commands.spawn((
         Camera3d::default(),
+        bevy::pbr::ScreenSpaceTransmission::default(),
         AmbientLightDesignerCamera,
         ambient_designer_camera_transform(&state),
     ));

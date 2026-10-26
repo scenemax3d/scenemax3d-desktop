@@ -1,18 +1,18 @@
-#import bevy_pbr::forward_io::VertexOutput
-@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> main_color:vec4<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(1) var<uniform> parameters:vec4<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(2) var<uniform> motion:vec4<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(3) var source_texture:texture_2d<f32>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(4) var source_sampler:sampler;
-@group(#{MATERIAL_BIND_GROUP}) @binding(5) var<uniform> local_from_world:mat4x4<f32>;
+import bevy_pbr::render::forward_io::VertexOutput;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> main_color:vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(1) var<uniform> parameters:vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(2) var<uniform> motion:vec4<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(3) var source_texture:texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(4) var source_sampler:sampler;
+@group(constants::MATERIAL_BIND_GROUP) @binding(5) var<uniform> local_from_world:mat4x4<f32>;
 fn enabled(bit:u32)->bool {return (u32(motion.z)&bit)!=0u;}
 fn noise(p:vec2<f32>)->f32 {return fract(sin(dot(p,vec2<f32>(127.1,311.7)))*43758.5453123);}
 @fragment
 fn fragment(in:VertexOutput)->@location(0) vec4<f32> {
     var uv=vec2<f32>(0.0);
-#ifdef VERTEX_UVS_A
+@if(VERTEX_UVS_A) {
     uv=in.uv;
-#endif
+}
     let time=motion.y;
     if enabled(32u) {uv+=time*motion.x*vec2<f32>(0.08,0.03);}
     if enabled(128u) {
@@ -20,9 +20,9 @@ fn fragment(in:VertexOutput)->@location(0) vec4<f32> {
         uv.x+=cos(uv.y*10.0+time*1.4*max(motion.x,0.15))*0.02;
     }
     var base=textureSample(source_texture,source_sampler,fract(uv));
-#ifdef VERTEX_COLORS
+@if(VERTEX_COLORS) {
     base*=in.color;
-#endif
+}
     if enabled(1u) {base=vec4<f32>(base.rgb*main_color.rgb,base.a);}
     base.a*=main_color.a;
     var pulse=1.0;

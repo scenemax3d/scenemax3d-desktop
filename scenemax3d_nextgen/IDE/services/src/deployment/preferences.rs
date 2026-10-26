@@ -61,6 +61,7 @@ mod tests {
         let mut settings = Settings::default();
         settings.itch_page = "https://example.itch.io/sample".into();
         settings.butler = "C:/tools with spaces/butler.exe".into();
+        settings.upload = true;
         writer.save(root.path().into(), settings.clone()).unwrap();
         settings.web_loading.footer = "Custom credit".into();
         writer.save(root.path().into(), settings).unwrap();
@@ -69,5 +70,14 @@ mod tests {
         assert_eq!(saved.itch_page, "https://example.itch.io/sample");
         assert_eq!(saved.butler, "C:/tools with spaces/butler.exe");
         assert_eq!(saved.web_loading.footer, "Custom credit");
+        assert!(!saved.upload);
+        let path = root.path().join(".scenemax-studio/deployment.json");
+        let mut json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(json.get("upload").is_none());
+        // Older versions persisted this checkbox; ignore that previous opt-in.
+        json["upload"] = true.into();
+        std::fs::write(&path, serde_json::to_vec(&json).unwrap()).unwrap();
+        assert!(!files::load_settings(root.path()).unwrap().upload);
     }
 }

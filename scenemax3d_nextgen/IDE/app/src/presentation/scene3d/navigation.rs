@@ -1,5 +1,6 @@
 //! Retained orientation widget and editor camera modes.
 use super::*;
+use scenemax_ui_input::Button;
 #[derive(Resource, Default)]
 pub(crate) struct Navigation {
     pub(super) pan: bool,
@@ -31,7 +32,7 @@ pub(crate) fn spawn(commands: &mut Commands, parent: Entity, camera: Entity) {
         ))
         .id();
     commands.entity(root).observe(
-        move |mut event: On<Pointer<Drag>>, mut cameras: Query<(&mut Orbit, &mut Transform)>| {
+        move |mut event: On<PointerDrag>, mut cameras: Query<(&mut Orbit, &mut Transform)>| {
             event.propagate(false);
             if let Ok((mut orbit, mut transform)) = cameras.get_mut(camera) {
                 orbit.yaw -= event.delta.x * 0.012;
@@ -87,7 +88,7 @@ pub(crate) fn spawn(commands: &mut Commands, parent: Entity, camera: Entity) {
                 commands.spawn((label(name, 11.), Pickable::IGNORE, ChildOf(dot)));
             }
             commands.entity(dot).observe(
-                move |mut event: On<Pointer<Click>>,
+                move |mut event: On<PointerClick>,
                       mut cameras: Query<(&mut Orbit, &mut Transform)>| {
                     event.propagate(false);
                     if let Ok((mut orbit, mut transform)) = cameras.get_mut(camera) {

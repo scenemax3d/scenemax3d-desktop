@@ -4,9 +4,9 @@ use super::*;
 pub(crate) struct Request(Option<(Entity, Vec2)>);
 pub(super) fn observe(commands: &mut Commands, viewport: Entity) {
     commands.entity(viewport).observe(
-        move |event: On<Pointer<Press>>, mut request: ResMut<Request>| {
+        move |event: On<PointerPress>, mut request: ResMut<Request>| {
             if event.button == PointerButton::Primary {
-                request.0 = Some((viewport, event.pointer_location.position));
+                request.0 = Some((viewport, event.pointer.position));
             }
         },
     );

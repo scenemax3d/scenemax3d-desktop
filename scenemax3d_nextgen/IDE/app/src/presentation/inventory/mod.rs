@@ -170,7 +170,7 @@ pub(crate) fn menu_item(commands: &mut Commands, parent: Entity, title: &str) ->
     let row = scenemax_ide_ui::button(commands, parent, title, Name::new("Project Inventory"));
     commands
         .entity(row)
-        .observe(|mut e: On<Pointer<Press>>, mut state: ResMut<State>| {
+        .observe(|mut e: On<PointerPress>, mut state: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 state.actions.push(Action::Open);

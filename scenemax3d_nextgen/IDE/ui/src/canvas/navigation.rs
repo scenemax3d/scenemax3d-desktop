@@ -48,7 +48,7 @@ pub fn install_navigation(
             }),
         );
         commands.entity(button).observe(
-            move |event: On<Pointer<Click>>,
+            move |event: On<PointerClick>,
                   mut views: Query<&mut View>,
                   canvases: Query<&Canvas>,
                   nodes: Query<&ComputedNode>| {
@@ -86,7 +86,7 @@ pub fn install_navigation(
         ChildOf(toolbar),
     ));
     commands.entity(viewport).observe(
-        move |mut event: On<Pointer<Scroll>>,
+        move |mut event: On<PointerScroll>,
               mut views: Query<&mut View>,
               canvases: Query<&Canvas>,
               nodes: Query<(&ComputedNode, &UiGlobalTransform)>,
@@ -110,9 +110,9 @@ pub fn install_navigation(
                 let Some(inverse) = transform.try_inverse() else {
                     return;
                 };
-                let cursor = inverse.transform_point2(
-                    event.pointer_location.position / node.inverse_scale_factor(),
-                ) * node.inverse_scale_factor();
+                let cursor = inverse
+                    .transform_point2(event.pointer.position / node.inverse_scale_factor())
+                    * node.inverse_scale_factor();
                 let factor = (event.y * if pixels { 0.003 } else { 0.16 })
                     .clamp(-2., 2.)
                     .exp();
@@ -128,7 +128,7 @@ pub fn install_navigation(
         },
     );
     commands.entity(viewport).observe(
-        move |mut event: On<Pointer<Drag>>, mut views: Query<&mut View>| {
+        move |mut event: On<PointerDrag>, mut views: Query<&mut View>| {
             if !matches!(
                 event.button,
                 PointerButton::Middle | PointerButton::Secondary
@@ -216,56 +216,44 @@ mod tests {
             },
             position: Vec2::ZERO,
         };
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            location.clone(),
-            Scroll {
-                hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
-                phase: bevy::input::touch::TouchPhase::Moved,
-                unit: bevy::input::mouse::MouseScrollUnit::Line,
-                x: 0.,
-                y: 1.,
-            },
-            child,
-        ));
+        world.trigger(PointerScroll {
+            pointer: Pointer::new(PointerId::Mouse, location.clone()),
+            entity: child,
+            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
+            phase: bevy::input::touch::TouchPhase::Moved,
+            unit: bevy::input::mouse::MouseScrollUnit::Line,
+            x: 0.,
+            y: 1.,
+        });
         assert!(world.get::<View>(owner).unwrap().zoom.unwrap() > 0.5);
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            location.clone(),
-            Drag {
-                button: PointerButton::Secondary,
-                distance: Vec2::new(40., 20.),
-                delta: Vec2::new(40., 20.),
-            },
-            child,
-        ));
+        world.trigger(PointerDrag {
+            pointer: Pointer::new(PointerId::Mouse, location.clone()),
+            entity: child,
+            button: PointerButton::Secondary,
+            distance: Vec2::new(40., 20.),
+            delta: Vec2::new(40., 20.),
+        });
         assert_eq!(world.get::<View>(owner).unwrap().pan, Vec2::new(40., 20.));
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            location.clone(),
-            Drag {
-                button: PointerButton::Primary,
-                distance: Vec2::splat(100.),
-                delta: Vec2::splat(100.),
-            },
-            child,
-        ));
+        world.trigger(PointerDrag {
+            pointer: Pointer::new(PointerId::Mouse, location.clone()),
+            entity: child,
+            button: PointerButton::Primary,
+            distance: Vec2::splat(100.),
+            delta: Vec2::splat(100.),
+        });
         assert_eq!(world.get::<View>(owner).unwrap().pan, Vec2::new(40., 20.));
         world
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::ShiftLeft);
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            location,
-            Scroll {
-                hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
-                phase: bevy::input::touch::TouchPhase::Moved,
-                unit: bevy::input::mouse::MouseScrollUnit::Pixel,
-                x: -4.,
-                y: 12.,
-            },
-            child,
-        ));
+        world.trigger(PointerScroll {
+            pointer: Pointer::new(PointerId::Mouse, location),
+            entity: child,
+            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
+            phase: bevy::input::touch::TouchPhase::Moved,
+            unit: bevy::input::mouse::MouseScrollUnit::Pixel,
+            x: -4.,
+            y: 12.,
+        });
         assert_eq!(world.get::<View>(owner).unwrap().pan, Vec2::new(36., 32.));
         world.run_system_once(super::super::fit).unwrap();
         assert_eq!(

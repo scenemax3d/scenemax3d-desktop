@@ -2,6 +2,7 @@
 use crate::application::mcp::State;
 use bevy::prelude::*;
 use scenemax_ide_ui::{button, label, theme::*};
+use scenemax_ui_input::{Button, Interaction};
 #[derive(Component)]
 pub(crate) struct Monitor;
 #[derive(Component)]
@@ -63,7 +64,7 @@ pub(crate) fn update(
                 ChildOf(row),
             ))
             .observe(
-                |_: On<Pointer<Click>>,
+                |_: On<PointerClick>,
                  mut settings: ResMut<crate::application::multiplayer::State>| {
                     if !settings.open {
                         settings

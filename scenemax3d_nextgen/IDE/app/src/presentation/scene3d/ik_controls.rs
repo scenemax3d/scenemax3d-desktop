@@ -604,7 +604,7 @@ pub(super) fn controls(commands: &mut Commands, parent: Entity, layer: usize) {
         let e = button(commands, row, caption, Name::new(caption));
         commands
             .entity(e)
-            .observe(move |_: On<Pointer<Click>>, mut state: ResMut<State>| {
+            .observe(move |_: On<PointerClick>, mut state: ResMut<State>| {
                 state.requested = Some(Handle { layer, kind });
             });
     }
@@ -616,13 +616,13 @@ pub(super) fn controls(commands: &mut Commands, parent: Entity, layer: usize) {
     );
     commands
         .entity(exit)
-        .observe(|_: On<Pointer<Click>>, mut state: ResMut<State>| {
+        .observe(|_: On<PointerClick>, mut state: ResMut<State>| {
             state.exit = true;
         });
     let e = button(commands, row, "Reset pose", Name::new("Reset IK pose"));
     commands
         .entity(e)
-        .observe(move |_: On<Pointer<Click>>, mut state: ResMut<State>| {
+        .observe(move |_: On<PointerClick>, mut state: ResMut<State>| {
             state.reset = Some(layer);
         });
 }

@@ -293,7 +293,7 @@ pub(super) fn layout(
                     &mut font_cx,
                     &mut layout_cx,
                     Vec2::splat(1000.),
-                    16.,
+                    bevy::text::RemSize(16.),
                 )
                 .is_err()
             {

@@ -9,6 +9,7 @@ use bevy::{
     ui::RelativeCursorPosition,
     window::PrimaryWindow,
 };
+use scenemax_ui_input::{Button, Interaction};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
@@ -151,6 +152,7 @@ pub fn run_bevy_retarget_designer(launch: BevyRetargetDesignerLaunch) {
     let asset_file_path = catalog.asset_root.to_string_lossy().to_string();
     let state = BevyRetargetDesignerState::load(launch, &catalog);
     App::new()
+        .add_plugins(scenemax_ui_input::UiInputPlugin)
         .insert_resource(ClearColor(Color::srgb(0.025, 0.035, 0.05)))
         .insert_resource(SceneMaxRuntimeAssets::default())
         .insert_resource(SceneMaxAnimationDurations::default())
@@ -376,6 +378,7 @@ fn setup_bevy_retarget_designer(
 ) {
     commands.spawn((
         Camera3d::default(),
+        bevy::pbr::ScreenSpaceTransmission::default(),
         retarget_camera_transform(state.camera_distance, state.preview_target),
         RetargetDesignerCamera,
         TransformGizmoCamera,

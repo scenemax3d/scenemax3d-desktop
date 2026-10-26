@@ -9,7 +9,7 @@ fn label(c: &mut Commands, parent: Entity, text: impl Into<String>, size: f32) -
 fn button(c: &mut Commands, parent: Entity, title: &str, action: Action) -> Entity {
     let e = scenemax_ide_ui::button(c, parent, title, Name::new(title.to_owned()));
     c.entity(e)
-        .observe(move |mut e: On<Pointer<Click>>, mut s: ResMut<State>| {
+        .observe(move |mut e: On<PointerClick>, mut s: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 s.actions.push(action.clone());
@@ -58,19 +58,8 @@ fn choice(c: &mut Commands, parent: Entity, title: &str, f: Field, value: &str, 
 }
 fn numeric(c: &mut Commands, parent: Entity, title: &str, f: Field, value: i32) {
     let p = field_row(c, parent, title);
-    let r = row(c, p);
-    let holder = node(
-        c,
-        r,
-        Node {
-            flex_grow: 1.,
-            min_width: px(20.),
-            ..default()
-        },
-    );
-    property::input(c, holder, f, &value.to_string());
-    button(c, r, "−", Action::Step(f, -1));
-    button(c, r, "+", Action::Step(f, 1));
+    let (min, max) = range(f);
+    scenemax_ide_ui::number::input(c, p, f, &value.to_string(), min.into(), max.into(), 1.);
 }
 fn modal(c: &mut Commands, parent: Option<Entity>, z: i32) -> (Entity, Entity) {
     let host = c
@@ -184,31 +173,7 @@ pub(super) fn shell(c: &mut Commands, s: &mut State) {
     .enumerate()
     {
         let p = field_row(c, form, title);
-        let r = row(c, p);
-        let swatch = button(c, r, "   ", Action::Color(index));
-        let v = o.colors[index];
-        c.entity(swatch).insert((
-            Swatch(index),
-            BackgroundColor(Color::srgba_u8(v[0], v[1], v[2], v[3])),
-            Node {
-                width: px(40.),
-                height: px(26.),
-                border: px(1.).all(),
-                flex_shrink: 0.,
-                ..default()
-            },
-            BorderColor::all(EDGE),
-        ));
-        let holder = node(
-            c,
-            r,
-            Node {
-                flex_grow: 1.,
-                min_width: px(60.),
-                ..default()
-            },
-        );
-        property::input(c, holder, Field::Color(index), &hex(v));
+        scenemax_ide_ui::color::input(c, p, Field::Color(index), &hex(o.colors[index]));
     }
     input(c, form, "Preview Text", Field::Preview, &o.preview);
     choice(
@@ -229,6 +194,7 @@ pub(super) fn shell(c: &mut Commands, s: &mut State) {
             overflow: Overflow::scroll_y(),
             ..default()
         },
+        bevy::ui_widgets::TextInput,
         EditableText {
             max_characters: Some(4096),
             ..EditableText::new(&o.characters)
@@ -304,56 +270,6 @@ pub(super) fn shell(c: &mut Commands, s: &mut State) {
     button(c, footer, "Refresh Preview", Action::Refresh);
     button(c, footer, "Export To Project", Action::Export);
     button(c, footer, "Close", Action::Close);
-}
-pub(super) fn picker(c: &mut Commands, s: &mut State) {
-    if let Some(e) = s.picker.take() {
-        c.entity(e).try_despawn();
-    }
-    let (host, panel) = modal(c, s.host, 470);
-    s.picker = Some(host);
-    let index = s.color.unwrap_or(0);
-    label(
-        c,
-        panel,
-        [
-            "Fill Color",
-            "Gradient Color",
-            "Outline Color",
-            "Shadow Color",
-        ][index],
-        19.,
-    );
-    let swatch = node(
-        c,
-        panel,
-        Node {
-            height: px(60.),
-            ..default()
-        },
-    );
-    c.entity(swatch)
-        .insert((PickerSwatch, BackgroundColor(Color::WHITE)));
-    for (i, title) in ["Red", "Green", "Blue", "Alpha"].iter().enumerate() {
-        let p = field_row(c, panel, title);
-        scenemax_ide_ui::number::input(
-            c,
-            p,
-            Field::Channel(i),
-            &s.draft_color[i].to_string(),
-            0.,
-            255.,
-            1.,
-        );
-    }
-    label(
-        c,
-        panel,
-        "Drag the channels or enter exact 0–255 values. Hex values can also be entered in the main form.",
-        12.,
-    );
-    let r = row(c, panel);
-    button(c, r, "Cancel", Action::CancelColor);
-    button(c, r, "Use Color", Action::AcceptColor);
 }
 pub(super) fn notice(c: &mut Commands, s: &mut State, title: &str, message: &str) {
     if let Some(e) = s.notice.take() {

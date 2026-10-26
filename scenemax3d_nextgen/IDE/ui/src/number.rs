@@ -1,19 +1,11 @@
-//! Numeric property inputs with retained pointer sliders and precise text entry.
-use crate::{property, theme::*};
-use bevy::{
-    prelude::*,
-    text::{EditableText, TextEdit},
-};
+//! Bevy numeric controls with SceneMax's existing editable-field bindings.
+use bevy::{feathers::controls::*, prelude::*, text::EditableText, ui_widgets::ValueChange};
+
 #[derive(Component)]
-pub(crate) struct Slider {
-    input: Entity,
-    min: f64,
-    max: f64,
-    step: f64,
-}
-#[derive(Component)]
-pub(crate) struct Thumb(Entity);
-/// Numeric editor and slider. Typed values remain unrestricted by the slider span.
+pub(crate) struct NumberEditor(Entity);
+
+/// Draggable numeric input. Dragging uses the soft range; typed values remain unrestricted.
+/// Returns the control container; the caller's marker is attached to its editable text child.
 pub fn input<T: Component>(
     commands: &mut Commands,
     parent: Entity,
@@ -23,129 +15,67 @@ pub fn input<T: Component>(
     max: f64,
     step: f64,
 ) -> Entity {
-    let input = property::input(commands, parent, marker, value);
-    let slider = commands
-        .spawn((
-            Slider {
-                input,
-                min,
-                max,
-                step,
-            },
-            Node {
-                width: percent(100.),
-                height: px(10.),
-                flex_shrink: 0.,
-                margin: UiRect::bottom(px(3.)),
-                ..default()
-            },
-            BackgroundColor(PANEL),
-            ChildOf(parent),
-        ))
+    let initial = value.parse::<f64>().unwrap_or(0.);
+    let precision = step
+        .to_string()
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len() as i32);
+    let control = commands
+        .spawn_scene(bsn! {
+            @FeathersNumberInput
+            NumberInputValue::F64(initial)
+            SoftLimit::f64(min..=max)
+            NumberInputStep(step)
+            NumberInputPrecision(precision)
+            Node { width: percent(100.), min_width: px(0.), height: px(26.), flex_shrink: 0. }
+            ChildOf(parent)
+        })
+        .observe(|event: On<ValueChange<f64>>, mut commands: Commands| {
+            if event.value.is_finite() {
+                commands
+                    .entity(event.source)
+                    .insert(NumberInputValue::F64(event.value));
+            }
+        })
         .id();
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            top: px(4.),
-            width: percent(100.),
-            height: px(2.),
-            ..default()
-        },
-        BackgroundColor(EDGE),
-        Pickable::IGNORE,
-        ChildOf(slider),
-    ));
-    commands.spawn((
-        Thumb(slider),
-        Node {
-            position_type: PositionType::Absolute,
-            top: px(1.),
-            width: px(6.),
-            height: px(8.),
-            border_radius: BorderRadius::all(px(3.)),
-            ..default()
-        },
-        BackgroundColor(Color::srgb(0.45, 0.6, 0.82)),
-        Pickable::IGNORE,
-        ChildOf(slider),
-    ));
-    commands.entity(slider).observe(
-        |mut event: On<Pointer<Press>>,
-         sliders: Query<(&Slider, &ComputedNode, &UiGlobalTransform)>,
-         mut inputs: Query<&mut EditableText>| {
-            event.propagate(false);
-            set(
-                event.entity,
-                event.pointer_location.position,
-                &sliders,
-                &mut inputs,
-            );
-        },
-    );
-    commands.entity(slider).observe(
-        |mut event: On<Pointer<Drag>>,
-         sliders: Query<(&Slider, &ComputedNode, &UiGlobalTransform)>,
-         mut inputs: Query<&mut EditableText>| {
-            event.propagate(false);
-            set(
-                event.entity,
-                event.pointer_location.position,
-                &sliders,
-                &mut inputs,
-            );
-        },
-    );
-    input
+    let value = value.to_owned();
+    commands.queue(move |world: &mut World| {
+        let editor = world.get::<Children>(control).and_then(|children| {
+            children
+                .iter()
+                .find(|child| world.get::<EditableText>(*child).is_some())
+        });
+        if let Some(editor) = editor {
+            world.entity_mut(editor).insert((
+                marker,
+                NumberEditor(control),
+                crate::theme::TEXT_CURSOR_STYLE,
+            ));
+            if let Some(mut text) = world.get_mut::<EditableText>(editor) {
+                text.pending_edits.clear();
+                text.editor_mut().set_text(&value);
+            }
+        }
+    });
+    control
 }
-fn set(
-    entity: Entity,
-    position: Vec2,
-    sliders: &Query<(&Slider, &ComputedNode, &UiGlobalTransform)>,
-    inputs: &mut Query<&mut EditableText>,
-) {
-    let Ok((slider, node, ui)) = sliders.get(entity) else {
-        return;
-    };
-    let Some(inverse) = ui.try_inverse() else {
-        return;
-    };
-    let fraction = (inverse
-        .transform_point2(position / node.inverse_scale_factor())
-        .x
-        / node.size().x
-        + 0.5)
-        .clamp(0., 1.) as f64;
-    let value =
-        ((slider.min + (slider.max - slider.min) * fraction) / slider.step).round() * slider.step;
-    if let Ok(mut input) = inputs.get_mut(slider.input) {
-        input.queue_edit(TextEdit::SelectAll);
-        input.queue_edit(TextEdit::Insert(
-            format!("{value:.4}")
-                .trim_end_matches('0')
-                .trim_end_matches('.')
-                .into(),
-        ));
-    }
-}
+
+// Designers also update text after undo, preview scrubbing and model changes.
+// Keep numeric state in sync so the next drag starts at the visible value.
 pub(crate) fn update(
-    sliders: Query<&Slider>,
-    inputs: Query<&EditableText>,
-    mut thumbs: Query<(&Thumb, &mut Node)>,
+    mut commands: Commands,
+    editors: Query<(&NumberEditor, &EditableText), Changed<EditableText>>,
+    values: Query<&NumberInputValue>,
 ) {
-    for (thumb, mut node) in &mut thumbs {
-        let Ok(slider) = sliders.get(thumb.0) else {
-            continue;
-        };
-        let Ok(input) = inputs.get(slider.input) else {
-            continue;
-        };
-        let Ok(value) = input.value().to_string().parse::<f64>() else {
-            continue;
-        };
-        let left =
-            percent(((value - slider.min) / (slider.max - slider.min)).clamp(0., 1.) as f32 * 96.);
-        if node.left != left {
-            node.left = left;
+    for (editor, text) in &editors {
+        if let Ok(value) = text.value().to_string().parse::<f64>()
+            && value.is_finite()
+            && let Ok(NumberInputValue::F64(old)) = values.get(editor.0)
+            && *old != value
+        {
+            commands
+                .entity(editor.0)
+                .insert(NumberInputValue::F64(value));
         }
     }
 }

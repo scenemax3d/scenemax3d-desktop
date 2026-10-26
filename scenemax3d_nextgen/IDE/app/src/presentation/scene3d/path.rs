@@ -19,7 +19,7 @@ impl Drawing {
 pub(crate) struct Draft;
 pub(super) fn observe(commands: &mut Commands, viewport: Entity, camera: Entity) {
     commands.entity(viewport).observe(
-        move |event: On<Pointer<Click>>,
+        move |event: On<PointerClick>,
               mut drawing: ResMut<Drawing>,
               ports: Query<(&ComputedNode, &UiGlobalTransform)>,
               cameras: Query<(&Transform, &Projection, &Orbit)>| {
@@ -35,8 +35,7 @@ pub(super) fn observe(commands: &mut Commands, viewport: Entity, camera: Entity)
             let Some(inverse) = ui.try_inverse() else {
                 return;
             };
-            let uv = inverse
-                .transform_point2(event.pointer_location.position / node.inverse_scale_factor())
+            let uv = inverse.transform_point2(event.pointer.position / node.inverse_scale_factor())
                 / node.size()
                 + Vec2::splat(0.5);
             let Projection::Perspective(p) = projection else {

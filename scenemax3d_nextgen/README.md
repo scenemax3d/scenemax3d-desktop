@@ -24,7 +24,7 @@ Creating browser games? Follow the [Web export setup guide](IDE/WEB_EXPORT.md) f
 
 ## Build and run
 
-Rust **1.97.1** is pinned in `rust-toolchain.toml`. Rustup installs the pinned compiler, Rustfmt and Clippy when needed. Windows builds use the MSVC target and the Rust-provided LLD linker. Normal builds and both Rust executables require no Java. Explicit ANTLR regeneration is still a temporary maintainer dependency, tracked for removal.
+Bevy **0.20.0** is pinned in the workspace manifest, with matching Avian 0.8 and Tnua 0.33 dependencies. Rust **1.97.1** is pinned in `rust-toolchain.toml`. Rustup installs the pinned compiler, Rustfmt and Clippy when needed. Windows builds use the MSVC target and the Rust-provided LLD linker. Normal builds and both Rust executables require no Java. Explicit ANTLR regeneration is still a temporary maintainer dependency, tracked for removal.
 
 From this directory:
 

@@ -5,7 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-bevy = { workspace = true, features = ["ui", "default_font", "system_font_discovery", "system_clipboard", "png"] }
+scenemax_ui_input = { path = "../../Common/ui_input" }
+bevy = { workspace = true, features = ["ui", "bevy_feathers", "default_font", "system_font_discovery", "system_clipboard", "png"] }
 
 [lints]
 workspace = true

@@ -1,3 +1,4 @@
+use scenemax_ui_input::{Button, Interaction};
 use std::path::{Path, PathBuf};
 
 use bevy::{
@@ -103,6 +104,7 @@ pub fn run_bevy_skybox_designer(launch: BevySkyboxDesignerLaunch) {
     let asset_file_path = asset_root.to_string_lossy().to_string();
 
     let mut app = App::new();
+    app.add_plugins(scenemax_ui_input::UiInputPlugin);
     if let Some(builtin_asset_root) = builtin_asset_root.as_ref() {
         let builtin_source_path = builtin_asset_root.to_string_lossy().to_string();
         app.register_asset_source(
@@ -167,6 +169,7 @@ fn setup_skybox_designer(
 ) {
     commands.spawn((
         Camera3d::default(),
+        bevy::pbr::ScreenSpaceTransmission::default(),
         Transform::from_xyz(-4.8, 3.0, 6.2).looking_at(Vec3::ZERO, Vec3::Y),
     ));
     commands.spawn((

@@ -10,6 +10,7 @@ use scenemax_ide_ui::{
     label,
     theme::*,
 };
+use scenemax_ui_input::Interaction;
 
 #[derive(Component, Default)]
 pub(crate) struct Designer {

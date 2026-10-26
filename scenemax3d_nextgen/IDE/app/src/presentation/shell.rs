@@ -123,6 +123,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
     commands.spawn((
         ProjectPath,
         Field::Project,
+        bevy::ui_widgets::TextInput,
         EditableText::new(display_path(session.workspace.project().root())),
         Node {
             height: px(34.),
@@ -132,7 +133,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             ..default()
         },
         TextFont {
-            font: bevy::text::FontSource::SansSerif,
+            font: bevy::text::FontSource::sans_serif(),
             font_size: FontSize::Px(14.),
             ..default()
         },
@@ -312,7 +313,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         ))
         .id();
     commands.entity(browser).observe(
-        move |mut event: On<Pointer<Scroll>>,
+        move |mut event: On<PointerScroll>,
               mut query: Query<(&mut ScrollPosition, &ComputedNode)>| {
             // Pointer events bubble from labels/rows; scroll the viewport, not the hit child.
             if let Ok((mut scroll, node)) = query.get_mut(browser) {
@@ -540,7 +541,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
     button(&mut commands, output.header, "Clear", Action::ClearConsole);
     let console = commands.spawn((ConsolePane, Node { width: percent(100.), height: percent(100.), overflow: Overflow::scroll_y(), padding: px(8.).all(), ..default() },
         BackgroundColor(PANEL), ScrollPosition::default(), ChildOf(output.content)))
-        .observe(|event: On<Pointer<Scroll>>, mut panes: Query<(&mut ScrollPosition, &ComputedNode), With<ConsolePane>>| {
+        .observe(|event: On<PointerScroll>, mut panes: Query<(&mut ScrollPosition, &ComputedNode), With<ConsolePane>>| {
             if let Ok((mut scroll, node)) = panes.get_mut(event.entity) {
                 let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line { 40. } else { 1. };
                 scroll.y = (scroll.y - event.y * scale).clamp(0., ((node.content_size().y-node.size().y)*node.inverse_scale_factor()).max(0.));
@@ -579,6 +580,7 @@ fn field(
     commands.spawn((
         kind,
         bevy::input_focus::tab_navigation::TabIndex(0),
+        bevy::ui_widgets::TextInput,
         EditableText::new(value),
         Node {
             width: px(width),
@@ -588,7 +590,7 @@ fn field(
             ..default()
         },
         TextFont {
-            font: bevy::text::FontSource::SansSerif,
+            font: bevy::text::FontSource::sans_serif(),
             font_size: FontSize::Px(13.),
             ..default()
         },

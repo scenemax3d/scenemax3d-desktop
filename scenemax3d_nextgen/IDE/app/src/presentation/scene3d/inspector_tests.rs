@@ -1,6 +1,7 @@
 use super::*;
 use bevy::{ecs::system::RunSystemOnce, text::EditableText};
 use scenemax_ide_core::{Document, Project};
+use scenemax_ui_input::Interaction;
 use serde_json::Value;
 
 #[test]
@@ -14,6 +15,8 @@ fn scene_selection_retains_viewport_camera_rows_and_repeated_selection_draft() {
     let mut session = Session::new(Project::new(dir.path().into(), vec![]));
     let id = session.workspace.open_document(doc).unwrap();
     let mut app = App::new();
+    crate::tests::ui_resources(&mut app);
+    app.init_resource::<bevy::picking::pointer::PointerMap>();
     let orbit = render::overview(&scene);
     let transform = orbit.transform();
     let camera = app
@@ -168,6 +171,8 @@ fn native_property_apply_is_undoable_and_stale_drafts_are_rejected() {
     let mut session = Session::new(Project::new(dir.path().into(), vec![]));
     let id = session.workspace.open_document(doc).unwrap();
     let mut app = App::new();
+    crate::tests::ui_resources(&mut app);
+    app.init_resource::<bevy::picking::pointer::PointerMap>();
     app.add_message::<crate::application::ViewChange>();
     app.insert_resource(session).insert_resource(SceneState {
         current: Some((id, revision)),
@@ -223,7 +228,13 @@ fn box_inspector_can_select_nested_material_studio_document() {
     .unwrap();
     let source = r#"{"entities":[{"type":"BOX","name":"surface","material":""}]}"#;
     let scene = scenemax_ide_services::scene3d::load(dir.path(), source).unwrap();
-    let mut world = World::new();
+    let mut app = App::new();
+    crate::tests::ui_resources(&mut app);
+    app.add_plugins((
+        bevy::feathers::controls::SelectPlugin,
+        bevy::ui_widgets::ListBoxPlugin,
+    ));
+    let world = app.world_mut();
     world.register_component::<Window>();
     world.insert_resource(SceneState {
         scene: Some(scene),
@@ -235,32 +246,40 @@ fn box_inspector_can_select_nested_material_studio_document() {
             inspector::build(&mut commands, parent, state.scene.as_ref().unwrap(), 0);
         })
         .unwrap();
-    let row = world
-        .query_filtered::<(Entity, &Choice), Without<inspector::Property>>()
-        .iter(&world)
-        .find(|(_, choice)| choice.0 == "custom_surface")
+    let caption = world
+        .query::<(Entity, &Text)>()
+        .iter(world)
+        .find(|(_, text)| text.0.contains("custom_surface"))
         .unwrap()
         .0;
-    world.trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target: bevy::camera::NormalizedRenderTarget::None {
-                width: 100,
-                height: 100,
+    let mut row = caption;
+    while world
+        .get::<bevy::feathers::controls::FeathersListRow>(row)
+        .is_none()
+    {
+        row = world.get::<ChildOf>(row).unwrap().parent();
+    }
+    world.trigger(PointerClick {
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: bevy::camera::NormalizedRenderTarget::None {
+                    width: 100,
+                    height: 100,
+                },
+                position: Vec2::ZERO,
             },
-            position: Vec2::ZERO,
-        },
-        Click {
-            button: PointerButton::Primary,
-            count: 1,
-            duration: std::time::Duration::ZERO,
-            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
-        },
-        row,
-    ));
+        ),
+        entity: row,
+        button: PointerButton::Primary,
+        count: 1,
+        duration: std::time::Duration::ZERO,
+        hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
+    });
+    world.flush();
     let (_, choice) = world
         .query::<(&inspector::Property, &Choice)>()
-        .iter(&world)
+        .iter(world)
         .find(|(p, _)| p.0 == "material")
         .unwrap();
     assert_eq!(choice.0, "custom_surface");
@@ -269,6 +288,8 @@ fn box_inspector_can_select_nested_material_studio_document() {
 #[test]
 fn material_save_and_manual_refresh_invalidate_in_flight_scene_catalog() {
     let mut app = App::new();
+    crate::tests::ui_resources(&mut app);
+    app.init_resource::<bevy::picking::pointer::PointerMap>();
     app.init_resource::<SceneState>()
         .add_message::<crate::application::ViewChange>()
         .add_systems(Update, refresh_materials);

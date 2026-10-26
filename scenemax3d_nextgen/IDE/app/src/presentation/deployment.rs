@@ -72,7 +72,7 @@ pub(crate) fn menu_item(c: &mut Commands, parent: Entity) {
         Name::new("Package & Deploy"),
     );
     c.entity(e).observe(
-        |mut event: On<Pointer<Press>>, mut state: ResMut<Deployment>| {
+        |mut event: On<PointerPress>, mut state: ResMut<Deployment>| {
             if event.button == PointerButton::Primary {
                 event.propagate(false);
                 state.actions.push_back(Action::Open);
@@ -83,7 +83,7 @@ pub(crate) fn menu_item(c: &mut Commands, parent: Entity) {
 fn action(c: &mut Commands, p: Entity, title: &str, action: Action) -> Entity {
     let e = button(c, p, title, Name::new(title.to_owned()));
     c.entity(e).observe(
-        move |mut event: On<Pointer<Click>>, mut state: ResMut<Deployment>| {
+        move |mut event: On<PointerClick>, mut state: ResMut<Deployment>| {
             if event.button == PointerButton::Primary {
                 event.propagate(false);
                 state.actions.push_back(action.clone());
@@ -271,12 +271,11 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         );
         property::checkbox(c, card, Toggle(Some(i)), p.target.label(), p.selected);
         let e = button(c, card, "Edit", Name::new("Configure platform"));
-        c.entity(e).observe(
-            move |mut event: On<Pointer<Click>>, mut view: ResMut<View>| {
+        c.entity(e)
+            .observe(move |mut event: On<PointerClick>, mut view: ResMut<View>| {
                 event.propagate(false);
                 view.tab = i;
-            },
-        );
+            });
     }
     for (i, p) in settings.platforms.iter().enumerate() {
         let detail = area(
@@ -354,7 +353,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
                 "Open Web build setup",
                 Name::new("Open Web build setup"),
             );
-            c.entity(setup).observe(|mut event: On<Pointer<Click>>, mut state: ResMut<crate::application::build_configuration::State>| {
+            c.entity(setup).observe(|mut event: On<PointerClick>, mut state: ResMut<crate::application::build_configuration::State>| {
                 if event.button == PointerButton::Primary {
                     event.propagate(false);
                     state.actions.push_back(crate::application::build_configuration::Action::Open);
@@ -446,7 +445,7 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         c,
         scroll,
         Toggle(None),
-        "Upload automatically after all builds succeed",
+        "Upload this release after all builds succeed",
         settings.upload,
     );
     field(
@@ -696,6 +695,7 @@ type VisualText<'w, 's> = Query<
 >;
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Visuals<'w, 's> {
+    toggles: Query<'w, 's, (Entity, &'static Toggle, &'static property::Checked)>,
     nodes: VisualNodes<'w, 's>,
     texts: VisualText<'w, 's>,
     fields: Query<'w, 's, (&'static Field, &'static mut EditableText)>,
@@ -828,6 +828,11 @@ pub(crate) fn refresh(
     if view.form_revision != state.form_revision
         && let Some(settings) = &state.settings
     {
+        for (entity, toggle, checked) in &visuals.toggles {
+            if toggle.0.is_none() && checked.0 != settings.upload {
+                property::set_checked(&mut c, entity, settings.upload);
+            }
+        }
         for (field, mut input) in &mut visuals.fields {
             let value = match *field {
                 Field::Output => Some(&settings.output),

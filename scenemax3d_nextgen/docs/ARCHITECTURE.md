@@ -28,6 +28,10 @@ Projector/app ──> Engine/runtime ──> Engine/*, Common/assets, Language/*
 
 `Tools/check_architecture.py` validates workspace locations and dependency direction from Cargo metadata, checks new IDE lint inheritance, and rejects infrastructure operations in the domain layer. Update its policy and this document together when adding a justified component.
 
+`Common/ui_input` owns shared generic button input state backed by Bevy picking and
+pressed components. IDE/ui, IDE/app, and Engine/runtime may consume it; it has no
+project, editor, script, or game-specific behavior.
+
 ## State, commands and jobs
 
 `EditorWorkspace` owns stable document IDs, buffers and active selection. IDs survive tab ordering and are not reused when switching projects. Documents expose revision-aware text updates; UI caret changes do not create source revisions. Internal newlines are LF, including pasted CRLF text.
@@ -100,7 +104,7 @@ Designer embedding must use the retained Bevy UI [hosting contract](DESIGNER_HOS
 
 ## Syntax presentation boundary
 
-`IDE/core/syntax.rs` owns SceneMax lexical categories and UTF-8 ranges, without Bevy or filesystem dependencies. The application maps categories to the Java editor palette. `IDE/ui/syntax.rs` accepts generic source/color spans and colors native Bevy UI glyphs during render extraction. It uses Parley's visual cluster order, caches mappings by component change ticks, rejects stale source/layout, preserves selection foreground overrides and colored emoji, and leaves IME preedit rendering to Bevy. No second text layer, engine dependency or Bevy/Parley fork is introduced. The adapter targets pinned Bevy 0.19; upgrades must revalidate cluster-to-glyph ordering with Unicode/ligatures and GPU captures. Full-buffer lexing/layout remains a known scaling limitation.
+`IDE/core/syntax.rs` owns SceneMax lexical categories and UTF-8 ranges, without Bevy or filesystem dependencies. The application maps categories to the Java editor palette. `IDE/ui/syntax.rs` accepts generic source/color spans and colors native Bevy UI glyphs during render extraction. It uses Parley's visual cluster order, caches mappings by component change ticks, rejects stale source/layout, preserves selection foreground overrides and colored emoji, and leaves IME preedit rendering to Bevy. No second text layer, engine dependency or Bevy/Parley fork is introduced. The adapter targets pinned Bevy 0.20; upgrades must revalidate cluster-to-glyph ordering with Unicode/ligatures and GPU captures. Full-buffer lexing/layout remains a known scaling limitation.
 
 
 ## Editing assistance

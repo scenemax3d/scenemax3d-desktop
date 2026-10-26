@@ -8,7 +8,7 @@ pub(super) struct Thumb {
 pub(super) fn control(c: &mut Commands, parent: Entity, title: &str, action: Action) -> Entity {
     let e = scenemax_ide_ui::button(c, parent, title, Name::new(title.to_owned()));
     c.entity(e).observe(
-        move |mut event: On<Pointer<Click>>,
+        move |mut event: On<PointerClick>,
               mut state: ResMut<State>,
               keys: Res<ButtonInput<KeyCode>>,
               mut focus: Option<ResMut<InputFocus>>| {

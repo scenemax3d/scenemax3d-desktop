@@ -97,7 +97,7 @@ pub(crate) fn menu_item(
     // Menu chrome closes on press, so dispatch before the release can lose its target.
     commands
         .entity(row)
-        .observe(move |mut e: On<Pointer<Press>>, mut state: ResMut<State>| {
+        .observe(move |mut e: On<PointerPress>, mut state: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 state.action = Some(action.clone());
@@ -111,7 +111,7 @@ fn control(commands: &mut Commands, parent: Entity, title: &str, action: Action)
 
     commands
         .entity(entity)
-        .observe(move |mut e: On<Pointer<Click>>, mut state: ResMut<State>| {
+        .observe(move |mut e: On<PointerClick>, mut state: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 state.action = Some(action.clone());
@@ -133,6 +133,7 @@ fn field(
         .spawn((
             kind,
             TabIndex(0),
+            bevy::ui_widgets::TextInput,
             EditableText::new(initial),
             Node {
                 width: percent(100.),
@@ -142,7 +143,7 @@ fn field(
                 ..default()
             },
             TextFont {
-                font: bevy::text::FontSource::SansSerif,
+                font: bevy::text::FontSource::sans_serif(),
                 font_size: FontSize::Px(13.),
                 ..default()
             },
@@ -479,22 +480,22 @@ mod tests {
         let host = world.spawn(Node::default()).id();
         let row = menu_item(&mut world.commands(), host, "Import Sprite", "add_sprite").unwrap();
         world.flush();
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: bevy::camera::NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
+        world.trigger(PointerPress {
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::ZERO,
                 },
-                position: Vec2::ZERO,
-            },
-            Press {
-                button: PointerButton::Primary,
-                count: 1,
-                hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
-            },
-            row,
-        ));
+            ),
+            entity: row,
+            button: PointerButton::Primary,
+            count: 1,
+            hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+        });
         world.flush();
         assert!(matches!(
             world.resource::<State>().action,

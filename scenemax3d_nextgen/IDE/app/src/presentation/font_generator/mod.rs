@@ -31,26 +31,17 @@ enum Field {
     Characters,
     Smooth,
     Gradient,
-    Channel(usize),
 }
 #[derive(Component)]
 struct Status;
 #[derive(Component)]
 struct Preview;
-#[derive(Component)]
-struct Swatch(usize);
-#[derive(Component)]
-struct PickerSwatch;
 #[derive(Clone)]
 enum Action {
     Open,
     Close,
     Refresh,
     Export,
-    Step(Field, i32),
-    Color(usize),
-    AcceptColor,
-    CancelColor,
     Dismiss,
 }
 enum Outcome {
@@ -62,7 +53,6 @@ enum Outcome {
 pub(crate) struct State {
     pub(crate) open: bool,
     host: Option<Entity>,
-    picker: Option<Entity>,
     notice: Option<Entity>,
     options: Options,
     catalog: Option<Catalog>,
@@ -75,8 +65,6 @@ pub(crate) struct State {
     due: Option<Instant>,
     charset: String,
     status: String,
-    color: Option<usize>,
-    draft_color: [u8; 4],
     image: Option<Handle<Image>>,
 }
 impl Default for State {
@@ -84,7 +72,6 @@ impl Default for State {
         Self {
             open: false,
             host: None,
-            picker: None,
             notice: None,
             options: Options::default(),
             catalog: None,
@@ -97,8 +84,6 @@ impl Default for State {
             due: None,
             charset: "Latin + Hebrew".into(),
             status: String::new(),
-            color: None,
-            draft_color: [0; 4],
             image: None,
         }
     }
@@ -115,7 +100,7 @@ impl State {
 pub(crate) fn menu_item(c: &mut Commands, parent: Entity, title: &str) -> Entity {
     let e = scenemax_ide_ui::button(c, parent, title, Name::new("Font Generator"));
     c.entity(e)
-        .observe(|mut e: On<Pointer<Press>>, mut s: ResMut<State>| {
+        .observe(|mut e: On<PointerPress>, mut s: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 s.actions.push(Action::Open);
@@ -168,9 +153,6 @@ pub(crate) struct Inputs<'w, 's> {
     checks: Query<'w, 's, (&'static Field, &'static property::Checked)>,
     statuses: Query<'w, 's, &'static mut Text, With<Status>>,
     previews: Query<'w, 's, Entity, With<Preview>>,
-    swatches: Query<'w, 's, (&'static Swatch, &'static mut BackgroundColor), Without<PickerSwatch>>,
-    picker_swatches:
-        Query<'w, 's, &'static mut BackgroundColor, (With<PickerSwatch>, Without<Swatch>)>,
     images: Option<ResMut<'w, Assets<Image>>>,
     keys: Res<'w, ButtonInput<KeyCode>>,
     focus: Option<ResMut<'w, InputFocus>>,
@@ -273,11 +255,6 @@ pub(crate) fn update(
                         invalid = Some("Enter a color as #RRGGBB or #RRGGBBAA.".into());
                     }
                 }
-                Field::Channel(index) => {
-                    if let Ok(n) = value.parse::<u8>() {
-                        s.draft_color[index] = n;
-                    }
-                }
                 _ => {}
             }
         }
@@ -328,9 +305,7 @@ pub(crate) fn update(
             s.changed();
         }
         if i.keys.just_pressed(KeyCode::Escape) {
-            let a = if s.picker.is_some() {
-                Action::CancelColor
-            } else if s.notice.is_some() {
+            let a = if s.notice.is_some() {
                 Action::Dismiss
             } else {
                 Action::Close
@@ -369,7 +344,6 @@ pub(crate) fn update(
                 s.task = None;
                 s.due = None;
                 s.export_requested = false;
-                s.picker = None;
                 s.notice = None;
                 s.image = None;
                 if let Some(focus) = i.focus.as_mut() {
@@ -390,43 +364,6 @@ pub(crate) fn update(
                 } else {
                     s.export_requested = true;
                 }
-            }
-            Action::Step(f, delta) => {
-                let (min, max) = range(f);
-                let n = (number(&s.options, f) + delta).clamp(min, max);
-                set_number(&mut s.options, f, n);
-                for (field, mut text) in &mut i.fields {
-                    if *field == f {
-                        text.editor_mut().set_text(&n.to_string());
-                    }
-                }
-                s.changed();
-            }
-            Action::Color(index) => {
-                s.color = Some(index);
-                s.draft_color = s.options.colors[index];
-                view::picker(&mut c, &mut s);
-            }
-            Action::AcceptColor => {
-                if let Some(index) = s.color {
-                    s.options.colors[index] = s.draft_color;
-                    for (field, mut text) in &mut i.fields {
-                        if *field == Field::Color(index) {
-                            text.editor_mut().set_text(&hex(s.draft_color));
-                        }
-                    }
-                    s.changed();
-                }
-                if let Some(e) = s.picker.take() {
-                    c.entity(e).try_despawn();
-                }
-                s.color = None;
-            }
-            Action::CancelColor => {
-                if let Some(e) = s.picker.take() {
-                    c.entity(e).try_despawn();
-                }
-                s.color = None;
             }
             Action::Dismiss => {
                 if let Some(e) = s.notice.take() {
@@ -466,14 +403,6 @@ pub(crate) fn update(
                     .map_err(|e| e.to_string())
             });
         }
-    }
-    for (swatch, mut color) in &mut i.swatches {
-        let v = s.options.colors[swatch.0];
-        color.0 = Color::srgba_u8(v[0], v[1], v[2], v[3]);
-    }
-    for mut color in &mut i.picker_swatches {
-        let v = s.draft_color;
-        color.0 = Color::srgba_u8(v[0], v[1], v[2], v[3]);
     }
     let status = invalid.as_deref().unwrap_or(&s.status);
     for mut text in &mut i.statuses {

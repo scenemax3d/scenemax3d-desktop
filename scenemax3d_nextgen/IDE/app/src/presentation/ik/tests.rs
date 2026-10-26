@@ -1,4 +1,5 @@
 use super::*;
+use scenemax_ui_input::Interaction;
 fn settle(app: &mut App) {
     app.update();
     app.update();
@@ -148,18 +149,13 @@ fn layer_actions_and_target_bone_edit_change_the_selected_runtime_contact() {
     assert!(app.world().get::<EditableText>(id_field).is_some());
     {
         let w = app.world_mut();
-        let child = w
-            .query::<(&Control, &Children)>()
+        let choice = w
+            .query::<(&Control, &Choice)>()
             .iter(w)
             .find(|(control, _)| control.0 == "layer")
             .unwrap()
-            .1[0];
-        assert!(
-            w.get::<Text>(child)
-                .unwrap()
-                .0
-                .starts_with("new_contact · ")
-        );
+            .1;
+        assert_eq!(choice.0, "1");
     }
     let play = {
         let w = app.world_mut();

@@ -119,22 +119,22 @@ fn menu_dispatches_on_press_before_menu_closes() {
     let host = world.spawn(Node::default()).id();
     let row = menu_item(&mut world.commands(), host, "Project Inventory");
     world.flush();
-    world.trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target: bevy::camera::NormalizedRenderTarget::None {
-                width: 800,
-                height: 600,
+    world.trigger(PointerPress {
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: bevy::camera::NormalizedRenderTarget::None {
+                    width: 800,
+                    height: 600,
+                },
+                position: Vec2::ZERO,
             },
-            position: Vec2::ZERO,
-        },
-        Press {
-            button: PointerButton::Primary,
-            count: 1,
-            hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
-        },
-        row,
-    ));
+        ),
+        entity: row,
+        button: PointerButton::Primary,
+        count: 1,
+        hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+    });
     world.flush();
     assert!(matches!(
         world.resource::<State>().actions.first(),

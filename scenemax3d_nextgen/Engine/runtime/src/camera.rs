@@ -1898,9 +1898,7 @@ fn attached_camera_mesh_bounds(
     meshes: &Assets<Mesh>,
 ) -> Option<AttachedCameraBounds> {
     let (mesh_handle, global_transform) = mesh_entities.get(entity).ok()?;
-    let aabb = meshes
-        .get(&mesh_handle.0)
-        .and_then(MeshAabb::compute_aabb)?;
+    let aabb = meshes.get(&mesh_handle.0).and_then(MeshAabb::get_aabb)?;
     let transform = global_transform.to_matrix();
     AttachedCameraBounds::from_points(
         attached_camera_aabb_corners(aabb)
@@ -2281,6 +2279,7 @@ pub(super) fn setup_camera_and_lights(
 
     commands.spawn((
         Camera3d::default(),
+        bevy::pbr::ScreenSpaceTransmission::default(),
         IsDefaultUiCamera,
         SceneMaxCameraModifierState::default(),
         startup_program

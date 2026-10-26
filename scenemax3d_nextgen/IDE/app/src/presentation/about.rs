@@ -3,6 +3,7 @@ use super::chrome::{ChromeAction, Panel};
 use crate::application::{Command, CommandQueue};
 use bevy::{input_focus::tab_navigation::TabGroup, prelude::*, text::EditableText};
 use scenemax_ide_ui::{button, label, property, theme::*};
+use scenemax_ui_input::Interaction;
 use serde_json::Value;
 use std::sync::OnceLock;
 
@@ -47,7 +48,7 @@ fn link(c: &mut Commands, p: Entity, title: &str, url: &str) {
     let url = url.replacen("http://", "https://", 1);
     let entity = button(c, p, title, Link(url.clone()));
     c.entity(entity).observe(
-        |event: On<Pointer<Click>>, links: Query<&Link>, mut queue: ResMut<CommandQueue>| {
+        |event: On<PointerClick>, links: Query<&Link>, mut queue: ResMut<CommandQueue>| {
             if let Ok(link) = links.get(event.entity) {
                 queue.0.push_back(Command::OpenWeb(link.0.clone()));
             }

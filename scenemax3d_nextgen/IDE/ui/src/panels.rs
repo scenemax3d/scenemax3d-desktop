@@ -1,6 +1,7 @@
 //! Retained tool surfaces and constrained splitters shared by editor features.
 use crate::{label, theme::*};
 use bevy::prelude::*;
+use scenemax_ui_input::Interaction;
 
 /// Stable attachment point for a tool plugin's native Bevy UI children.
 /// The shell owns this entity; the tool owns its descendants and feature state.
@@ -170,7 +171,7 @@ pub fn splitter(
             ChildOf(parent),
         ))
         .observe(
-            |mut drag: On<Pointer<Drag>>,
+            |mut drag: On<PointerDrag>,
              handles: Query<&Splitter>,
              mut panels: Query<(&mut ResizablePanel, &Node, &ChildOf)>,
              parents: Query<&ComputedNode>,
@@ -201,14 +202,14 @@ pub fn splitter(
             },
         )
         .observe(
-            |event: On<Pointer<Over>>, mut colors: Query<&mut BackgroundColor>| {
+            |event: On<PointerOver>, mut colors: Query<&mut BackgroundColor>| {
                 if let Ok(mut color) = colors.get_mut(event.entity) {
                     color.0 = ACCENT;
                 }
             },
         )
         .observe(
-            |event: On<Pointer<Out>>, mut colors: Query<&mut BackgroundColor>| {
+            |event: On<PointerOut>, mut colors: Query<&mut BackgroundColor>| {
                 if let Ok(mut color) = colors.get_mut(event.entity) {
                     color.0 = EDGE;
                 }
@@ -418,22 +419,22 @@ mod tests {
             let handle = splitter(&mut app.world_mut().commands(), parent, panel, axis, edge);
             app.world_mut().flush();
             let send_drag = |app: &mut App, delta| {
-                app.world_mut().trigger(Pointer::new(
-                    PointerId::Mouse,
-                    Location {
-                        target: bevy::camera::NormalizedRenderTarget::None {
-                            width: 1000,
-                            height: 1000,
+                app.world_mut().trigger(PointerDrag {
+                    pointer: Pointer::new(
+                        PointerId::Mouse,
+                        Location {
+                            target: bevy::camera::NormalizedRenderTarget::None {
+                                width: 1000,
+                                height: 1000,
+                            },
+                            position: Vec2::ZERO,
                         },
-                        position: Vec2::ZERO,
-                    },
-                    Drag {
-                        button: PointerButton::Primary,
-                        distance: delta,
-                        delta,
-                    },
-                    handle,
-                ));
+                    ),
+                    entity: handle,
+                    button: PointerButton::Primary,
+                    distance: delta,
+                    delta,
+                });
                 app.update();
             };
             send_drag(&mut app, first_delta);

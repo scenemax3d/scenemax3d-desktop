@@ -5,7 +5,7 @@ use bevy::{reflect::TypePath, render::render_resource::AsBindGroup, shader::Shad
 pub(crate) struct ObjectShaderPlugin;
 impl Plugin for ObjectShaderPlugin {
     fn build(&self, app: &mut App) {
-        bevy::asset::embedded_asset!(app, "object.wgsl");
+        bevy::asset::embedded_asset!(app, "object.wesl");
         app.add_plugins(MaterialPlugin::<BlockMaterial>::default())
             .add_systems(
                 PostUpdate,
@@ -30,7 +30,7 @@ pub(super) struct BlockMaterial {
 }
 impl Material for BlockMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://scenemax_runtime/shader/object.wgsl".into()
+        "embedded://scenemax_runtime/shader/object.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode {
         self.alpha

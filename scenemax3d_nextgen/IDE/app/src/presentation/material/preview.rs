@@ -95,7 +95,7 @@ fn environment() -> Image {
 }
 fn observe(commands: &mut Commands, viewport: Entity, camera: Entity) {
     commands.entity(viewport).observe(
-        move |mut e: On<Pointer<Drag>>,
+        move |mut e: On<PointerDrag>,
               mut cameras: Query<(&mut Orbit, &mut Transform), With<PreviewCamera>>| {
             if e.button != PointerButton::Secondary {
                 return;
@@ -109,7 +109,7 @@ fn observe(commands: &mut Commands, viewport: Entity, camera: Entity) {
         },
     );
     commands.entity(viewport).observe(
-        move |mut e: On<Pointer<Scroll>>,
+        move |mut e: On<PointerScroll>,
               mut cameras: Query<(&mut Orbit, &mut Transform), With<PreviewCamera>>| {
             e.propagate(false);
             if let Ok((mut orbit, mut transform)) = cameras.get_mut(camera) {
@@ -186,6 +186,7 @@ pub(crate) fn update(
             .spawn((
                 PreviewCamera,
                 Camera3d::default(),
+                bevy::pbr::ScreenSpaceTransmission::default(),
                 bevy::camera::Hdr,
                 bevy::camera::Exposure { ev100: 10.0 },
                 bevy::core_pipeline::tonemapping::Tonemapping::AcesFitted,

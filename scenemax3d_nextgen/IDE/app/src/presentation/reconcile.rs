@@ -4,6 +4,8 @@ use super::{
 };
 use crate::application::{Session, ViewChange};
 use bevy::prelude::*;
+#[cfg(test)]
+use scenemax_ui_input::{Button, Interaction};
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct ViewHosts<'w, 's> {
@@ -82,11 +84,14 @@ pub(crate) fn search_results(
         .read()
         .any(|change| matches!(change, ViewChange::SearchResultsChanged));
     let (entity, node) = &mut *host;
-    node.display = if chrome.search_open() && session.search_summary.is_some() {
+    let display = if chrome.search_open() && session.search_summary.is_some() {
         Display::Flex
     } else {
         Display::None
     };
+    if node.display != display {
+        node.display = display;
+    }
     if !changed {
         return;
     }

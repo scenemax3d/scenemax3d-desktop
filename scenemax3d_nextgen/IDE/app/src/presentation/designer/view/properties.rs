@@ -319,6 +319,8 @@ fn control(
     commands.spawn((label(title, 12.), ChildOf(parent)));
     if !choices.is_empty() {
         property::dropdown(commands, parent, marker, &text, &choices);
+    } else if key.to_ascii_lowercase().ends_with("color") {
+        scenemax_ide_ui::color::input(commands, parent, marker, &text);
     } else if matches!(kind, FieldKind::Number | FieldKind::Integer) {
         let bias = key.ends_with("Bias");
         number::input(
@@ -339,6 +341,7 @@ fn control(
             || key == "buttonText"
         {
             commands.entity(entity).insert((
+                bevy::ui_widgets::TextInput,
                 EditableText {
                     allow_newlines: true,
                     max_characters: Some(10000),

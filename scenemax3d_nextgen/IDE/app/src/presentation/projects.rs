@@ -12,7 +12,7 @@ pub(crate) struct ProjectCaption;
 
 pub(crate) fn choices(commands: &mut Commands, parent: Entity, compact: bool) {
     commands.spawn((ProjectChoices {compact},Node { flex_direction:FlexDirection::Column, min_height:px(0.), max_height:px(if compact {360.} else {500.}), flex_grow:if compact {0.} else {1.}, overflow:Overflow::scroll_y(), ..default() },ChildOf(parent)))
-        .observe(|event: On<Pointer<Scroll>>, mut nodes: Query<(&mut ScrollPosition,&ComputedNode),With<ProjectChoices>>| {
+        .observe(|event: On<PointerScroll>, mut nodes: Query<(&mut ScrollPosition,&ComputedNode),With<ProjectChoices>>| {
             if let Ok((mut scroll,node)) = nodes.get_mut(event.entity) {
                 let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {40.} else {1.};
                 scroll.y = (scroll.y - event.y * scale).clamp(0.,((node.content_size().y-node.size().y)*node.inverse_scale_factor()).max(0.));

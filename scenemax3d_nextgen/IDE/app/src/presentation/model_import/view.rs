@@ -164,7 +164,7 @@ pub(super) fn build(commands: &mut Commands, host: Entity, v: &Value) -> Parts {
     );
     commands
         .entity(toggle)
-        .observe(move |_: On<Pointer<Click>>, mut nodes: Query<&mut Node>| {
+        .observe(move |_: On<PointerClick>, mut nodes: Query<&mut Node>| {
             if let Ok(mut node) = nodes.get_mut(sidebar) {
                 node.display = if node.display == Display::None {
                     Display::Flex
@@ -358,7 +358,7 @@ pub(super) fn build(commands: &mut Commands, host: Entity, v: &Value) -> Parts {
     ] {
         let e = super::super::scene3d::tools::control(commands, tools, key, title, CameraTool);
         commands.entity(e).observe(
-            move |mut event: On<Pointer<Click>>, mut state: ResMut<State>| {
+            move |mut event: On<PointerClick>, mut state: ResMut<State>| {
                 if event.button == PointerButton::Primary {
                     event.propagate(false);
                     state.actions.push((host, action.clone()));

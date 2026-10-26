@@ -103,7 +103,7 @@ fn control(
     let e = button(commands, parent, title, Name::new(title.to_owned()));
     commands
         .entity(e)
-        .observe(move |mut e: On<Pointer<Click>>, mut state: ResMut<State>| {
+        .observe(move |mut e: On<PointerClick>, mut state: ResMut<State>| {
             if e.button == PointerButton::Primary {
                 e.propagate(false);
                 state.actions.push((host, action.clone()));

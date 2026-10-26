@@ -47,6 +47,7 @@ pub fn spawn_editor<T: Component>(
                 display: if active { Display::Flex } else { Display::None },
                 ..default()
             },
+            bevy::ui_widgets::TextInput,
             EditableText {
                 allow_newlines: true,
                 max_characters: Some(2 * 1024 * 1024),
@@ -56,7 +57,7 @@ pub fn spawn_editor<T: Component>(
             TextLayout::no_wrap(),
             bevy::text::LineHeight::Px(22.),
             TextFont {
-                font: FontSource::Monospace,
+                font: FontSource::monospace(),
                 font_size: FontSize::Px(16.),
                 ..default()
             },
@@ -66,10 +67,10 @@ pub fn spawn_editor<T: Component>(
             ChildOf(parent),
         ))
         .observe(
-            |event: On<Pointer<Scroll>>,
+            |event: On<PointerScroll>,
              keys: Res<ButtonInput<KeyCode>>,
              mut query: Query<(
-                &mut bevy::ui::widget::TextScroll,
+                &mut EditableText,
                 &ComputedNode,
                 &bevy::text::TextLayoutInfo,
             )>| {
@@ -84,7 +85,8 @@ pub fn spawn_editor<T: Component>(
                         std::mem::swap(&mut delta.x, &mut delta.y);
                     }
                     let max = (layout.size - node.content_box().size()).max(Vec2::ZERO);
-                    scroll.0 = (scroll.0 - delta).clamp(Vec2::ZERO, max);
+                    scroll.viewport.offset =
+                        (scroll.viewport.offset - delta).clamp(Vec2::ZERO, max);
                 }
             },
         )

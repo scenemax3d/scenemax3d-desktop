@@ -19,7 +19,7 @@ It must be configured with a canvas-supported non-sRGB format; the external
 draw call separately receives Bevy's actual `rgba8unorm-srgb` attachment format.
 No visible drawing, presentation or compositing uses the offscreen surface.
 
-Bevy 0.19.0 / wgpu 29.0.4 owns the GPUDevice, command submission, color/depth
+Bevy 0.20.0 / wgpu 30.0.0 owns the GPUDevice, command submission, color/depth
 attachments and presentation. A dedicated Core3d pass after transparent geometry
 and before tone mapping lends its GPURenderPassEncoder synchronously to
 Effekseer. No additional canvas or separate-device texture sharing is involved.

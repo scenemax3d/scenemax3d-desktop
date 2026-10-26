@@ -3,7 +3,7 @@ use super::*;
 use bevy::{
     app::SubApp,
     core_pipeline::{core_3d::main_transparent_pass_3d, tonemapping::tonemapping},
-    render::{render_resource::*, renderer::RenderDevice, view::ViewDepthTexture},
+    render::{render_resource::*, renderer::RenderDevice, view::ViewDepthStencilTexture},
 };
 use wasm_bindgen::prelude::*;
 
@@ -125,7 +125,7 @@ fn render(
         &ExtractedCamera,
         &ExtractedView,
         &ViewTarget,
-        &ViewDepthTexture,
+        &ViewDepthStencilTexture,
         Option<&bevy::camera::visibility::RenderLayers>,
     )>,
     extracted: Res<ExtractedEffekseerEffects>,

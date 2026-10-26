@@ -114,7 +114,7 @@ pub fn prepare(command: &mut Command) {
     apply_environment(command, saved().environment);
 }
 /// Binding generator version pinned by the browser projector.
-pub const WASM_BINDGEN_VERSION: &str = "0.2.108";
+pub const WASM_BINDGEN_VERSION: &str = "0.2.129";
 /// Resolve the managed binding generator without changing other Rust installations.
 pub fn wasm_bindgen_path() -> std::path::PathBuf {
     if let Some(root) = std::env::var_os("LOCALAPPDATA") {

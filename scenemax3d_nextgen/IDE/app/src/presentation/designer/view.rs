@@ -1,5 +1,6 @@
 //! Retained scene canvas, hierarchy and inspector construction.
 use super::*;
+use scenemax_ui_input::Interaction;
 #[derive(Clone)]
 pub(super) struct Parts {
     inspector: Entity,
@@ -14,7 +15,7 @@ fn area(commands: &mut Commands, parent: Entity, node: Node, color: Color) -> En
         .id();
     if scrolls {
         commands.entity(entity).observe(
-            |mut event: On<Pointer<Scroll>>,
+            |mut event: On<PointerScroll>,
              mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
                 if let Ok((mut scroll, node)) = nodes.get_mut(event.entity) {
                     let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {

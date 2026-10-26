@@ -1,6 +1,7 @@
 //! Client title bar: native move/resize requests, with normal IDE close handling.
 use bevy::{math::CompassOctant, prelude::*};
 use scenemax_ide_ui::{label, theme::*};
+use scenemax_ui_input::{Button, Interaction};
 
 #[derive(Component)]
 pub(crate) struct WindowControl {
@@ -95,17 +96,17 @@ pub(crate) fn drag(commands: &mut Commands, parent: Entity) {
         Pickable::IGNORE,
         ChildOf(region),
     ));
-    commands.entity(region).observe(
-        |event: On<Pointer<Press>>, mut windows: Query<&mut Window>| {
+    commands
+        .entity(region)
+        .observe(|event: On<PointerPress>, mut windows: Query<&mut Window>| {
             if event.button == PointerButton::Primary
                 && let Ok(mut window) = windows.single_mut()
             {
                 window.start_drag_move();
             }
-        },
-    );
+        });
     commands.entity(region).observe(
-        |event: On<Pointer<Click>>,
+        |event: On<PointerClick>,
          mut windows: Query<&mut Window>,
          mut maximized: ResMut<Maximized>| {
             if event.count == 2
@@ -125,7 +126,7 @@ pub(crate) fn drag(commands: &mut Commands, parent: Entity) {
     );
     commands
         .entity(minimize)
-        .observe(|_: On<Pointer<Click>>, mut windows: Query<&mut Window>| {
+        .observe(|_: On<PointerClick>, mut windows: Query<&mut Window>| {
             if let Ok(mut window) = windows.single_mut() {
                 window.set_minimized(true);
             }
@@ -143,9 +144,7 @@ pub(crate) fn drag(commands: &mut Commands, parent: Entity) {
         ],
     );
     commands.entity(maximize).observe(
-        |_: On<Pointer<Click>>,
-         mut windows: Query<&mut Window>,
-         mut maximized: ResMut<Maximized>| {
+        |_: On<PointerClick>, mut windows: Query<&mut Window>, mut maximized: ResMut<Maximized>| {
             if let Ok(mut window) = windows.single_mut() {
                 maximized.0 = !maximized.0;
                 window.set_maximized(maximized.0);
@@ -203,7 +202,7 @@ pub(crate) fn resize_edges(commands: &mut Commands, root: Entity) {
                 ChildOf(root),
             ))
             .observe(
-                move |_: On<Pointer<Press>>, mut windows: Query<&mut Window>| {
+                move |_: On<PointerPress>, mut windows: Query<&mut Window>| {
                     if let Ok(mut window) = windows.single_mut() {
                         window.start_drag_resize(direction);
                     }

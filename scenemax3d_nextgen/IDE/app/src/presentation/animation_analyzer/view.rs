@@ -244,6 +244,8 @@ pub(super) fn table(c: &mut Commands, parent: Entity, s: &State) {
             );
             if key == "sourceAnimation" {
                 property::dropdown(c, cell, field, &value, &names);
+            } else if key == "start" || key == "end" {
+                number::input(c, cell, field, &value, 0., 1000., 1.);
             } else {
                 property::input(c, cell, field, &value);
             }

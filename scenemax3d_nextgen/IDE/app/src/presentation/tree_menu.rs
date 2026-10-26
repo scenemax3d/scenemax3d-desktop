@@ -7,6 +7,8 @@ use bevy::{
 };
 use scenemax_ide_services::TreeOperation;
 use scenemax_ide_ui::{button, label, theme::*};
+#[cfg(test)]
+use scenemax_ui_input::Interaction;
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -366,7 +368,7 @@ pub(crate) fn update(
             ChildOf(host),
         ))
         .observe(
-            |mut event: On<Pointer<Scroll>>,
+            |mut event: On<PointerScroll>,
              mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
                 event.propagate(false);
                 if let Ok((mut scroll, node)) = nodes.get_mut(event.entity) {
@@ -502,6 +504,7 @@ fn dialog_view(
             .spawn((
                 Input,
                 bevy::input_focus::tab_navigation::TabIndex(0),
+                bevy::ui_widgets::TextInput,
                 EditableText::new(value),
                 Node {
                     width: percent(100.),
@@ -510,7 +513,7 @@ fn dialog_view(
                     ..default()
                 },
                 TextFont {
-                    font: bevy::text::FontSource::SansSerif,
+                    font: bevy::text::FontSource::sans_serif(),
                     font_size: FontSize::Px(13.),
                     ..default()
                 },
@@ -605,7 +608,7 @@ Tune its trajectory in the designer.",
 fn action_button(commands: &mut Commands, parent: Entity, caption: &str, action: Action) -> Entity {
     let row = button(commands, parent, caption, action.clone());
     commands.entity(row).observe(
-        move |mut event: On<Pointer<Click>>, mut state: ResMut<State>| {
+        move |mut event: On<PointerClick>, mut state: ResMut<State>| {
             if event.button == PointerButton::Primary {
                 event.propagate(false);
                 state.pending_action = Some(action.clone());
@@ -632,7 +635,7 @@ mod tests {
                 pointer::{Location, PointerId},
             },
             text::{FontCx, LayoutCx},
-            ui_widgets::EditableTextInputPlugin,
+            ui_widgets::TextInputPlugin,
         };
         for dialog in [
             Dialog::Script,
@@ -644,6 +647,7 @@ mod tests {
             Dialog::Move,
         ] {
             let mut app = App::new();
+            crate::tests::ui_resources(&mut app);
             app.init_resource::<State>()
                 .init_resource::<InputFocus>()
                 .init_resource::<InputFocusVisible>()
@@ -653,7 +657,11 @@ mod tests {
                 .init_resource::<LayoutCx>()
                 .init_resource::<bevy::clipboard::Clipboard>()
                 .add_message::<KeyboardInput>()
-                .add_plugins((TabNavigationPlugin, EditableTextInputPlugin));
+                .add_plugins((
+                    TabNavigationPlugin,
+                    bevy::input_focus::pointer_focus::PointerFocusPlugin,
+                    TextInputPlugin,
+                ));
             let window = app
                 .world_mut()
                 .spawn((Window::default(), bevy::window::PrimaryWindow))
@@ -673,24 +681,28 @@ mod tests {
                 });
             app.world_mut().flush();
             let field = app.world().resource::<InputFocus>().get().unwrap();
+            app.world_mut().entity_mut(field).insert(ComputedNode {
+                size: Vec2::new(400., 100.),
+                ..default()
+            });
             // Click-to-focus must recover even after focus has moved elsewhere.
             app.world_mut().resource_mut::<InputFocus>().clear();
-            app.world_mut().trigger(Pointer::new(
-                PointerId::Mouse,
-                Location {
-                    target: bevy::camera::NormalizedRenderTarget::None {
-                        width: 800,
-                        height: 600,
+            app.world_mut().trigger(PointerPress {
+                pointer: Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: bevy::camera::NormalizedRenderTarget::None {
+                            width: 800,
+                            height: 600,
+                        },
+                        position: Vec2::new(20., 20.),
                     },
-                    position: Vec2::new(20., 20.),
-                },
-                Press {
-                    button: PointerButton::Primary,
-                    count: 1,
-                    hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
-                },
-                field,
-            ));
+                ),
+                entity: field,
+                button: PointerButton::Primary,
+                count: 1,
+                hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+            });
             app.world_mut().flush();
             assert_eq!(
                 app.world().resource::<InputFocus>().get(),
@@ -732,27 +744,28 @@ mod tests {
             backend::HitData,
             pointer::{Location, PointerId},
         };
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: bevy::camera::NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
+        app.world_mut().trigger(PointerClick {
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::ZERO,
                 },
-                position: Vec2::ZERO,
-            },
-            Click {
-                button: PointerButton::Primary,
-                count: 1,
-                duration: std::time::Duration::ZERO,
-                hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
-            },
+            ),
             entity,
-        ));
+            button: PointerButton::Primary,
+            count: 1,
+            duration: std::time::Duration::ZERO,
+            hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+        });
     }
     #[test]
     fn popup_targets_clicked_file_and_dialog_escape_dismisses() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         let mut session = Session::new(scenemax_ide_core::Project::new(
             "project".into(),
             vec!["project/second.code".into()],
@@ -945,6 +958,7 @@ mod tests {
     #[test]
     fn throw_motion_dialog_uses_selected_template() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<InputFocus>()
@@ -987,6 +1001,7 @@ mod tests {
     #[test]
     fn ik_dialog_uses_selected_solver() {
         let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<InputFocus>()

@@ -37,37 +37,8 @@ pub(super) fn display(v: &Value) -> String {
         .unwrap_or_else(|| v.to_string())
 }
 fn color_row(commands: &mut Commands, parent: Entity, key: &str, value: &Value) {
-    input(commands, parent, key, value);
-    let row = commands
-        .spawn((
-            Node {
-                flex_wrap: FlexWrap::Wrap,
-                column_gap: px(3.),
-                row_gap: px(3.),
-                ..default()
-            },
-            ChildOf(parent),
-        ))
-        .id();
-    for hex in [
-        "#FFFFFF", "#B7C9E2", "#252830", "#A51E35", "#E8B454", "#3A9685", "#46DDEB", "#7858A6",
-    ] {
-        let rgba = scenemax_assets::material::color(hex).unwrap_or([1.; 4]);
-        commands.spawn((
-            Button,
-            Action::Color(key.into(), hex.into()),
-            Node {
-                width: px(24.),
-                height: px(20.),
-                border: px(1.).all(),
-                ..default()
-            },
-            BorderColor::all(EDGE),
-            scenemax_ide_ui::ButtonSurface(Color::srgba(rgba[0], rgba[1], rgba[2], rgba[3])),
-            BackgroundColor(Color::srgba(rgba[0], rgba[1], rgba[2], rgba[3])),
-            ChildOf(row),
-        ));
-    }
+    let text = display(value);
+    scenemax_ide_ui::color::input(commands, parent, Field(key.into(), text.clone()), &text);
 }
 pub(super) fn build(
     commands: &mut Commands,
@@ -349,7 +320,7 @@ pub(super) fn build(
         Name::new("Copy material assignment"),
     );
     commands.entity(copy).observe(
-        move |_: On<Pointer<Click>>,
+        move |_: On<PointerClick>,
               clipboard: Option<ResMut<bevy::clipboard::Clipboard>>,
               mut session: ResMut<Session>| {
             if let Some(mut clipboard) = clipboard {

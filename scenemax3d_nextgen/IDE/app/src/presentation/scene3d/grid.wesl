@@ -1,8 +1,8 @@
 // Original SceneMax editor shader. No finite world mesh or moving grid origin.
-#import bevy_pbr::mesh_view_bindings::view
+import bevy_pbr::render::mesh_view_bindings::view;
 
 struct Material { color: vec4<f32> };
-@group(3) @binding(0) var<uniform> material: Material;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> material: Material;
 struct VertexOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) ndc: vec2<f32>,

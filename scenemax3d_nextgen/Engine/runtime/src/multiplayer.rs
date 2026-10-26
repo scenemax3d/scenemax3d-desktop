@@ -52,6 +52,27 @@ pub(super) struct Multiplayer {
     sources: HashMap<u32, String>,
 }
 
+// Absolute script commands replace a pose channel after deferred transforms are
+// applied. Drift received before that command must not be added again next frame.
+pub(super) fn discard_pose_correction(commands: &mut Commands, target: &str, rotation: bool) {
+    let target = target.to_owned();
+    commands.queue(move |world: &mut World| {
+        let Some(mut net) = world.get_resource_mut::<Multiplayer>() else {
+            return;
+        };
+        if net.corrections.is_empty() {
+            return;
+        }
+        let id = net
+            .remotes
+            .iter()
+            .find_map(|(id, name)| (name == &target).then_some(*id));
+        if let Some(correction) = id.and_then(|id| net.corrections.get_mut(&id)) {
+            correction.discard(rotation);
+        }
+    });
+}
+
 struct RemoteCommand {
     entity: u32,
     command: String,

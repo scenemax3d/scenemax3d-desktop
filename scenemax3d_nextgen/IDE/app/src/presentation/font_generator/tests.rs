@@ -83,22 +83,22 @@ fn menu_dispatches_on_press() {
     let host = w.spawn(Node::default()).id();
     let e = menu_item(&mut w.commands(), host, "Font Generator...");
     w.flush();
-    w.trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target: bevy::camera::NormalizedRenderTarget::None {
-                width: 800,
-                height: 600,
+    w.trigger(PointerPress {
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target: bevy::camera::NormalizedRenderTarget::None {
+                    width: 800,
+                    height: 600,
+                },
+                position: Vec2::ZERO,
             },
-            position: Vec2::ZERO,
-        },
-        Press {
-            button: PointerButton::Primary,
-            count: 1,
-            hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
-        },
-        e,
-    ));
+        ),
+        entity: e,
+        button: PointerButton::Primary,
+        count: 1,
+        hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+    });
     w.flush();
     assert!(matches!(
         w.resource::<State>().actions.first(),

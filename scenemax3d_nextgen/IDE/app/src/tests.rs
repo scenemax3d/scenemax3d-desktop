@@ -5,6 +5,7 @@ use crate::{
 };
 use bevy::{prelude::*, text::EditableText, window::WindowCloseRequested};
 use scenemax_ide_services::Filesystem;
+use scenemax_ui_input::Interaction;
 use std::path::PathBuf;
 
 #[test]
@@ -21,7 +22,7 @@ fn mouse_caret_press_keeps_focus_and_accepts_native_typing() {
             pointer::{Location, PointerId},
         },
         text::{FontCx, LayoutCx},
-        ui_widgets::EditableTextInputPlugin,
+        ui_widgets::TextInputPlugin,
     };
     let mut app = App::new();
     app.init_resource::<InputFocus>()
@@ -32,7 +33,11 @@ fn mouse_caret_press_keeps_focus_and_accepts_native_typing() {
         .init_resource::<LayoutCx>()
         .init_resource::<bevy::clipboard::Clipboard>()
         .add_message::<KeyboardInput>()
-        .add_plugins((TabNavigationPlugin, EditableTextInputPlugin));
+        .add_plugins((
+            TabNavigationPlugin,
+            bevy::input_focus::pointer_focus::PointerFocusPlugin,
+            TextInputPlugin,
+        ));
     let window = app
         .world_mut()
         .spawn((Window::default(), bevy::window::PrimaryWindow))
@@ -51,26 +56,30 @@ fn mouse_caret_press_keeps_focus_and_accepts_native_typing() {
         true,
     );
     app.world_mut().flush();
+    app.world_mut().entity_mut(editor).insert(ComputedNode {
+        size: Vec2::new(400., 100.),
+        ..default()
+    });
     app.world_mut()
         .resource_mut::<InputFocus>()
         .set(editor, bevy::input_focus::FocusCause::Navigated);
     for count in [1, 2] {
-        app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: bevy::camera::NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
+        app.world_mut().trigger(PointerPress {
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::new(20., 20.),
                 },
-                position: Vec2::new(20., 20.),
-            },
-            Press {
-                button: PointerButton::Primary,
-                count,
-                hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
-            },
-            editor,
-        ));
+            ),
+            entity: editor,
+            button: PointerButton::Primary,
+            count,
+            hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+        });
         app.world_mut().flush(); // Includes TabNavigationPlugin's deferred AcquireFocus event.
         assert_eq!(app.world().resource::<InputFocus>().get(), Some(editor));
         assert!(
@@ -119,7 +128,10 @@ pub(crate) fn app() -> (App, tempfile::TempDir, PathBuf) {
         .open_document(Filesystem::open_document(session.workspace.project(), &path).unwrap())
         .unwrap();
     let mut app = App::new();
-    app.insert_resource(session)
+    ui_resources(&mut app);
+    app.init_resource::<bevy::input_focus::InputFocus>()
+        .init_resource::<bevy::picking::pointer::PointerMap>()
+        .insert_resource(session)
         .insert_resource(EditorServices::new(PathBuf::new()).unwrap())
         .init_resource::<ButtonInput<KeyCode>>()
         .add_message::<WindowCloseRequested>()
@@ -133,7 +145,7 @@ pub(crate) fn app() -> (App, tempfile::TempDir, PathBuf) {
 #[test]
 fn project_tree_wheel_from_child_scrolls_viewport_and_has_native_scrollbar() {
     use bevy::picking::{
-        events::Scroll,
+        events::PointerScroll,
         pointer::{Location, PointerId},
     };
     let (mut app, _dir, _) = app();
@@ -161,24 +173,24 @@ fn project_tree_wheel_from_child_scrolls_viewport_and_has_native_scrollbar() {
         (bevy::input::mouse::MouseScrollUnit::Line, -100., 900.),
         (bevy::input::mouse::MouseScrollUnit::Line, 100., 0.),
     ] {
-        world.trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: bevy::camera::NormalizedRenderTarget::None {
-                    width: 1000,
-                    height: 1000,
+        world.trigger(PointerScroll {
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 1000,
+                        height: 1000,
+                    },
+                    position: Vec2::ZERO,
                 },
-                position: Vec2::ZERO,
-            },
-            Scroll {
-                unit,
-                x: 0.,
-                y,
-                hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
-                phase: bevy::input::touch::TouchPhase::Moved,
-            },
-            child,
-        ));
+            ),
+            entity: child,
+            unit,
+            x: 0.,
+            y,
+            hit: bevy::picking::backend::HitData::new(Entity::PLACEHOLDER, 0., None, None),
+            phase: bevy::input::touch::TouchPhase::Moved,
+        });
         assert_eq!(world.get::<ScrollPosition>(browser).unwrap().y, expected);
     }
 }
@@ -672,10 +684,20 @@ fn file_menu_opens_and_its_project_action_reveals_the_panel() {
 }
 
 #[test]
-fn tree_keyboard_rebuild_preserves_focus_and_collapses_the_root() {
+fn tree_keyboard_rebuild_preserves_focus_and_collapses_a_folder() {
     use crate::presentation::{browser::Folder, components::Browser};
     use bevy::input_focus::{FocusCause, InputFocus};
-    let (mut app, _dir, _) = app();
+    let (mut app, dir, _) = app();
+    std::fs::create_dir(dir.path().join("scripts/folder")).unwrap();
+    std::fs::write(dir.path().join("scripts/folder/child.code"), "").unwrap();
+    let project = Filesystem::open_project(dir.path()).unwrap();
+    app.world_mut()
+        .resource_mut::<Session>()
+        .workspace
+        .refresh_project(project);
+    app.world_mut()
+        .write_message(crate::application::ViewChange::ProjectTreeChanged);
+    app.update();
     let world = app.world_mut();
     let root = world
         .query_filtered::<Entity, With<Folder>>()
@@ -687,6 +709,20 @@ fn tree_keyboard_rebuild_preserves_focus_and_collapses_the_root() {
     world.insert_resource(focus);
     world
         .resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::ArrowRight);
+    app.update();
+    let world = app.world_mut();
+    assert_eq!(
+        world
+            .query_filtered::<&Children, With<Browser>>()
+            .single(world)
+            .unwrap()
+            .len(),
+        3
+    );
+    world.resource_mut::<ButtonInput<KeyCode>>().reset_all();
+    world
+        .resource_mut::<ButtonInput<KeyCode>>()
         .press(KeyCode::ArrowLeft);
     app.update();
     let world = app.world_mut();
@@ -696,7 +732,7 @@ fn tree_keyboard_rebuild_preserves_focus_and_collapses_the_root() {
             .single(world)
             .unwrap()
             .len(),
-        1
+        2
     );
     let focused = world.resource::<InputFocus>().get().unwrap();
     assert!(world.get::<Folder>(focused).is_some());
@@ -711,7 +747,7 @@ fn tree_keyboard_rebuild_preserves_focus_and_collapses_the_root() {
             .single(world)
             .unwrap()
             .len()
-            > 1
+            > 2
     );
 }
 
@@ -1582,7 +1618,13 @@ fn idle_clicks_do_not_invalidate_shell_layout_or_replace_controls() {
     app.update();
     assert!(
         app.world().resource::<LayoutChanges>().0.is_empty(),
-        "An unrelated click dirtied the UI layout"
+        "An unrelated click dirtied the UI layout: {:?}",
+        app.world()
+            .resource::<LayoutChanges>()
+            .0
+            .iter()
+            .map(|e| (*e, app.world().get::<Name>(*e)))
+            .collect::<Vec<_>>()
     );
     assert!(original.iter().all(|e| app.world().get_entity(*e).is_ok()));
 }
@@ -1943,4 +1985,26 @@ fn restart_shortcut_can_cancel_unsaved_work_and_restarts_only_after_state_is_dur
         "// unsaved restart edit"
     );
     assert!(!app.world().resource::<Messages<AppExit>>().is_empty());
+}
+
+/// Asset/scene resources needed by real Feathers widgets in headless designer tests.
+pub(crate) fn ui_resources(app: &mut App) {
+    bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    bevy::tasks::ComputeTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    app.add_plugins((
+        bevy::asset::AssetPlugin::default(),
+        bevy::scene::ScenePlugin,
+    ))
+    .init_asset::<Image>()
+    .init_asset::<bevy::text::Font>()
+    .init_resource::<bevy::input_focus::InputFocus>()
+    .insert_resource(bevy::feathers::theme::UiTheme(
+        bevy::feathers::dark_theme::create_dark_theme(),
+    ))
+    .init_resource::<bevy::feathers::controls::UnitsRegistry>()
+    .init_resource::<bevy::feathers::controls::ColorInputSettings>();
+    app.world_mut()
+        .resource_mut::<bevy::feathers::controls::UnitsRegistry>()
+        .insert(&bevy::feathers::controls::Dimensionless);
 }

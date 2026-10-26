@@ -16,7 +16,7 @@ mod proof {
             RenderApp,
             render_resource::*,
             renderer::{RenderContext, RenderDevice, ViewQuery},
-            view::{ExtractedView, ViewDepthTexture, ViewTarget},
+            view::{ExtractedView, ViewDepthStencilTexture, ViewTarget},
         },
     };
     use wasm_bindgen::prelude::*;
@@ -88,7 +88,7 @@ mod proof {
     }
 
     fn render(
-        view: ViewQuery<(&ExtractedView, &ViewTarget, &ViewDepthTexture)>,
+        view: ViewQuery<(&ExtractedView, &ViewTarget, &ViewDepthStencilTexture)>,
         device: Res<RenderDevice>,
         time: Res<Time>,
         mut ctx: RenderContext,

@@ -5,7 +5,7 @@ use bevy::{reflect::TypePath, render::render_resource::AsBindGroup, shader::Shad
 pub(crate) struct SurfaceShaderPlugin;
 impl Plugin for SurfaceShaderPlugin {
     fn build(&self, app: &mut App) {
-        bevy::asset::embedded_asset!(app, "panel_shader.wgsl");
+        bevy::asset::embedded_asset!(app, "panel_shader.wesl");
         app.add_plugins(UiMaterialPlugin::<SurfaceShader>::default())
             .add_systems(Update, animate)
             .add_systems(
@@ -75,7 +75,7 @@ fn animate(time: Res<Time>, mut materials: ResMut<Assets<SurfaceShader>>) {
 }
 impl UiMaterial for SurfaceShader {
     fn fragment_shader() -> ShaderRef {
-        "embedded://scenemax_runtime/ui/panel_shader.wgsl".into()
+        "embedded://scenemax_runtime/ui/panel_shader.wesl".into()
     }
 }
 

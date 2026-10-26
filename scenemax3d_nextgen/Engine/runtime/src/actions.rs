@@ -1349,6 +1349,7 @@ pub(super) fn apply_startup_leaf_action(
                 .unwrap_or_default();
             transform.translation = translation;
             commands.entity(*entity).insert(transform);
+            crate::multiplayer::discard_pose_correction(commands, &target_name, false);
             sync_live_transform(
                 transforms_by_name,
                 object_pools,
@@ -1386,6 +1387,7 @@ pub(super) fn apply_startup_leaf_action(
                 z: angles.z,
             });
             commands.entity(*entity).insert(transform);
+            crate::multiplayer::discard_pose_correction(commands, &target_name, true);
             sync_live_transform(
                 transforms_by_name,
                 object_pools,
@@ -9239,6 +9241,7 @@ pub(super) fn apply_key_action(
                     transform.translation = value;
                 }
                 commands.entity(entity).insert(transform);
+                crate::multiplayer::discard_pose_correction(commands, &resolved, rotation);
                 sync_live_transform(
                     transforms_by_name,
                     object_pools,
@@ -9507,6 +9510,11 @@ pub(super) fn apply_key_action(
                     Some(collider_bounds),
                 ) {
                     transform.translation = translation;
+                    crate::multiplayer::discard_pose_correction(
+                        commands,
+                        &scene_entity.name,
+                        false,
+                    );
                     sync_live_transform(
                         transforms_by_name,
                         object_pools,
@@ -9540,6 +9548,7 @@ pub(super) fn apply_key_action(
                         y: angles.y,
                         z: angles.z,
                     });
+                    crate::multiplayer::discard_pose_correction(commands, &scene_entity.name, true);
                     sync_live_transform(
                         transforms_by_name,
                         object_pools,

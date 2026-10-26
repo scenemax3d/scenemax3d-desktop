@@ -7,9 +7,12 @@ stages a separate distribution and runs Inno Setup. `-SkipBuild` reuses existing
 release binaries; only use it after a successful current release build.
 
 The installer uses its own application ID and the current user's writable
-Programs directory. Output is in a unique
-`scenemax3d_nextgen/target/studio-installer/<id>/output` directory; adjacent
-`size-report.json` records exact installer/payload bytes, file count and SHA-256.
+Programs directory. The final installer is copied to
+`INNO-SETUP/Output/scenemax-studio-<version>.exe` after compilation succeeds.
+Rebuilding the same version replaces that file. The isolated build remains in
+`scenemax3d_nextgen/target/studio-installer/<id>/output`; adjacent
+`size-report.json` records the final installer path, exact installer/payload bytes,
+file count and SHA-256.
 
 The default is `%LOCALAPPDATA%\Programs\SceneMax Studio`. Setup does not reuse a
 previous installation folder automatically; users upgrading a custom installation
@@ -39,7 +42,9 @@ A native-library load check detects missing runtime dependencies; a working GPU
 and Vulkan-capable graphics driver are still required for rendering.
 
 Failures show Retry/Cancel and keep the IDE installed, but do not claim build
-readiness or automatically launch it. If a reboot is required, setup stops before
+readiness. The finish page offers "Launch SceneMax Studio" even when build-tool
+setup is incomplete; it starts the launcher in the selected installation folder.
+Silent installations do not launch the IDE. If a reboot is required, setup stops before
 Web tool installation, reports exit code 3010 and asks the user to restart manually.
 Setup never restarts Windows automatically. After a failure or reboot, use
 **Set up SceneMax build tools** in the Start menu, or the individual buttons in
@@ -113,3 +118,8 @@ The default model library includes the animated `sinbad` model as a self-contain
 GLB with embedded textures, 69 joints and 15 source clips. Its original license
 and conversion notes are shipped in `resources/Models/Sinbad`. Conversion is an
 offline preparation step; installation and game builds do not require a converter.
+
+The green low-poly `ninja` is also bundled as `Models/Ninja/Ninja.glb`, with an
+embedded texture, 28 joints and all 20 source animation clips. Its existing catalog
+scale, orientation and character settings are preserved. Source provenance and
+conversion details are included beside the model.

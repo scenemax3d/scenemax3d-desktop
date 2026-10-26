@@ -1,5 +1,6 @@
 //! Cinematic segment authoring using the Java rig serialization.
 use super::*;
+use scenemax_ui_input::Interaction;
 use serde_json::json;
 
 #[derive(Component, Clone, Copy)]

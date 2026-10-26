@@ -32,7 +32,7 @@ The legacy smoothing/rotationSpeed/ground/pelvis fields are retained for compati
 
 ## Solver source
 
-Bevy 0.19 has no built-in IK component. SceneMax vendors [bevy_mod_inverse_kinematics](https://github.com/Kurble/bevy_mod_inverse_kinematics) 0.12.0 at revision `5c037a33b55e8056ec24222d2968972f59e009d5`, whose manifest targets Bevy 0.19. The shared `Engine/ik` adapter runs the solver in the correct animation schedule and handles targets, layering, weighting, restoration and scaled model roots. It deliberately does not install upstream's Update-scheduled plugin. No Java/JME IK implementation is linked into the Bevy product.
+SceneMax uses a dedicated IK solver with Bevy 0.20. SceneMax vendors [bevy_mod_inverse_kinematics](https://github.com/Kurble/bevy_mod_inverse_kinematics) 0.12.0 at revision `5c037a33b55e8056ec24222d2968972f59e009d5`, with its local dependency updated to Bevy 0.20. The shared `Engine/ik` adapter runs the solver in the correct animation schedule and handles targets, layering, weighting, restoration and scaled model roots. It deliberately does not install upstream's Update-scheduled plugin. No Java/JME IK implementation is linked into the Bevy product.
 
 
 ## Tune IK directly in the scene designer
