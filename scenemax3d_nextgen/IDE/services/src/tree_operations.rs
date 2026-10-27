@@ -103,6 +103,8 @@ fn companions(path: &Path) -> Vec<PathBuf> {
     match path.extension().and_then(|s| s.to_str()) {
         Some("smdesign") => [
             format!("{stem}.code"),
+            format!("{stem}-init.code"),
+            format!("{stem}-end.code"),
             format!("{stem}_init.code"),
             format!("{stem}_end.code"),
         ]
@@ -141,8 +143,8 @@ pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutco
                     "{\"version\":1,\"entities\":[]}\n".to_owned(),
                 ),
                 (format!("{name}.code"), String::new()),
-                (format!("{name}_init.code"), String::new()),
-                (format!("{name}_end.code"), String::new()),
+                (format!("{name}-init.code"), String::new()),
+                (format!("{name}-end.code"), String::new()),
                 ("main".into(), format!("add \"{name}.code\" code\n")),
             ] {
                 io_result(
@@ -282,7 +284,16 @@ mod tests {
             fs::read_to_string(root.join("intro/main")).unwrap(),
             "add \"intro.code\" code\n"
         );
-        assert!(root.join("intro/intro_init.code").exists());
+        for file in [
+            "intro.smdesign",
+            "intro.code",
+            "intro-init.code",
+            "intro-end.code",
+            "main",
+        ] {
+            assert!(root.join("intro").join(file).is_file(), "{file}");
+        }
+        assert!(!root.join("intro/intro_init.code").exists());
         assert!(perform(&root, operation).is_err());
     }
     #[test]

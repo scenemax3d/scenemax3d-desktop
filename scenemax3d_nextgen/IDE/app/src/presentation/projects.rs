@@ -10,6 +10,23 @@ pub(crate) struct ProjectChoices {
 #[derive(Component)]
 pub(crate) struct ProjectCaption;
 
+pub(crate) fn new_project_button(commands: &mut Commands, parent: Entity, caption: &str) -> Entity {
+    let row = button(commands, parent, caption, Name::new("New project"));
+    commands.entity(row).insert(super::chrome::CloseMenuOnClick);
+    commands.entity(row).observe(
+        |_: On<PointerClick>,
+         session: Res<Session>,
+         mut chrome: ResMut<ChromeState>,
+         mut dialog: ResMut<super::tree_menu::State>| {
+            let root = session.workspace.project().root();
+            let parent = root.parent().unwrap_or(root).to_owned();
+            chrome.close_project_picker();
+            dialog.create_project(parent);
+        },
+    );
+    row
+}
+
 pub(crate) fn choices(commands: &mut Commands, parent: Entity, compact: bool) {
     commands.spawn((ProjectChoices {compact},Node { flex_direction:FlexDirection::Column, min_height:px(0.), max_height:px(if compact {360.} else {500.}), flex_grow:if compact {0.} else {1.}, overflow:Overflow::scroll_y(), ..default() },ChildOf(parent)))
         .observe(|event: On<PointerScroll>, mut nodes: Query<(&mut ScrollPosition,&ComputedNode),With<ProjectChoices>>| {

@@ -200,6 +200,8 @@ pub(super) fn build(
         .map(|p| {
             let label = if p.is_empty() {
                 "Preview primitive".into()
+            } else if let Some(path) = p.strip_prefix("builtin://") {
+                format!("Shared: {path}")
             } else {
                 p.clone()
             };

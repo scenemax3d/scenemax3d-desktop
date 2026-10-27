@@ -34,7 +34,11 @@ pub(crate) enum Command {
     CloseTab,
     CloseDocument(DocumentId),
     Create(PathBuf),
-    NewProject(PathBuf),
+    NewProject {
+        parent: PathBuf,
+        name: String,
+        multiplayer: bool,
+    },
     Refresh,
     Open(PathBuf),
     Select(DocumentId),
@@ -102,7 +106,7 @@ pub(super) fn execute(
                 | Command::RequestClose
                 | Command::DiscardExit
                 | Command::OpenProject(_)
-                | Command::NewProject(_)
+                | Command::NewProject { .. }
                 | Command::RestoreRecovery
         )
     {
@@ -218,14 +222,22 @@ pub(super) fn execute(
             ))?;
             session.status = "Refreshing project tree...".into();
         }
-        Command::NewProject(path) => {
+        Command::NewProject {
+            parent,
+            name,
+            multiplayer,
+        } => {
             if session.workspace.has_dirty_documents() {
                 return Err(EditorError::UnsavedDocuments.into());
             }
             if services.projector.is_running() {
                 bail!("Stop the projector before creating a project");
             }
-            services.storage.request(StorageRequest::NewProject(path))?;
+            services.storage.request(StorageRequest::NewProject {
+                parent,
+                name,
+                multiplayer,
+            })?;
             session.status = "Creating project...".into();
         }
         Command::OpenInstallationFolder => {

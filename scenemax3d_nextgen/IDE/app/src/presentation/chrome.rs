@@ -29,6 +29,8 @@ pub(crate) enum ChromeAction {
 pub(crate) struct MenuPopup(usize);
 #[derive(Component)]
 struct MenuItem;
+#[derive(Component)]
+pub(crate) struct CloseMenuOnClick;
 #[derive(Resource, Default)]
 pub(crate) struct ChromeState {
     menu: Option<usize>,
@@ -218,11 +220,12 @@ fn populate_menu(
         }
         if entry.command == "create_scene" {
             let row = button(commands, host, entry.name, Name::new("Create scene"));
+            commands.entity(row).insert(CloseMenuOnClick);
             commands.entity(row).observe(
                 |_: On<PointerClick>,
                  session: Res<crate::application::Session>,
                  mut menu: ResMut<super::tree_menu::State>| {
-                    menu.create_scene(session.workspace.project().root().to_owned());
+                    menu.create_scene(session.workspace.project().root().join("scripts"));
                 },
             );
             finish_item(commands, row, "");
@@ -230,6 +233,7 @@ fn populate_menu(
         }
         if entry.command == "create_material_document" {
             let row = button(commands, host, entry.name, Name::new("Create material"));
+            commands.entity(row).insert(CloseMenuOnClick);
             commands.entity(row).observe(
                 |_: On<PointerClick>,
                  session: Res<crate::application::Session>,
@@ -252,9 +256,11 @@ fn populate_menu(
             continue;
         }
         match entry.command {
-            "project_explorer" | "new_project_scripts_folder" => {
-                panel_item(commands, host, entry.name, "", Panel::Project)
+            "new_project_scripts_folder" => {
+                let row = super::projects::new_project_button(commands, host, entry.name);
+                finish_item(commands, row, "");
             }
+            "project_explorer" => panel_item(commands, host, entry.name, "", Panel::Project),
             "refresh_project_tree" => item(commands, host, entry.name, "", Action::Refresh),
             "restart_app" => item(commands, host, entry.name, "Ctrl+Alt+R", Action::Restart),
             "exit" => item(commands, host, entry.name, "", Action::Exit),
@@ -309,6 +315,18 @@ fn panel_item(commands: &mut Commands, parent: Entity, name: &str, shortcut: &st
     finish_item(commands, row, shortcut);
 }
 fn finish_item(commands: &mut Commands, row: Entity, shortcut: &str) {
+    // Observer-driven commands may act on PointerClick. Keep their row visible
+    // through release so picking can deliver that click before closing the menu.
+    commands.entity(row).observe(
+        |event: On<PointerClick>,
+         chrome: Query<(), With<ChromeAction>>,
+         mut state: ResMut<ChromeState>| {
+            if event.button == PointerButton::Primary && !chrome.contains(event.entity) {
+                state.menu = None;
+                state.submenu = None;
+            }
+        },
+    );
     commands.entity(row).insert((
         MenuItem,
         Node {
@@ -342,6 +360,7 @@ type ChromeButtons<'w, 's> = Query<
         Option<&'static ChromeAction>,
         Option<&'static Action>,
         Option<&'static MenuItem>,
+        Option<&'static CloseMenuOnClick>,
     ),
     With<Button>,
 >;
@@ -371,12 +390,14 @@ pub(crate) fn controls(
     let mut restore_editor = false;
     if mouse.just_pressed(MouseButton::Left) {
         let mut inside_menu = false;
-        for (interaction, chrome, action, menu_item) in &views.buttons {
+        for (interaction, chrome, action, menu_item, close_on_click) in &views.buttons {
             if *interaction != Interaction::Pressed {
                 continue;
             }
             inside_menu |= chrome.is_some() || menu_item.is_some();
-            if action.is_some() || (menu_item.is_some() && chrome.is_none()) {
+            if action.is_some()
+                || (menu_item.is_some() && chrome.is_none() && close_on_click.is_none())
+            {
                 state.menu = None;
                 state.submenu = None;
             }
@@ -534,5 +555,113 @@ impl ChromeState {
     }
     pub(crate) fn show_about(&mut self) {
         self.panel = Some(Panel::Help);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::{CommandQueue, ViewChange};
+    use bevy::{
+        picking::{
+            backend::HitData,
+            pointer::{Location, PointerId},
+        },
+        text::EditableText,
+    };
+
+    #[test]
+    fn new_project_menu_stays_visible_until_click_opens_dialog() {
+        let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
+        app.init_resource::<ChromeState>()
+            .init_resource::<super::super::tree_menu::State>()
+            .init_resource::<CommandQueue>()
+            .init_resource::<InputFocus>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .insert_resource(Session::new(scenemax_ide_core::Project::new(
+                "projects/current".into(),
+                vec![],
+            )))
+            .add_message::<ViewChange>()
+            .add_systems(Update, (controls, super::super::tree_menu::update).chain());
+        app.world_mut()
+            .spawn((Window::default(), bevy::window::PrimaryWindow));
+        let root = app.world_mut().spawn(Node::default()).id();
+        menu_bar(&mut app.world_mut().commands(), root);
+        super::super::tree_menu::setup(&mut app.world_mut().commands(), root);
+        app.world_mut().flush();
+        let (row, popup, index) = {
+            let world = app.world_mut();
+            let row = world
+                .query::<(Entity, &Name)>()
+                .iter(world)
+                .find(|(_, name)| name.as_str() == "New project")
+                .unwrap()
+                .0;
+            let popup = world.get::<ChildOf>(row).unwrap().parent();
+            (row, popup, world.get::<MenuPopup>(popup).unwrap().0)
+        };
+        {
+            let mut chrome = app.world_mut().resource_mut::<ChromeState>();
+            chrome.menu = Some(0);
+            chrome.submenu = Some(index);
+        }
+        app.update();
+        app.world_mut().entity_mut(row).insert(Interaction::Pressed);
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .press(MouseButton::Left);
+        app.update();
+        assert_eq!(
+            app.world().get::<Node>(popup).unwrap().display,
+            Display::Flex,
+            "The command must remain pickable until mouse release"
+        );
+        assert!(
+            !app.world()
+                .resource::<super::super::tree_menu::State>()
+                .is_open()
+        );
+        app.world_mut()
+            .resource_mut::<ButtonInput<MouseButton>>()
+            .reset_all();
+        app.world_mut().trigger(PointerClick {
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: bevy::camera::NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::ZERO,
+                },
+            ),
+            entity: row,
+            button: PointerButton::Primary,
+            count: 1,
+            duration: std::time::Duration::ZERO,
+            hit: HitData::new(Entity::PLACEHOLDER, 0., None, None),
+        });
+        app.update();
+        assert!(
+            app.world()
+                .resource::<super::super::tree_menu::State>()
+                .is_open()
+        );
+        assert_eq!(
+            app.world().get::<Node>(popup).unwrap().display,
+            Display::None
+        );
+        let input = app.world().resource::<InputFocus>().get().unwrap();
+        assert!(app.world().get::<EditableText>(input).is_some());
+        let world = app.world_mut();
+        assert!(
+            world
+                .query::<&Text>()
+                .iter(world)
+                .any(|text| text.0 == "Create New Project")
+        );
     }
 }

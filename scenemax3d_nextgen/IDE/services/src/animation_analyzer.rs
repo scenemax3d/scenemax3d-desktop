@@ -47,24 +47,10 @@ pub struct InventoryModel {
 }
 /// Find the installed inventory independently of the project's own catalog.
 pub fn inventory(project: &Path) -> Result<Vec<InventoryModel>, String> {
-    let mut roots = Vec::new();
-    if let Some(root) = std::env::var_os("SCENEMAX_BUILTIN_RESOURCES") {
-        roots.push(PathBuf::from(root));
+    match crate::resource_roots::shared(project) {
+        Some(root) => inventory_at(&root),
+        None => Ok(Vec::new()),
     }
-    if let Some(root) = crate::workspace_state::installation_root() {
-        roots.push(root.join("resources"));
-    }
-    roots.extend(project.ancestors().skip(1).map(|p| p.join("resources")));
-    roots.push(crate::deployment::workspace().join("../resources"));
-    for root in roots {
-        if root == project.join("resources") {
-            continue;
-        }
-        if root.join("Models/models.json").is_file() || root.join("models/models.json").is_file() {
-            return inventory_at(&root);
-        }
-    }
-    Ok(Vec::new())
 }
 /// Read a shared inventory with the same extension-first precedence as the runtime.
 pub fn inventory_at(root: &Path) -> Result<Vec<InventoryModel>, String> {

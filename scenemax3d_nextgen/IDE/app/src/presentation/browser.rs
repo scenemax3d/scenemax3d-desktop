@@ -41,6 +41,8 @@ fn companions(project: &Project) -> HashMap<PathBuf, PathBuf> {
         let names = match path.extension().and_then(|s| s.to_str()) {
             Some("smdesign") => vec![
                 format!("{stem}.code"),
+                format!("{stem}-init.code"),
+                format!("{stem}-end.code"),
                 format!("{stem}_init.code"),
                 format!("{stem}_end.code"),
             ],
@@ -59,6 +61,17 @@ fn companions(project: &Project) -> HashMap<PathBuf, PathBuf> {
 
 fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> {
     let scripts = project.root().join("scripts");
+    // Earlier Assets-menu creations live outside scripts. Keep those scenes
+    // discoverable without moving users' files or changing their references.
+    let scene_folders: Vec<_> = project
+        .entries()
+        .iter()
+        .filter(|entry| {
+            !entry.is_directory && entry.path.extension().is_some_and(|ext| ext == "smdesign")
+        })
+        .filter_map(|entry| entry.path.parent())
+        .filter(|parent| *parent != project.root() && !parent.starts_with(&scripts))
+        .collect();
     let owners = companions(project);
     let mut children: HashMap<&PathBuf, Vec<&ProjectEntry>> = HashMap::new();
     for entry in project.entries() {
@@ -68,14 +81,24 @@ fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> 
     }
     let mut rows = Vec::new();
     for entry in project.entries() {
+        let in_scripts = entry.path.starts_with(&scripts);
+        let external_scene = scene_folders
+            .iter()
+            .any(|folder| entry.path.starts_with(folder) || folder.starts_with(&entry.path));
+        let navigation_root = if in_scripts {
+            scripts.as_path()
+        } else {
+            project.root()
+        };
         if entry.path == scripts
-            || !entry.path.starts_with(&scripts)
+            || entry.path == project.root()
+            || (!in_scripts && !external_scene)
             || owners.contains_key(&entry.path)
             || !entry
                 .path
                 .ancestors()
                 .skip(1)
-                .take_while(|p| *p != scripts)
+                .take_while(|p| *p != navigation_root)
                 .all(|p| tree.expanded.contains(p))
         {
             continue;
@@ -130,6 +153,9 @@ pub(crate) fn update_tree(
                     if scenemax_ide_core::animation_analyzer::is_file(doc.path()) {
                         continue;
                     }
+                    if doc.path().extension().is_some_and(|ext| ext == "smdesign") {
+                        rebuild |= state.expanded.insert(doc.path().to_owned());
+                    }
                     if let Some(owner) = companions(session.workspace.project()).get(doc.path()) {
                         rebuild |= state.expanded.insert(owner.clone());
                     }
@@ -174,7 +200,11 @@ pub(crate) fn update_tree(
     for entry in visible(project, &state) {
         let depth = entry
             .path
-            .strip_prefix(&scripts)
+            .strip_prefix(if entry.path.starts_with(&scripts) {
+                &scripts
+            } else {
+                project.root()
+            })
             .map_or(0, |p| p.components().count().saturating_sub(1))
             + usize::from(owners.contains_key(&entry.path));
         let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
@@ -452,6 +482,70 @@ pub(crate) fn keyboard(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn added_scene_folder_and_companions_appear_after_worker_refresh() {
+        use crate::application::{Command, CommandQueue, EditorServices};
+        use scenemax_ide_services::TreeOperation;
+        for relative_parent in ["scripts", ""] {
+            let (mut app, _dir, _) = crate::tests::app();
+            let root = app
+                .world()
+                .resource::<Session>()
+                .workspace
+                .project()
+                .root()
+                .to_owned();
+            let parent = root.join(relative_parent);
+            app.world_mut()
+                .resource_mut::<CommandQueue>()
+                .0
+                .push_back(Command::Tree(TreeOperation::AddScene {
+                    parent: parent.clone(),
+                    name: "Opening".into(),
+                }));
+            app.update();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            while app
+                .world()
+                .resource::<EditorServices>()
+                .storage
+                .is_pending()
+            {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "Scene worker timed out"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                app.update();
+            }
+            app.update();
+            let scene = parent.join("Opening");
+            let session = app.world().resource::<Session>();
+            let active = session
+                .workspace
+                .document(session.workspace.active_id().unwrap())
+                .unwrap();
+            assert_eq!(active.path(), scene.join("Opening.smdesign"));
+            let world = app.world_mut();
+            let rows: HashSet<_> = world
+                .query::<&TreeItem>()
+                .iter(world)
+                .map(|row| row.path.clone())
+                .collect();
+            assert!(rows.contains(&scene), "Missing scene folder: {scene:?}");
+            for name in [
+                "Opening.smdesign",
+                "Opening-init.code",
+                "Opening-end.code",
+                "Opening.code",
+                "main",
+            ] {
+                let path = scene.join(name);
+                assert!(path.is_file(), "Missing file: {path:?}");
+                assert!(rows.contains(&path), "Missing tree row: {path:?}");
+            }
+        }
+    }
     #[test]
     fn companion_keyboard_navigation_uses_designer_parent_and_opens_files() {
         use bevy::ecs::system::RunSystemOnce;

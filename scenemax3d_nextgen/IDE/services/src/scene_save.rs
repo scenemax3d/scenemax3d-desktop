@@ -125,8 +125,14 @@ pub(crate) fn save(doc: &mut Document) -> Result<Option<Document>, ServiceError>
         .and_then(|s| s.to_str())
         .ok_or(ServiceError::Limit("Invalid designer filename"))?;
     let companion = |suffix: &str| -> Result<String, ServiceError> {
-        let bytes =
-            read(&path.with_file_name(format!("{stem}_{suffix}.code")))?.unwrap_or_default();
+        // New scenes use hyphens. Existing underscore companions remain readable;
+        // an explicitly present new companion (even empty) takes precedence.
+        let bytes = match read(&path.with_file_name(format!("{stem}-{suffix}.code")))? {
+            Some(bytes) => bytes,
+            None => {
+                read(&path.with_file_name(format!("{stem}_{suffix}.code")))?.unwrap_or_default()
+            }
+        };
         String::from_utf8(bytes)
             .map(|s| s.trim_start_matches('\u{feff}').to_owned())
             .map_err(|_| ServiceError::Limit("Scene companion must contain UTF-8 source"))
@@ -261,6 +267,41 @@ mod tests {
             !fs::read_to_string(dir.path().join("scene.code"))
                 .unwrap()
                 .contains("\"new\"")
+        );
+    }
+    #[test]
+    fn hyphenated_scene_companions_drive_generation_and_override_older_names() {
+        let (dir, mut doc) = fixture();
+        fs::write(
+            dir.path().join("scene-init.code"),
+            "Logger.info \"before scene\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("scene-end.code"),
+            "Logger.info \"after scene\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("scene_init.code"),
+            "Logger.info \"old init\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("scene_end.code"),
+            "Logger.info \"old end\"\n",
+        )
+        .unwrap();
+        let generated = save(&mut doc).unwrap().unwrap();
+        let code = generated.text();
+        assert!(code.find("before scene").unwrap() < code.find("camera.pos").unwrap());
+        assert!(code.find("after scene").unwrap() > code.find("surface => box").unwrap());
+        assert!(!code.contains("old init") && !code.contains("old end"));
+        scenemax_parser::parse_program(code).unwrap();
+        fs::write(dir.path().join("scene-init.code"), "").unwrap();
+        let generated = save(&mut doc).unwrap().unwrap();
+        assert!(
+            !generated.text().contains("before scene") && !generated.text().contains("old init")
         );
     }
     #[test]

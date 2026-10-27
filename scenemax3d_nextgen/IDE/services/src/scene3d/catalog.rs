@@ -1,4 +1,4 @@
-//! Project-local choices loaded on the existing scene storage worker.
+//! Project and shared model choices loaded on the existing scene storage worker.
 use serde_json::Value;
 use std::{collections::BTreeMap, path::Path};
 
@@ -30,6 +30,26 @@ pub(super) fn load(
         names.sort();
         names.dedup();
         catalog.insert(key.into(), names);
+    }
+    if let Some(project) = root.parent() {
+        let mut names = std::collections::BTreeMap::new();
+        let mut roots = vec![root.to_path_buf()];
+        roots.extend(crate::resource_roots::shared(project));
+        for root in roots {
+            for entry in crate::animation_analyzer::inventory_at(&root).unwrap_or_default() {
+                if let Some(name) = entry.data["models"][entry.index]["name"].as_str() {
+                    names
+                        .entry(name.to_lowercase())
+                        .or_insert_with(|| name.to_owned());
+                }
+            }
+        }
+        catalog.insert(
+            "resourcePath".into(),
+            std::iter::once(String::new())
+                .chain(names.into_values())
+                .collect(),
+        );
     }
     let legacy = catalog.remove("material").unwrap_or_default();
     let mut names = vec![String::new()];

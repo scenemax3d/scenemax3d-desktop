@@ -11,12 +11,14 @@ pub struct Scene3d {
     pub materials: std::collections::BTreeMap<String, Value>,
     /// Validated IK assets, resolved by ID or legacy filename on the storage worker.
     pub ik_assets: std::collections::BTreeMap<String, Value>,
-    /// Available project-local model, shader, material and IK names.
+    /// Available project and shared model choices, plus project shader, material and IK names.
     pub catalog: std::collections::BTreeMap<String, Vec<String>>,
     /// Saved editor camera, when present.
     pub camera: Option<SceneCamera>,
     /// Canonical resource root used by the scoped asset reader.
     pub resource_root: Option<PathBuf>,
+    /// Canonical shared inventory root for model previews.
+    pub shared_resource_root: Option<PathBuf>,
     /// Entries in document order.
     pub entities: Vec<Entity3d>,
 }
@@ -91,6 +93,7 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
     }
     let resources = root.join("resources");
     let canonical = resources.canonicalize().ok();
+    let shared = crate::resource_roots::shared(root);
     let mut entities = Vec::new();
     let mut pending: Vec<_> = entries
         .iter()
@@ -140,25 +143,35 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
             "SPHERE" => item.size = [number("radius", 0.5) * 2.; 3],
             "MODEL" => {
                 let resource = e["resourcePath"].as_str().unwrap_or("");
-                match scenemax_assets::resolve_model_resource(&resources, resource) {
+                match scenemax_assets::resolve_model_resource_with_builtin_fallback(
+                    &resources,
+                    shared.as_deref(),
+                    resource,
+                ) {
                     Ok(model) => {
                         item.model_offset_y = model
                             .character_physics
                             .as_ref()
                             .and_then(|p| p.bevy_visual_offset_y)
                             .unwrap_or(0.);
-                        let path = resources.join(&model.asset_path).canonicalize();
+                        let (owner, relative) = match model.asset_path.strip_prefix("builtin://") {
+                            Some(path) => (shared.as_ref(), path),
+                            None => (canonical.as_ref(), model.asset_path.as_str()),
+                        };
+                        let path = owner
+                            .ok_or_else(|| "Missing model resource root".to_owned())
+                            .and_then(|root| {
+                                root.join(relative)
+                                    .canonicalize()
+                                    .map_err(|e| e.to_string())
+                            });
                         match path {
-                            Ok(path)
-                                if canonical
-                                    .as_ref()
-                                    .is_some_and(|root| path.starts_with(root)) =>
-                            {
+                            Ok(path) if owner.is_some_and(|root| path.starts_with(root)) => {
                                 item.model = Some(path);
                             }
                             _ => {
                                 item.note = format!(
-                                    "Model file missing or outside project resources: {resource}"
+                                    "Model file missing or outside its resource folder: {resource}"
                                 )
                             }
                         }
@@ -231,6 +244,7 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
         },
         entities,
         resource_root: canonical,
+        shared_resource_root: shared,
     })
 }
 #[cfg(test)]
@@ -263,5 +277,63 @@ mod tests {
         assert_eq!(scene.entities[1].kind, "CODE");
         assert!(!scene.entities[1].note.is_empty());
         assert!(load(d.path(), r#"{"entities":[{"type":"BOX","position":[0]}]}"#).is_err());
+    }
+}
+
+#[cfg(test)]
+mod shared_model_tests {
+    #[test]
+    fn shared_models_are_listed_resolved_and_overridden_by_project_models() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("resources/Models");
+        let project = dir.path().join("projects/example");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(shared.join("preview.glb"), b"fixture").unwrap();
+        std::fs::write(
+            shared.join("models.json"),
+            r#"{"models":[{"name":"SharedPreview","path":"Models/preview.glb"}]}"#,
+        )
+        .unwrap();
+        let source =
+            r#"{"entities":[{"type":"MODEL","name":"object","resourcePath":"SharedPreview"}]}"#;
+        let scene = super::load(&project, source).unwrap();
+        assert!(scene.catalog["resourcePath"].contains(&"SharedPreview".into()));
+        assert_eq!(
+            scene.entities[0].model,
+            Some(shared.join("preview.glb").canonicalize().unwrap())
+        );
+        let inventory = crate::inventory::scan(&project).unwrap();
+        let asset = inventory
+            .assets
+            .iter()
+            .find(|a| a.name == "SharedPreview")
+            .unwrap();
+        assert_eq!(asset.origin, "Shared");
+        assert_eq!(asset.file, scene.entities[0].model);
+        let library = crate::material::load(&project).unwrap();
+        let (owner, path) = library.model_path("builtin://Models/preview.glb").unwrap();
+        assert_eq!(Some(owner), scene.shared_resource_root.as_deref());
+        assert_eq!(path, scene.entities[0].model.clone().unwrap());
+        let local = project.join("resources/Models");
+        std::fs::create_dir_all(&local).unwrap();
+        std::fs::write(local.join("local.glb"), b"fixture").unwrap();
+        std::fs::write(
+            local.join("models-ext.json"),
+            r#"{"models":[{"name":"SharedPreview","path":"Models/local.glb"}]}"#,
+        )
+        .unwrap();
+        let scene = super::load(&project, source).unwrap();
+        assert_eq!(
+            scene.catalog["resourcePath"]
+                .iter()
+                .filter(|n| *n == "SharedPreview")
+                .count(),
+            1
+        );
+        assert_eq!(
+            scene.entities[0].model,
+            Some(local.join("local.glb").canonicalize().unwrap())
+        );
     }
 }

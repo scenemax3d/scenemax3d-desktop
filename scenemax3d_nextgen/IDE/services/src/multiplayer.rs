@@ -412,6 +412,15 @@ fn load(root: &Path) -> Result<Snapshot, String> {
         original: None,
     })
 }
+pub(crate) fn initialize_project(root: &Path, enabled: bool) -> Result<(), String> {
+    let mut snapshot = load(root)?;
+    snapshot.settings.enabled = enabled;
+    // Room names have a shorter wire limit than filesystem folder names.
+    if snapshot.settings.session_name.len() >= 64 {
+        snapshot.settings.session_name = "local".into();
+    }
+    save(root, &mut snapshot)
+}
 fn save(root: &Path, snapshot: &mut Snapshot) -> Result<(), String> {
     if snapshot.settings.enabled {
         snapshot.settings.validate()?;

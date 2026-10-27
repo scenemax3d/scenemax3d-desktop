@@ -14,6 +14,64 @@ pub const MAX_SCRIPTS: usize = 2000;
 /// Local disk adapter. All filesystem access is centralized here.
 pub struct Filesystem;
 impl Filesystem {
+    /// Validate a portable project folder name, including Windows device names.
+    pub fn validate_project_name(name: &str) -> Result<(), ServiceError> {
+        let stem = name.split('.').next().unwrap_or("").to_uppercase();
+        let reserved = matches!(
+            stem.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+        ) || ["COM", "LPT"].iter().any(|prefix| {
+            stem.strip_prefix(prefix).is_some_and(|suffix| {
+                matches!(
+                    suffix,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+        });
+        if name.trim().is_empty()
+            || name.ends_with(['.', ' '])
+            || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+            || name.chars().any(char::is_control)
+            || name.encode_utf16().count() > 255
+            || reserved
+        {
+            return Err(ServiceError::Limit(
+                "Enter a valid project folder name without reserved names, path separators, or trailing dots/spaces",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Create a named project with its multiplayer preference before publishing it.
+    pub fn create_named_project(
+        parent: &Path,
+        name: &str,
+        multiplayer: bool,
+    ) -> Result<(Project, Document), ServiceError> {
+        Self::validate_project_name(name)?;
+        let root = parent.join(name);
+        if root.exists() {
+            return Err(ServiceError::Limit(
+                "A project or folder with this name already exists",
+            ));
+        }
+        let pending = io_result(
+            parent,
+            "Prepare project",
+            tempfile::Builder::new()
+                .prefix(".new-project-")
+                .tempdir_in(parent),
+        )?;
+        let staged = pending.path().join(name);
+        Self::create_project(&staged)?;
+        crate::multiplayer::initialize_project(&staged, multiplayer)
+            .map_err(ServiceError::Catalog)?;
+        io_result(&root, "Create project", fs::rename(&staged, &root))?;
+        let project = Self::open_project(&root)?;
+        let document = Self::open_document(&project, &project.root().join("scripts/main"))?;
+        Ok((project, document))
+    }
+
     /// Load source inventory without traversing symlinks or Windows junctions.
     pub fn open_project(root: &Path) -> Result<Project, ServiceError> {
         let root = io_result(root, "Open project", root.canonicalize())?;
@@ -266,6 +324,57 @@ fn scan(dir: &Path, files: &mut Vec<PathBuf>, depth: usize) -> Result<(), Servic
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn named_project_validates_names_and_persists_multiplayer() {
+        use super::Filesystem;
+        let parent = tempfile::tempdir().unwrap();
+        for name in [
+            "",
+            " ",
+            ".",
+            "..",
+            "../escape",
+            "a/b",
+            "a\\b",
+            "CON",
+            "nul.txt",
+            "COM1",
+            "LPT9.log",
+            "bad?",
+            "trailing.",
+            "trailing ",
+        ] {
+            assert!(
+                Filesystem::create_named_project(parent.path(), name, false).is_err(),
+                "{name}"
+            );
+        }
+        assert_eq!(std::fs::read_dir(parent.path()).unwrap().count(), 0);
+        for multiplayer in [false, true] {
+            let name = if multiplayer {
+                "Online project"
+            } else {
+                "Solo project"
+            };
+            let (project, document) =
+                Filesystem::create_named_project(parent.path(), name, multiplayer).unwrap();
+            assert_eq!(
+                project.root(),
+                parent.path().join(name).canonicalize().unwrap()
+            );
+            assert_eq!(document.path(), project.root().join("scripts/main"));
+            assert!(document.text().contains("Project ready"));
+            assert_eq!(
+                crate::multiplayer::enabled(project.root()).unwrap(),
+                multiplayer
+            );
+            assert!(Filesystem::create_named_project(parent.path(), name, !multiplayer).is_err());
+            assert_eq!(
+                crate::multiplayer::enabled(project.root()).unwrap(),
+                multiplayer
+            );
+        }
+    }
     use super::*;
     fn fixture(bytes: &[u8]) -> (tempfile::TempDir, Project, PathBuf) {
         let dir = tempfile::tempdir().unwrap();

@@ -12,13 +12,41 @@ pub struct Library {
     pub textures: Vec<String>,
     /// glTF/GLB preview paths.
     pub models: Vec<String>,
+    /// Shared root for builtin model preview paths.
+    pub shared_root: Option<PathBuf>,
+}
+impl Library {
+    /// Resolve a preview selection to its owning resource directory and file.
+    pub fn model_path(&self, name: &str) -> Option<(&Path, PathBuf)> {
+        if !self.models.iter().any(|model| model == name) {
+            return None;
+        }
+        let (root, relative) = match name.strip_prefix("builtin://") {
+            Some(relative) => (self.shared_root.as_deref()?, relative),
+            None => (self.root.as_path(), name),
+        };
+        Some((root, root.join(relative)))
+    }
 }
 /// Enumerate files without following links or junctions.
 pub fn load(project: &Path) -> Result<Library, String> {
-    let path = project.join("resources");
+    let mut result = load_root(&project.join("resources"))?;
+    if let Some(shared) = crate::resource_roots::shared(project) {
+        let library = load_root(&shared)?;
+        result.models.extend(
+            library
+                .models
+                .into_iter()
+                .map(|path| format!("builtin://{path}")),
+        );
+        result.shared_root = Some(shared);
+    }
+    Ok(result)
+}
+fn load_root(path: &Path) -> Result<Library, String> {
     if !path.exists() {
         return Ok(Library {
-            root: path,
+            root: path.to_path_buf(),
             ..Default::default()
         });
     }

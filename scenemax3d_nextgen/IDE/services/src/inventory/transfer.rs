@@ -174,7 +174,14 @@ fn files(asset: &Asset) -> io::Result<BTreeSet<PathBuf>> {
         }
         if asset.origin == "Designer" && ["Scenes", "UI"].contains(&asset.category.as_str()) {
             let stem = file.file_stem().unwrap_or_default().to_string_lossy();
-            for suffix in [".code", "_init.code", "_end.code", "_ui.code"] {
+            for suffix in [
+                ".code",
+                "-init.code",
+                "-end.code",
+                "_init.code",
+                "_end.code",
+                "_ui.code",
+            ] {
                 let p = file.with_file_name(format!("{stem}{suffix}"));
                 if p.is_file() {
                     add_path(&asset.root, &p, &mut out)?;

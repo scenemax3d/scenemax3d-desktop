@@ -159,12 +159,7 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         "Open project folder",
         Action::OpenProject,
     );
-    button(
-        &mut commands,
-        project_footer,
-        "New project",
-        Action::NewProject,
-    );
+    super::projects::new_project_button(&mut commands, project_footer, "New project");
     button(
         &mut commands,
         project_footer,
