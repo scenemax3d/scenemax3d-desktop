@@ -536,7 +536,7 @@ pub(crate) fn apply(
                         } else {
                             choice.map(|v| v.0.clone()).unwrap_or_default()
                         };
-                        (value != p.1).then(|| (p.0.clone(), value))
+                        super::properties::changed(&p.0, &p.1, &value).then(|| (p.0.clone(), value))
                     })
                     .collect();
                 super::properties::transaction(

@@ -361,3 +361,167 @@ fn native_code_node_input_and_ctrl_s_regenerate_disk_in_the_same_frame() {
             .contains("Logger.info \"updated\"")
     );
 }
+
+#[test]
+fn normalized_numeric_fields_do_not_block_model_properties_or_proportional_scale() {
+    use scenemax_ide_ui::property::{Checked, Choice};
+    let dir = tempfile::tempdir().unwrap();
+    let source = r#"{"entities":[{"type":"MODEL","name":"Model","position":[0,0,0],"scale":[0.01,0.02,0.03],"future":42}]}"#;
+    let mut session = Session::new(Project::new(dir.path().into(), vec![]));
+    let id = session
+        .workspace
+        .open_document(
+            Document::from_bytes(dir.path().join("scene.smdesign"), source.as_bytes().into())
+                .unwrap(),
+        )
+        .unwrap();
+    let revision = session.workspace.document(id).unwrap().revision();
+    let mut app = App::new();
+    app.insert_resource(session)
+        .insert_resource(SceneState {
+            current: Some((id, revision)),
+            scene: Some(scenemax_ide_services::scene3d::load(dir.path(), source).unwrap()),
+            ..default()
+        })
+        .init_resource::<ButtonInput<MouseButton>>()
+        .add_message::<crate::application::ViewChange>()
+        .add_systems(Update, live::update);
+    let original = Transform::from_scale(Vec3::new(0.01, 0.02, 0.03));
+    let object = app
+        .world_mut()
+        .spawn((gizmo::SceneObject(0, original), original))
+        .id();
+    let proportional = app
+        .world_mut()
+        .spawn((inspector::Proportional, Checked(true)))
+        .id();
+    let axes: Vec<_> = (0..3)
+        .map(|i| {
+            app.world_mut()
+                .spawn((
+                    inspector::Property(format!("scale:{i}"), format!("{:.4}", original.scale[i])),
+                    EditableText::new(format!("{:.2}", original.scale[i])),
+                ))
+                .id()
+        })
+        .collect();
+    let position = app
+        .world_mut()
+        .spawn((
+            inspector::Property("position:0".into(), "0.0000".into()),
+            EditableText::new("0"),
+        ))
+        .id();
+    let rotation = app
+        .world_mut()
+        .spawn((
+            inspector::Property("angles:1".into(), "0.0000".into()),
+            EditableText::new("0"),
+        ))
+        .id();
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<Session>()
+            .workspace
+            .document(id)
+            .unwrap()
+            .revision(),
+        revision
+    );
+    let edit = |app: &mut App, field, value: &str| {
+        app.world_mut()
+            .get_mut::<EditableText>(field)
+            .unwrap()
+            .editor_mut()
+            .set_text(value);
+        app.update();
+    };
+    edit(&mut app, axes[0], "6.24");
+    let expected = Vec3::new(6.24, 12.48, 18.72);
+    assert!(
+        app.world()
+            .get::<Transform>(object)
+            .unwrap()
+            .scale
+            .abs_diff_eq(expected, 0.00001)
+    );
+    for (axis, field) in axes.iter().enumerate() {
+        let value: f32 = app
+            .world()
+            .get::<EditableText>(*field)
+            .unwrap()
+            .value()
+            .to_string()
+            .parse()
+            .unwrap();
+        assert!((value - expected[axis]).abs() < 0.00001);
+    }
+    app.world_mut().get_mut::<Checked>(proportional).unwrap().0 = false;
+    edit(&mut app, axes[1], "2");
+    assert!(
+        app.world()
+            .get::<Transform>(object)
+            .unwrap()
+            .scale
+            .abs_diff_eq(Vec3::new(6.24, 2., 18.72), 0.00001)
+    );
+    edit(&mut app, position, "7");
+    edit(&mut app, rotation, "90");
+    let transform = app.world().get::<Transform>(object).unwrap();
+    assert_eq!(transform.translation.x, 7.);
+    assert!(
+        transform
+            .rotation
+            .abs_diff_eq(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2), 0.00001)
+    );
+    app.world_mut().spawn((
+        inspector::Property("name".into(), "Model".into()),
+        EditableText::new("Renamed"),
+    ));
+    for key in [
+        "hidden",
+        "multiplayer",
+        "staticModel",
+        "dynamicModel",
+        "vehicleModel",
+    ] {
+        app.world_mut().spawn((
+            inspector::Property(key.into(), "false".into()),
+            Checked(true),
+        ));
+    }
+    for (key, value) in [
+        ("attachTo", "mount"),
+        ("jointMapping", "source,target"),
+        ("modelCollisionShape", "box"),
+        ("shadowMode", "cast"),
+    ] {
+        app.world_mut().spawn((
+            inspector::Property(key.into(), "".into()),
+            Choice(value.into()),
+        ));
+    }
+    app.update();
+    assert_eq!(app.world().get::<Name>(object).unwrap().as_str(), "Renamed");
+    let session = app.world().resource::<Session>();
+    let data: Value = serde_json::from_str(session.workspace.document(id).unwrap().text()).unwrap();
+    for key in [
+        "hidden",
+        "multiplayer",
+        "staticModel",
+        "dynamicModel",
+        "vehicleModel",
+    ] {
+        assert_eq!(data["entities"][0][key], true);
+    }
+    for (key, value) in [
+        ("attachTo", "mount"),
+        ("jointMapping", "source,target"),
+        ("modelCollisionShape", "box"),
+        ("shadowMode", "cast"),
+    ] {
+        assert_eq!(data["entities"][0][key], value);
+    }
+    assert_eq!(data["entities"][0]["future"], 42);
+}
