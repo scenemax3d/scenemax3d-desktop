@@ -128,3 +128,114 @@ fn retained_records_save_same_frame_and_undo_without_losing_unknown_fields() {
             .is_some()
     ); // dirty close is guarded
 }
+
+#[test]
+fn inventory_choice_loads_shared_model_without_saving_it_into_project() {
+    bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    let (mut app, dir, _) = crate::tests::app();
+    let shared = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(shared.path().join("Models")).unwrap();
+    std::fs::write(
+        shared.path().join("Models/fixture.gltf"),
+        include_bytes!(
+            "../../../../../Tests/fixtures/animation_analyzer/project/resources/Models/fixture.gltf"
+        ),
+    )
+    .unwrap();
+    let catalog = shared.path().join("Models/models.json");
+    let data = json!({"models":[{"name":"inventory_fixture","path":"Models/fixture.gltf"}]});
+    std::fs::write(&catalog, data.to_string()).unwrap();
+    let project_catalog = scenemax_ide_services::animation_analyzer::catalog(dir.path()).unwrap();
+    let before = std::fs::read(&project_catalog).unwrap();
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Open(project_catalog.clone()));
+    app.world_mut().resource_mut::<State>().inventory =
+        scenemax_ide_services::animation_analyzer::inventory_at(shared.path()).unwrap();
+    for _ in 0..500 {
+        app.update();
+        if app.world().resource::<State>().source.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    app.update();
+    let state = app.world().resource::<State>();
+    assert_eq!(state.data["models"][0]["name"], "inventory_fixture");
+    assert_eq!(state.project_count, 0);
+    assert_eq!(
+        state.source.as_ref().unwrap().root,
+        shared.path().canonicalize().unwrap()
+    );
+    assert!(!state.source.as_ref().unwrap().timelines.is_empty());
+    assert_eq!(std::fs::read(&project_catalog).unwrap(), before);
+    let save = {
+        let world = app.world_mut();
+        world
+            .query::<(Entity, &Action)>()
+            .iter(world)
+            .find(|(_, a)| matches!(a, Action::Save))
+            .unwrap()
+            .0
+    };
+    *app.world_mut().get_mut::<Interaction>(save).unwrap() = Interaction::Pressed;
+    app.update();
+    assert_eq!(std::fs::read(&project_catalog).unwrap(), before);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&std::fs::read(&catalog).unwrap()).unwrap(),
+        data
+    );
+}
+
+#[test]
+fn numeric_scrub_formatting_does_not_pause_playback() {
+    bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    let (mut app, dir, _) = crate::tests::app();
+    let path = scenemax_ide_services::animation_analyzer::catalog(dir.path()).unwrap();
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Open(path));
+    for _ in 0..500 {
+        app.update();
+        if app.world().resource::<State>().parts.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    app.update();
+    let editor = {
+        let w = app.world_mut();
+        w.query::<(Entity, &Control)>()
+            .iter(w)
+            .find(|(_, c)| c.0 == "seek")
+            .unwrap()
+            .0
+    };
+    {
+        let mut state = app.world_mut().resource_mut::<State>();
+        state.playing = true;
+        state.time = 0.;
+        state.seek = None;
+    }
+    // Playback writes a fixed-decimal display; native number inputs use compact formatting.
+    app.world_mut().get_mut::<Control>(editor).unwrap().1 = "0.0".into();
+    app.world_mut()
+        .get_mut::<EditableText>(editor)
+        .unwrap()
+        .editor_mut()
+        .set_text("0");
+    app.update();
+    assert!(app.world().resource::<State>().playing);
+    assert!(app.world().resource::<State>().seek.is_none());
+    // An actual manual seek still pauses and requests the selected frame.
+    app.world_mut()
+        .get_mut::<EditableText>(editor)
+        .unwrap()
+        .editor_mut()
+        .set_text("0.5");
+    app.update();
+    assert!(!app.world().resource::<State>().playing);
+    assert_eq!(app.world().resource::<State>().seek, Some(0.5));
+}
