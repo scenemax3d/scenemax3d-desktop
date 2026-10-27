@@ -216,6 +216,18 @@ fn populate_menu(
             finish_item(commands, row, "");
             continue;
         }
+        if entry.command == "create_scene" {
+            let row = button(commands, host, entry.name, Name::new("Create scene"));
+            commands.entity(row).observe(
+                |_: On<PointerClick>,
+                 session: Res<crate::application::Session>,
+                 mut menu: ResMut<super::tree_menu::State>| {
+                    menu.create_scene(session.workspace.project().root().to_owned());
+                },
+            );
+            finish_item(commands, row, "");
+            continue;
+        }
         if entry.command == "create_material_document" {
             let row = button(commands, host, entry.name, Name::new("Create material"));
             commands.entity(row).observe(

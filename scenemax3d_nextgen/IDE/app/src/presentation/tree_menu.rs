@@ -60,6 +60,10 @@ pub(crate) struct State {
     generation: u64,
 }
 impl State {
+    pub(crate) fn create_scene(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::AddScene);
+    }
     pub(crate) fn create_ik(&mut self, parent: PathBuf) {
         self.open(parent, true, Vec2::new(300., 180.));
         self.dialog = Some(Dialog::Ik);
