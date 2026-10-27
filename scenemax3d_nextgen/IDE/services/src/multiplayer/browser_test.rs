@@ -60,7 +60,8 @@ pub(super) fn start_local(
     cancel: &AtomicBool,
 ) -> Result<LocalTest, String> {
     progress::stage(5, "Building local Zig server and browser gateway");
-    let installation = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let installation = crate::workspace_state::installation_root()
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
     let (mut bytes, _) = build::prepare(&installation, &s.platform, cancel)?;
     // Local loopback tests have no password; do not inherit a remote secret.
     patch(&mut bytes, s, root, None)?;

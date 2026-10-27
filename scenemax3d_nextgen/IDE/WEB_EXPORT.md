@@ -14,8 +14,7 @@ contains the desktop projector, launcher and native effects DLL. Keep these from
 the same installer release as the IDE. Missing bundles produce a repair message;
 they never trigger automatic compilation.
 
-Select **Rebuild engine from source** in Build & Deploy only when intentionally
-rebuilding. This opt-in is not restored from saved preferences. Rebuilding needs
+Engine rebuilding is a developer workflow outside the export dialog. It needs
 the matching source workspace, Rust/Cargo, platform tools and, for Web, the
 `wasm32-unknown-unknown` target and matching wasm-bindgen. Other desktop targets
 need a supplied projector and bundled launcher for their target triple, or an
@@ -105,19 +104,19 @@ establish Linux/macOS export support on a clean machine.
 ## 3. Build and preview
 
 1. Open your game project and stop its running preview.
-2. Open **Tools > Package & Deploy**. Set the game filename, release version and
-   output folder. Select **Web**; deselect other platforms if you only want Web.
+2. Open **Tools > Package & Deploy**. Set the game filename and
+   release version. Builds use a new folder under the project’s `build_games` directory. Select **Web**; deselect other platforms if you only want Web.
 3. Use **Edit** on Web and leave **Custom Web recipe** blank for the built-in
    exporter. **Open Web build setup** opens the prerequisite dialog directly.
 4. Optionally choose a PNG/JPEG loading background, heading, loading text and
    footer. The default footer is `powered by SceneMax3D`; the progress bar remains.
-5. Review shared resources. Keep **Include all assets** off for referenced-asset
-   selection; enable it if scripts construct resource names dynamically and
-   static selection cannot identify them. Identical file contents are downloaded
+5. Shared resources are located automatically. Exports select referenced assets. Advanced projects
+   using dynamic resource names can retain `include_all_resources` in their
+   deployment configuration. Identical file contents are downloaded
    once while all original logical paths remain available.
 6. Leave automatic upload off for a local test. Click **Check requirements**, fix
-   reported problems, then **Build release**. Keep **Rebuild engine from source**
-   unchecked to package the bundled runtime without compilation.
+   reported problems, then **Build release**. Normal exports package the bundled
+   runtime without compilation.
 7. After completion, choose **Open In Browser**. SceneMax serves the completed ZIP
    on localhost and opens the browser without requiring a multiplayer server.
    Multiplayer projects can also use **Test With Local Server** or **Test With
@@ -189,7 +188,7 @@ compiling again. The release version is entered manually; repeatedly uploading
 | No WebGPU adapter / unavailable WebGPU | Use HTTPS or localhost, check browser hardware acceleration and GPU drivers, and try a supported device |
 | Silent automatic startup | Click or press a key inside the game to enable audio; check browser/site mute settings |
 | Failed to fetch an asset | Check the build/browser log, preserve the ZIP layout and filename case, and confirm all files were uploaded |
-| Runtime-created resource names missing | Enable Include all assets, rebuild, and test those code paths |
+| Runtime-created resource names missing | Set `include_all_resources` in the advanced deployment configuration, rebuild, and test those code paths |
 | Failed to find index.html | Upload the generated Web ZIP directly with index.html at its root and select the HTML/playable upload |
 | Upload accepted but game looks old/unavailable | Check channel and build ID, allow itch.io extraction to finish, then reload; the version label alone is not a build identifier |
 | Unsupported Effekseer feature | Adjust the effect to the supported browser features; installing a native SDK does not add browser support |

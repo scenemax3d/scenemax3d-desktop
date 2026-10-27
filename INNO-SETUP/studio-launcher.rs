@@ -9,7 +9,6 @@ fn main() -> std::io::Result<()> {
         .current_dir(root)
         .env("SCENEMAX_BUILD_WORKSPACE", &workspace)
         .env("SCENEMAX_BUILTIN_RESOURCES", root.join("resources"))
-        .env("SCENEMAX_EFFEKSEER_NATIVE_PREBUILT_DIR", root.join("native"))
         .env("SCENEMAX_FBX2GLTF", workspace.join("Tools/vendor/fbx2gltf/FBX2glTF-windows-x86_64.exe"))
         .env("SCENEMAX_GLTFPACK", workspace.join("Tools/vendor/gltfpack/gltfpack.exe"))
         .args(env::args_os().skip(1))

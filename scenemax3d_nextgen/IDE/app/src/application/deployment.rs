@@ -19,15 +19,12 @@ pub(crate) enum Action {
     Reveal,
     OpenBrowser,
     Log,
-    SizeReport,
     TestWeb(scenemax_ide_services::multiplayer::TestTarget),
     StopWeb,
     Browse(PathField),
 }
 #[derive(Clone, Copy)]
 pub(crate) enum PathField {
-    Output,
-    Builtin,
     WebBackground,
     Butler,
     Runtime(usize),
@@ -149,8 +146,6 @@ pub(crate) fn update(
         {
             let value = path.to_string_lossy().into_owned();
             match field {
-                PathField::Output => settings.output = value,
-                PathField::Builtin => settings.builtin_resources = value,
                 PathField::WebBackground => settings.web_loading.background = value,
                 PathField::Butler => settings.butler = value,
                 PathField::Runtime(i) => settings.platforms[i].runtime = value,
@@ -261,26 +256,26 @@ pub(crate) fn update(
                     state.builder.cancel();
                     state.report.status = "Cancelling the current operation…".into();
                 }
-                Action::Reveal | Action::Log | Action::SizeReport => {
-                    let path = if matches!(action, Action::SizeReport) {
-                        state.report.size_report_path.clone()
-                    } else if matches!(action, Action::Log) {
+                Action::Reveal | Action::Log => {
+                    let path = if matches!(action, Action::Log) {
                         state.report.log_path.clone()
                     } else {
+                        // The build log belongs to the release root; artifacts live
+                        // one level below it in windows/, web/, and other targets.
                         state
                             .report
-                            .artifacts
-                            .first()
-                            .and_then(|p| p.parent())
-                            .map(PathBuf::from)
+                            .log_path
+                            .as_ref()
+                            .and_then(|path| path.parent())
                             .or_else(|| {
                                 state
                                     .report
-                                    .log_path
-                                    .as_ref()
-                                    .and_then(|p| p.parent())
-                                    .map(PathBuf::from)
+                                    .artifacts
+                                    .first()
+                                    .and_then(|path| path.parent())
+                                    .and_then(|platform| platform.parent())
                             })
+                            .map(PathBuf::from)
                     };
                     if let Some(path) = path {
                         commands.0.push_back(Command::Explore(path));
@@ -346,10 +341,7 @@ pub(crate) fn update(
                 Action::Browse(field) => {
                     if !state.busy {
                         state.picking = Some(field);
-                        state.start(Operation::Browse(matches!(
-                            field,
-                            PathField::Output | PathField::Builtin
-                        )))?;
+                        state.start(Operation::Browse(false))?;
                     }
                 }
             }

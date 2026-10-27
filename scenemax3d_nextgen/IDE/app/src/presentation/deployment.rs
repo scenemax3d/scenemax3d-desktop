@@ -12,8 +12,6 @@ use scenemax_ide_ui::{button, label, property, theme::*};
 pub(crate) enum Field {
     Name,
     Version,
-    Output,
-    Builtin,
     WebBackground,
     WebHeader,
     WebMessage,
@@ -29,10 +27,6 @@ pub(crate) enum Field {
 struct Toggle(Option<usize>);
 #[derive(Component)]
 struct Effects;
-#[derive(Component)]
-struct Rebuild;
-#[derive(Component)]
-struct AllResources;
 #[derive(Component)]
 struct Progress;
 #[derive(Component)]
@@ -120,8 +114,6 @@ fn text(c: &mut Commands, p: Entity, title: &str, size: f32, color: Color) -> En
 fn field(c: &mut Commands, p: Entity, title: &str, kind: Field, value: &str) -> Entity {
     text(c, p, title, 11., MUTED);
     let path = match kind {
-        Field::Output => Some(PathField::Output),
-        Field::Builtin => Some(PathField::Builtin),
         Field::WebBackground => Some(PathField::WebBackground),
         Field::Butler => Some(PathField::Butler),
         Field::Runtime(i) => Some(PathField::Runtime(i)),
@@ -246,20 +238,6 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         "Release version",
         Field::Version,
         &settings.version,
-    );
-    field(
-        c,
-        scroll,
-        "Output folder · each build gets a new subfolder",
-        Field::Output,
-        &settings.output,
-    );
-    field(
-        c,
-        scroll,
-        "Shared resources (optional; included in the package)",
-        Field::Builtin,
-        &settings.builtin_resources,
     );
     text(c, scroll, "02   PLATFORMS", 12., INK);
     let cards = area(
@@ -428,34 +406,6 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
         "Include native Effekseer support (desktop only)",
         settings.native_effects,
     );
-    property::checkbox(
-        c,
-        scroll,
-        Rebuild,
-        "Rebuild engine from source",
-        settings.rebuild_runtime,
-    );
-    text(
-        c,
-        scroll,
-        "Normal exports use bundled runtimes. Rebuilding requires Rust and platform build tools.",
-        12.,
-        INK,
-    );
-    property::checkbox(
-        c,
-        scroll,
-        AllResources,
-        "Include all assets (dynamic resource names)",
-        settings.include_all_resources,
-    );
-    text(
-        c,
-        scroll,
-        "Default: package referenced assets and reuse the release engine. First engine build may take several minutes.",
-        11.,
-        MUTED,
-    );
     text(c, scroll, "03   PUBLISH TO ITCH.IO", 12., INK);
     property::checkbox(
         c,
@@ -574,8 +524,6 @@ fn spawn(c: &mut Commands, settings: &Settings, focus: &mut InputFocus) -> Entit
     );
     action(c, links, "Open output", Action::Reveal);
     action(c, links, "Open In Browser", Action::OpenBrowser);
-    action(c, links, "Log folder", Action::Log);
-    action(c, links, "Size report", Action::SizeReport);
     let preview = area(
         c,
         right,
@@ -647,8 +595,6 @@ pub(crate) struct Fields<'w, 's> {
     inputs: Query<'w, 's, (&'static Field, &'static EditableText)>,
     toggles: Query<'w, 's, (&'static Toggle, &'static property::Checked)>,
     effects: Query<'w, 's, &'static property::Checked, With<Effects>>,
-    rebuild: Query<'w, 's, &'static property::Checked, With<Rebuild>>,
-    all_resources: Query<'w, 's, &'static property::Checked, With<AllResources>>,
 }
 pub(crate) fn collect(mut state: ResMut<Deployment>, fields: Fields) {
     if state.busy {
@@ -659,14 +605,12 @@ pub(crate) fn collect(mut state: ResMut<Deployment>, fields: Fields) {
     };
     for (kind, value) in &fields.inputs {
         let destination = match *kind {
-            Field::Builtin => &mut settings.builtin_resources,
             Field::WebBackground => &mut settings.web_loading.background,
             Field::WebHeader => &mut settings.web_loading.header,
             Field::WebMessage => &mut settings.web_loading.message,
             Field::WebFooter => &mut settings.web_loading.footer,
             Field::Name => &mut settings.name,
             Field::Version => &mut settings.version,
-            Field::Output => &mut settings.output,
             Field::Itch => &mut settings.itch_page,
             Field::Butler => &mut settings.butler,
             Field::Triple(i) => &mut settings.platforms[i].triple,
@@ -688,12 +632,6 @@ pub(crate) fn collect(mut state: ResMut<Deployment>, fields: Fields) {
     }
     if let Ok(value) = fields.effects.single() {
         settings.native_effects = value.0;
-    }
-    if let Ok(value) = fields.rebuild.single() {
-        settings.rebuild_runtime = value.0;
-    }
-    if let Ok(value) = fields.all_resources.single() {
-        settings.include_all_resources = value.0;
     }
 }
 type VisualNodes<'w, 's> = Query<
@@ -865,9 +803,6 @@ pub(crate) fn refresh(
             if state.report.log_path.is_some() {
                 action(&mut c, buttons, "Open build log", Action::Log);
             }
-            if state.report.size_report_path.is_some() {
-                action(&mut c, buttons, "Size report", Action::SizeReport);
-            }
             let done = action(&mut c, buttons, "Done", Action::DismissResult);
             focus.set(done, FocusCause::Navigated);
             view.result = Some(overlay);
@@ -895,8 +830,6 @@ pub(crate) fn refresh(
         }
         for (field, mut input) in &mut visuals.fields {
             let value = match *field {
-                Field::Output => Some(&settings.output),
-                Field::Builtin => Some(&settings.builtin_resources),
                 Field::WebBackground => Some(&settings.web_loading.background),
                 Field::Butler => Some(&settings.butler),
                 Field::Runtime(i) => Some(&settings.platforms[i].runtime),
