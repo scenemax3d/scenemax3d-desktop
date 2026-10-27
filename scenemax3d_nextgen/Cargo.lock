@@ -5804,6 +5804,7 @@ dependencies = [
  "image",
  "scenemax_assets",
  "scenemax_ide_core",
+ "scenemax_multiplayer",
  "scenemax_parser",
  "scenemax_runtime_ui_core",
  "serde",
@@ -5812,6 +5813,7 @@ dependencies = [
  "swash",
  "tempfile",
  "thiserror 2.0.20",
+ "tungstenite",
  "zeno",
  "zip",
 ]

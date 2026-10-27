@@ -20,6 +20,8 @@ pub(crate) mod launch;
 pub mod local_server;
 mod progress;
 mod remote;
+#[cfg(test)]
+mod installed_tests;
 pub use progress::Progress;
 pub use remote::RemoteAction;
 

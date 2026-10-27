@@ -28,3 +28,7 @@ zeno = "=0.3.3"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+scenemax_multiplayer = { path = "../../Engine/multiplayer" }
+tungstenite = "0.28"
