@@ -272,6 +272,17 @@ pub(super) fn zip(
     }
     let mut archive = zip::ZipWriter::new(file);
     let paths = list(root, context)?;
+    // A shared-only game still needs its project resource root at runtime.
+    // File-only staging drops empty directories; encode this required directory
+    // explicitly so existing native launchers restore the complete layout.
+    if stub.is_some()
+        && root.join("launch.json").is_file()
+        && !paths
+            .iter()
+            .any(|path| path.starts_with(root.join("resources")))
+    {
+        archive.add_directory("resources/", SimpleFileOptions::default())?;
+    }
     let mut sizes = HashMap::<u64, usize>::new();
     for path in &paths {
         *sizes.entry(regular(path)?.len()).or_default() += 1;
