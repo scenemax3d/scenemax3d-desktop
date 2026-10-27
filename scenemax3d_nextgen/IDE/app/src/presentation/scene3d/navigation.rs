@@ -26,7 +26,7 @@ pub(crate) fn spawn(commands: &mut Commands, parent: Entity, camera: Entity) {
                 height: px(104.),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.08, 0.09, 0.11, 0.8)),
+            BackgroundColor(Color::NONE),
             ZIndex(5),
             ChildOf(parent),
         ))

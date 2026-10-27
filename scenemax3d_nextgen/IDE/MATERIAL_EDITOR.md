@@ -30,7 +30,7 @@ The editor's **Copy script assignment** button copies this statement using the c
 
 Native materials also appear in the scene designer's Material selector and preview there. Scene document properties and executable SceneMax scripts are separate: keep the corresponding generated/authored script assignment in sync before running the game.
 
-Packaging starts from root `main`, follows reachable material names and includes their texture dependencies. Materials not referenced by the game are excluded. Update a prebuilt release engine with **Rebuild engine from source** before distributing games that use this new material format.
+Packaging starts from root `main`, follows reachable material names and includes their texture dependencies. Materials not referenced by the game are excluded. Use a matching bundled runtime that supports the material format when distributing games.
 
 ## Design research and scope
 

@@ -937,3 +937,36 @@ fn bundled_exports_package_without_sources_or_compilers() {
             .rebuild_runtime
     );
 }
+
+#[test]
+fn shared_only_native_package_restores_empty_project_resource_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let payload = dir.path().join("payload");
+    fs::create_dir_all(payload.join("builtin/resources/Models")).unwrap();
+    fs::create_dir_all(payload.join("scripts")).unwrap();
+    fs::write(payload.join("launch.json"), r#"{"script":"scripts/main"}"#).unwrap();
+    fs::write(payload.join("scripts/main"), "// fixture").unwrap();
+    fs::write(
+        payload.join("builtin/resources/Models/models.json"),
+        r#"{"models":[]}"#,
+    )
+    .unwrap();
+    let stub = dir.path().join("stub");
+    fs::write(&stub, b"native launcher fixture").unwrap();
+    let archive = dir.path().join("game.exe");
+    files::zip(&payload, &archive, Some(&stub), &context()).unwrap();
+    let mut archive = zip::ZipArchive::new(fs::File::open(archive).unwrap()).unwrap();
+    assert!(archive.by_name("resources/").unwrap().is_dir());
+    let extracted = dir.path().join("extracted");
+    archive.extract(&extracted).unwrap();
+    assert!(extracted.join("resources").is_dir());
+    assert!(
+        extracted
+            .join("builtin/resources/Models/models.json")
+            .is_file()
+    );
+    assert_eq!(
+        fs::read(extracted.join("scripts/main")).unwrap(),
+        b"// fixture"
+    );
+}

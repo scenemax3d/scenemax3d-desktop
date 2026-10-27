@@ -20,6 +20,8 @@ pub(crate) mod launch;
 pub mod local_server;
 mod progress;
 mod remote;
+#[cfg(test)]
+mod installed_tests;
 pub use progress::Progress;
 pub use remote::RemoteAction;
 
@@ -213,7 +215,8 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
             progress::stage(5, "Validating build settings");
             snapshot.settings.validate()?;
             let s = &snapshot.settings;
-            let installation = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+            let installation = crate::workspace_state::installation_root()
+                .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
             progress::stage(15, "Building Zig UDP server");
             let (mut bytes, origin) = build::prepare(&installation, &s.platform, cancel)?;
             build::check(cancel)?;
@@ -393,7 +396,8 @@ fn load(root: &Path) -> Result<Snapshot, String> {
             original: Some(bytes),
         });
     }
-    let installation = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let installation = crate::workspace_state::installation_root()
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
     let mut settings = launch::import(root, &installation.join("projects/projects.json"))?
         .unwrap_or_else(|| Settings {
             session_name: root

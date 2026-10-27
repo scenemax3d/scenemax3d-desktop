@@ -43,8 +43,7 @@ on Windows to compile the binding generator.
 
 Select Web in Package & Deploy and leave the custom recipe blank. The worker
 copies the bundled Wasm runtime and generated bindings, stages the selected
-scripts/assets and creates a static-site ZIP. Only **Rebuild engine from source**
-invokes Cargo and wasm-bindgen; it is not restored from saved preferences.
+scripts/assets and creates a static-site ZIP. Engine compilation is a developer workflow outside the export dialog.
 
 After a Web artifact completes, **Open In Browser** serves the ZIP from a private
 loopback HTTP server and opens the browser without requiring Zig. **Stop Test**
@@ -103,8 +102,8 @@ Linux/macOS package assembly is implemented but not executed on those OSes in th
 
 ## Workflow
 
-1. Set the filename, release version and output folder. Every build gets a unique child folder. Previous releases are never deleted or overwritten.
-2. Review **Shared resources**. New forms include the installation resource directory by default, so development-time shared assets can travel with the game. Clear it only when all required resources are project-local.
+1. Set the filename and release version. Builds use the project’s `build_games` folder by default, with a unique child folder for each build. Previous releases are never deleted or overwritten.
+2. Shared resources are discovered automatically from the installation and included when referenced. Existing saved deployment paths remain supported.
 3. Select platforms and use **Edit** for their details. Desktop builds accept a Rust triple and optional prebuilt projector. Its adjacent dynamic libraries are included. Native file/folder pickers are available beside paths.
 4. **Check requirements** checks configuration, entry-point containment, tools and prebuilt executable format. Compilation, SDK setup, transitive libraries, signing and clean-machine execution still need their respective verification.
 5. **Build release** saves dirty documents through the existing save/conflict pipeline. Failed saves, newer edits or a changed project cancel deferred packaging. Stop the running projector first.
@@ -117,21 +116,21 @@ Settings edits are saved in `.scenemax-studio/deployment.json` without requiring
 
 Packaging always starts at the project's root `main` (the shallowest `scripts/**/main`, matching the project model), never the active editor document. Every reachable script is parsed with `scenemax_parser`; typed `AddCode`, `SwitchTo` and `UiLoad` statements drive traversal, including nested functions, branches and event handlers. Character-mode commands are not scene transitions. The closure retains referenced catalog records, model aliases, glTF/GLB external buffers and textures, font pages, authored definitions and effect sidecars. Catalogs are pruned only inside the isolated snapshot.
 
-Resource-name selection is conservative: literal names in reachable code and UI documents remain eligible even in conditional branches. For resource names assembled dynamically, enable **Include all assets (dynamic resource names)**. Static selection cannot prove the values of arbitrary runtime expressions. `package-size.json` lists the selected resource files, byte counts and excluded bytes in the build folder. Unsupported legacy game content is not converted by packaging.
+Resource-name selection is conservative: literal names in reachable code and UI documents remain eligible even in conditional branches. Advanced projects using dynamically assembled resource names can retain `include_all_resources: true` in `.scenemax-studio/deployment.json`; this setting is not shown in the export dialog. Static selection cannot prove the values of arbitrary runtime expressions. `package-size.json` lists the selected resource files, byte counts and excluded bytes in the build folder. Unsupported legacy game content is not converted by packaging.
 
 The installer supplies both projectors and the packaging launcher under
 `scenemax3d_nextgen/prebuilt`. Normal exports never run Cargo, rustc or wasm-bindgen,
 even when sources are present. Missing bundles fail with repair instructions.
-**Rebuild engine from source** is an explicit, unsaved opt-in for source changes.
+Source builds are a developer workflow outside the export dialog.
 Unsupported targets require matching runtime bundles or an explicit source build.
 
 Identical resource payloads are byte-verified, archived once and restored at their original paths by the launcher. Already compressed media is stored directly; other files use fast deflate. No lossy asset conversion is performed. The September 18 Windows benchmark on the user's project produced a 245.9 MiB executable in 17.5 seconds, down from approximately 1 GiB and a six-minute engine compilation. Timings depend on the machine, cache and asset contents.
 
 ## Asset sizing report
 
-Every build writes `size-report-analysis.txt` and `size-report-analysis.json` next to `build.log`, using the Java report's title, category/top-contributor sections and JSON fields. The report is generated from the actual staged snapshot, after dependency selection and before platform compilation, and survives later build/upload failures. It is also generated when **Include all assets** is enabled.
+Every build writes `size-report-analysis.txt` and `size-report-analysis.json` next to `build.log`, using the Java report's title, category/top-contributor sections and JSON fields. The report is generated from the actual staged snapshot, after dependency selection and before platform compilation, and survives later build/upload failures. It is also generated when `include_all_resources` is enabled in the advanced deployment configuration.
 
-Use **Size report** in Build Activity or the result dialog to locate the text report. Categories are sorted by total size; the 40 largest individual files are listed with snapshot-relative paths. Project/shared resources are separate, and categories account for every staged byte without overlapping. Counts explicitly represent files, including catalogs and sidecars, rather than Java's sometimes-partial logical resource counts. Machine-readable byte sizes remain exact; MiB figures are rounded to two decimals. Generation times use UTC.
+Use **Open output** to open the build folder containing the text report and platform output folders. Categories are sorted by total size; the 40 largest individual files are listed with snapshot-relative paths. Project/shared resources are separate, and categories account for every staged byte without overlapping. Counts explicitly represent files, including catalogs and sidecars, rather than Java's sometimes-partial logical resource counts. Machine-readable byte sizes remain exact; MiB figures are rounded to two decimals. Generation times use UTC.
 
 This is staged content analysis, not compressed artifact size or a GPU/frame-time profiler. The runtime and platform libraries are added later; archive compression and deduplication can reduce the game content size. The report files stay outside the payload and upload directories. Existing `package-size.json` remains available for dependency-selection details.
 
