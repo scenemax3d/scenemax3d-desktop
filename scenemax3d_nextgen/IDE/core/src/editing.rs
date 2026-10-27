@@ -88,8 +88,20 @@ impl Document {
             prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1,
         )
     }
-    /// Indent or outdent complete selected lines using four spaces.
+    /// Insert two spaces at the caret, or indent/outdent selected lines by two spaces.
     pub fn indent(&mut self, outdent: bool) {
+        let range = self.selection().range();
+        if !outdent && range.is_empty() {
+            let mut text = self.text().to_owned();
+            text.insert_str(range.start, "  ");
+            self.replace_text(text);
+            let caret = range.start + 2;
+            self.select(Selection {
+                anchor: caret,
+                focus: caret,
+            });
+            return;
+        }
         self.transform_lines(outdent, false);
     }
     /// Toggle line comments for the selected lines as one transaction.
@@ -132,10 +144,10 @@ impl Document {
                     if let Some(rest) = line.strip_prefix('\t') {
                         rest.to_owned()
                     } else {
-                        line[line.bytes().take(4).take_while(|b| *b == b' ').count()..].to_owned()
+                        line[line.bytes().take(2).take_while(|b| *b == b' ').count()..].to_owned()
                     }
                 } else {
-                    format!("    {line}")
+                    format!("  {line}")
                 }
             })
             .collect::<Vec<_>>()
@@ -189,6 +201,40 @@ mod tests {
         assert_eq!(d.text(), "α one α two");
     }
     #[test]
+    fn tab_inserts_two_spaces_at_unicode_caret_and_is_undoable() {
+        let mut d = doc("café tail");
+        d.select(Selection {
+            anchor: 5,
+            focus: 5,
+        });
+        d.indent(false);
+        assert_eq!(d.text(), "café   tail");
+        assert_eq!(
+            d.selection(),
+            Selection {
+                anchor: 7,
+                focus: 7
+            }
+        );
+        d.indent(false);
+        assert_eq!(d.text(), "café     tail");
+        assert!(!d.text().contains('\t'));
+        d.undo();
+        assert_eq!(d.text(), "café   tail");
+        d.undo();
+        assert_eq!(d.text(), "café tail");
+    }
+    #[test]
+    fn shift_tab_removes_two_spaces_or_one_existing_tab() {
+        let mut d = doc("    one\n\ttwo\n three");
+        d.select(Selection {
+            anchor: 0,
+            focus: d.text().len(),
+        });
+        d.indent(true);
+        assert_eq!(d.text(), "  one\ntwo\nthree");
+    }
+    #[test]
     fn line_commands_are_single_undo_transactions() {
         let mut d = doc("one\n  two\nthree");
         d.select(Selection {
@@ -196,7 +242,7 @@ mod tests {
             focus: 10,
         });
         d.indent(false);
-        assert_eq!(d.text(), "    one\n      two\nthree");
+        assert_eq!(d.text(), "  one\n    two\nthree");
         d.undo();
         assert_eq!(d.text(), "one\n  two\nthree");
         d.go_to_line(3);
