@@ -23,6 +23,9 @@ pub struct LocalTest {
 }
 
 pub(super) fn settings(saved: &Settings, target: TestTarget) -> Result<Settings, String> {
+    if !saved.enabled {
+        return Err("Enable Multiplayer game in Project Settings first".into());
+    }
     let mut s = saved.clone();
     if target == TestTarget::Local {
         let port = s
@@ -106,6 +109,7 @@ mod tests {
     #[test]
     fn local_override_preserves_remote_preferences_and_project_identity() {
         let mut saved = Settings::default();
+        saved.enabled = true;
         saved.project_guid = "browser-target-regression".into();
         saved.server = "remote.example".into();
         saved.platform = "linux-x64".into();
@@ -132,6 +136,7 @@ mod tests {
         let port = udp.local_addr().unwrap().port();
         let tcp = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port + 1)).unwrap();
         let mut saved = Settings::default();
+        saved.enabled = true;
         saved.project_guid = "browser-startup-regression".into();
         saved.port = port;
         let s = settings(&saved, TestTarget::Local).unwrap();

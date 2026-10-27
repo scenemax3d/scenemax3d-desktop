@@ -13,7 +13,105 @@ pub fn catalog(project: &Path) -> Result<PathBuf, String> {
             return path.canonicalize().map_err(|e| e.to_string());
         }
     }
-    Err("Import a glTF/GLB model into this project first (no Models/models-ext.json).".into())
+    let folder = project.join("resources/Models");
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    let folder = folder.canonicalize().map_err(|e| e.to_string())?;
+    if !folder.starts_with(project.canonicalize().map_err(|e| e.to_string())?) {
+        return Err("Model catalog directory escapes the project".into());
+    }
+    let path = folder.join("models-ext.json");
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(b"{\"models\": []}\n")
+                .map_err(|e| e.to_string())?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    Ok(path)
+}
+/// One inventory model with its original catalog, needed for paths and aliases.
+#[derive(Clone, Debug)]
+pub struct InventoryModel {
+    /// Owning catalog.
+    pub catalog: PathBuf,
+    /// Full catalog for sourceModel alias resolution.
+    pub data: Value,
+    /// Model row in that catalog.
+    pub index: usize,
+}
+/// Find the installed inventory independently of the project's own catalog.
+pub fn inventory(project: &Path) -> Result<Vec<InventoryModel>, String> {
+    match crate::resource_roots::shared(project) {
+        Some(root) => inventory_at(&root),
+        None => Ok(Vec::new()),
+    }
+}
+/// Read a shared inventory with the same extension-first precedence as the runtime.
+pub fn inventory_at(root: &Path) -> Result<Vec<InventoryModel>, String> {
+    let mut result = Vec::new();
+    let mut names = std::collections::HashSet::new();
+    for file in [
+        "Models/models-ext.json",
+        "Models/models.json",
+        "models/models-ext.json",
+        "models/models.json",
+    ] {
+        let catalog = root.join(file);
+        if !catalog.is_file() {
+            continue;
+        }
+        let data =
+            crate::inventory::json(&catalog).map_err(|e| format!("{}: {e}", catalog.display()))?;
+        for (index, model) in data["models"]
+            .as_array()
+            .ok_or("Missing inventory models array")?
+            .iter()
+            .enumerate()
+        {
+            if let Some(name) = model["name"].as_str() {
+                if names.insert(name.to_lowercase()) {
+                    result.push(InventoryModel {
+                        catalog: catalog.clone(),
+                        data: data.clone(),
+                        index,
+                    });
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+/// Add inventory choices without modifying the project catalog. Project names win.
+pub fn with_inventory(
+    project: &Value,
+    inventory: &[InventoryModel],
+) -> (Value, Vec<InventoryModel>) {
+    let mut data = project.clone();
+    let Some(models) = data["models"].as_array_mut() else {
+        return (data, Vec::new());
+    };
+    let mut names: std::collections::HashSet<String> = models
+        .iter()
+        .filter_map(|m| m["name"].as_str().map(str::to_lowercase))
+        .collect();
+    let mut visible = Vec::new();
+    for entry in inventory {
+        let model = &entry.data["models"][entry.index];
+        if model["name"]
+            .as_str()
+            .is_some_and(|n| names.insert(n.to_lowercase()))
+        {
+            models.push(model.clone());
+            visible.push(entry.clone());
+        }
+    }
+    (data, visible)
 }
 /// Prepared immutable preview source.
 #[derive(Clone, Debug)]
@@ -114,6 +212,49 @@ pub fn validate_changed(catalog: &Path, previous: &str, text: &str) -> Result<()
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn inventory_models_keep_their_own_roots_and_project_precedence() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("shared");
+        std::fs::create_dir_all(shared.join("Models")).unwrap();
+        std::fs::write(
+            shared.join("Models/fixture.gltf"),
+            include_bytes!(
+                "../../../Tests/fixtures/animation_analyzer/project/resources/Models/fixture.gltf"
+            ),
+        )
+        .unwrap();
+        let data = json!({"models":[{"name":"shared","path":"Models/fixture.gltf"},{"name":"duplicate","path":"Models/fixture.gltf"}]});
+        let catalog = shared.join("Models/models.json");
+        std::fs::write(&catalog, data.to_string()).unwrap();
+        let before = std::fs::read(&catalog).unwrap();
+        let entries = inventory_at(&shared).unwrap();
+        let project = json!({"models":[{"name":"DUPLICATE","path":"Models/local.glb"}]});
+        let (merged, visible) = with_inventory(&project, &entries);
+        assert_eq!(merged["models"].as_array().unwrap().len(), 2);
+        assert_eq!(merged["models"][0]["path"], "Models/local.glb");
+        assert_eq!(visible.len(), 1);
+        let loaded = source(&visible[0].catalog, &visible[0].data, visible[0].index).unwrap();
+        assert_eq!(loaded.root, shared.canonicalize().unwrap());
+        assert!(!loaded.timelines.is_empty());
+        assert_eq!(std::fs::read(catalog).unwrap(), before);
+        assert_eq!(project["models"].as_array().unwrap().len(), 1);
+    }
+    #[test]
+    fn analyzer_can_open_without_an_imported_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = catalog(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"models\": []}\n"
+        );
+        std::fs::write(&path, "preserve existing catalog").unwrap();
+        assert_eq!(catalog(dir.path()).unwrap(), path);
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "preserve existing catalog"
+        );
+    }
     #[test]
     fn nonuniform_frames_aliases_validation_conflicts_and_preservation() {
         let dir = tempfile::tempdir().unwrap();

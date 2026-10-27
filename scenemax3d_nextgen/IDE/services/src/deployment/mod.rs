@@ -5,6 +5,7 @@ pub use preferences::SettingsWriter;
 mod assets;
 mod existing;
 mod pipeline;
+mod prebuilt;
 pub mod preview;
 mod process;
 mod size_report;
@@ -87,6 +88,8 @@ pub enum Operation {
 /// Snapshot of a job's current state, with bounded UI log retention.
 #[derive(Clone, Default)]
 pub struct Report {
+    /// Project multiplayer opt-in read with deployment settings.
+    pub multiplayer_enabled: bool,
     /// Monotonic change counter for retained UI updates.
     pub revision: u64,
     /// Completed phase percentage, not an estimated compiler completion percentage.

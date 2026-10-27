@@ -4,6 +4,30 @@ use scenemax_ide_services::scene3d::Entity3d;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+// Native numeric controls may normalize decimal formatting without changing a value.
+// Only numeric fields use semantic comparison: names/code and choices remain literal.
+pub(super) fn changed(key: &str, previous: &str, current: &str) -> bool {
+    let numeric = key.starts_with("position:")
+        || key.starts_with("scale:")
+        || key.starts_with("angles:")
+        || key.starts_with("cinematicTargetOffset:")
+        || key.starts_with("number:")
+        || key.starts_with("track:")
+        || key.starts_with("segment:")
+        || (key.starts_with("ik:") && !key.ends_with(":target") && !key.ends_with(":enabled"));
+    if numeric
+        && let (Ok(a), Ok(b)) = (
+            previous.trim().parse::<f64>(),
+            current.trim().parse::<f64>(),
+        )
+        && a.is_finite()
+        && b.is_finite()
+    {
+        return a != b;
+    }
+    previous != current
+}
+
 pub(super) fn transaction(
     e: &Entity3d,
     scene: &Scene3d,

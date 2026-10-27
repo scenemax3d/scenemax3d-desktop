@@ -80,7 +80,7 @@ pub(crate) fn update(
         } else {
             choice.map(|v| v.0.clone()).unwrap_or_default()
         };
-        if value != p.1 {
+        if super::properties::changed(&p.0, &p.1, &value) {
             values.insert(p.0.clone(), value);
         }
     }
@@ -208,6 +208,7 @@ pub(crate) fn update(
                 *t = new;
             }
             object.1 = new;
+            commands.entity(entity).insert(Name::new(e.name.clone()));
             let shape = patch.iter().any(|(key, _)| {
                 !matches!(
                     key.as_str(),

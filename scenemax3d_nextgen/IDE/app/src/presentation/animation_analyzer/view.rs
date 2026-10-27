@@ -157,6 +157,15 @@ pub(super) fn table(c: &mut Commands, parent: Entity, s: &State) {
         &s.model.to_string(),
         &options,
     );
+    if s.model >= s.project_count {
+        c.spawn((
+            label(
+                "Inventory model · Import into the project to edit saved ranges",
+                11.,
+            ),
+            ChildOf(parent),
+        ));
+    }
     c.spawn((label("Animation frame ranges", 12.), ChildOf(parent)));
     let names = s
         .source
@@ -242,7 +251,9 @@ pub(super) fn table(c: &mut Commands, parent: Entity, s: &State) {
                 format!("/models/{}/animationFrameRanges/{index}/{key}", s.model),
                 value.clone(),
             );
-            if key == "sourceAnimation" {
+            if s.model >= s.project_count {
+                c.spawn((label(&value, 12.), ChildOf(cell)));
+            } else if key == "sourceAnimation" {
                 property::dropdown(c, cell, field, &value, &names);
             } else if key == "start" || key == "end" {
                 number::input(c, cell, field, &value, 0., 1000., 1.);

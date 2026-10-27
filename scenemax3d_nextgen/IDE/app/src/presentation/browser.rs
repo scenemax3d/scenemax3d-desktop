@@ -24,6 +24,16 @@ pub(crate) struct TreeItem {
 #[derive(Component)]
 pub(crate) struct Folder(PathBuf);
 
+#[derive(Component)]
+pub(crate) struct Disclosure {
+    path: PathBuf,
+    expanded: bool,
+}
+#[derive(Component)]
+pub(crate) struct TreeLimit;
+
+type ExistingRows<'w, 's> = Query<'w, 's, (Entity, &'static TreeItem, &'static mut Node)>;
+
 // Presentation-only ownership: files retain their real paths and file actions.
 fn companions(project: &Project) -> HashMap<PathBuf, PathBuf> {
     let files: HashSet<_> = project
@@ -41,6 +51,8 @@ fn companions(project: &Project) -> HashMap<PathBuf, PathBuf> {
         let names = match path.extension().and_then(|s| s.to_str()) {
             Some("smdesign") => vec![
                 format!("{stem}.code"),
+                format!("{stem}-init.code"),
+                format!("{stem}-end.code"),
                 format!("{stem}_init.code"),
                 format!("{stem}_end.code"),
             ],
@@ -59,6 +71,17 @@ fn companions(project: &Project) -> HashMap<PathBuf, PathBuf> {
 
 fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> {
     let scripts = project.root().join("scripts");
+    // Earlier Assets-menu creations live outside scripts. Keep those scenes
+    // discoverable without moving users' files or changing their references.
+    let scene_folders: Vec<_> = project
+        .entries()
+        .iter()
+        .filter(|entry| {
+            !entry.is_directory && entry.path.extension().is_some_and(|ext| ext == "smdesign")
+        })
+        .filter_map(|entry| entry.path.parent())
+        .filter(|parent| *parent != project.root() && !parent.starts_with(&scripts))
+        .collect();
     let owners = companions(project);
     let mut children: HashMap<&PathBuf, Vec<&ProjectEntry>> = HashMap::new();
     for entry in project.entries() {
@@ -68,14 +91,24 @@ fn visible<'a>(project: &'a Project, tree: &TreeState) -> Vec<&'a ProjectEntry> 
     }
     let mut rows = Vec::new();
     for entry in project.entries() {
+        let in_scripts = entry.path.starts_with(&scripts);
+        let external_scene = scene_folders
+            .iter()
+            .any(|folder| entry.path.starts_with(folder) || folder.starts_with(&entry.path));
+        let navigation_root = if in_scripts {
+            scripts.as_path()
+        } else {
+            project.root()
+        };
         if entry.path == scripts
-            || !entry.path.starts_with(&scripts)
+            || entry.path == project.root()
+            || (!in_scripts && !external_scene)
             || owners.contains_key(&entry.path)
             || !entry
                 .path
                 .ancestors()
                 .skip(1)
-                .take_while(|p| *p != scripts)
+                .take_while(|p| *p != navigation_root)
                 .all(|p| tree.expanded.contains(p))
         {
             continue;
@@ -96,7 +129,10 @@ pub(crate) fn update_tree(
     mut state: ResMut<TreeState>,
     mut changes: MessageReader<ViewChange>,
     folders: Query<(&Interaction, &Folder), Changed<Interaction>>,
-    host: Single<Entity, With<Browser>>,
+    host: Single<(Entity, Option<&Children>), With<Browser>>,
+    mut rows: ExistingRows,
+    mut disclosures: Query<(&mut Disclosure, &mut UiTransform)>,
+    limits: Query<Entity, With<TreeLimit>>,
     mut focus: Option<ResMut<bevy::input_focus::InputFocus>>,
 ) {
     let mut rebuild = state.is_changed();
@@ -129,6 +165,9 @@ pub(crate) fn update_tree(
                     // Tool catalogs must not expand the user's project navigator.
                     if scenemax_ide_core::animation_analyzer::is_file(doc.path()) {
                         continue;
+                    }
+                    if doc.path().extension().is_some_and(|ext| ext == "smdesign") {
+                        rebuild |= state.expanded.insert(doc.path().to_owned());
                     }
                     if let Some(owner) = companions(session.workspace.project()).get(doc.path()) {
                         rebuild |= state.expanded.insert(owner.clone());
@@ -166,7 +205,14 @@ pub(crate) fn update_tree(
     if !rebuild {
         return;
     }
-    commands.entity(*host).despawn_children();
+    let (host, children) = *host;
+    // Keep row entities (and their text, icons, interactions and observers) alive
+    // while their paths remain visible. Expansion changes only the affected rows.
+    let mut existing: HashMap<_, _> = rows
+        .iter()
+        .map(|(entity, item, _)| (item.path.clone(), entity))
+        .collect();
+    let mut order = Vec::new();
     let project = session.workspace.project();
     let owners = companions(project);
     let scripts = project.root().join("scripts");
@@ -174,22 +220,59 @@ pub(crate) fn update_tree(
     for entry in visible(project, &state) {
         let depth = entry
             .path
-            .strip_prefix(&scripts)
+            .strip_prefix(if entry.path.starts_with(&scripts) {
+                &scripts
+            } else {
+                project.root()
+            })
             .map_or(0, |p| p.components().count().saturating_sub(1))
             + usize::from(owners.contains_key(&entry.path));
         let name = entry.path.file_name().unwrap_or_default().to_string_lossy();
-        let row = tree_row(
-            &mut commands,
-            *host,
-            entry.path.clone(),
-            &name,
-            depth,
-            entry.is_directory,
-            (entry.is_directory || owners.values().any(|p| p == &entry.path))
-                .then(|| state.expanded.contains(&entry.path)),
-        );
+        let expandable = entry.is_directory || owners.values().any(|p| p == &entry.path);
+        let retained = existing.remove(&entry.path).filter(|entity| {
+            let Ok((_, item, _)) = rows.get(*entity) else {
+                return false;
+            };
+            if item.directory == entry.is_directory && item.expandable == expandable {
+                true
+            } else {
+                commands.entity(*entity).despawn();
+                false
+            }
+        });
+        let row = if let Some(entity) = retained {
+            if let Ok((_, _, mut node)) = rows.get_mut(entity) {
+                let left = px(10. + depth as f32 * 16.);
+                if node.padding.left != left {
+                    node.padding.left = left;
+                }
+            }
+            entity
+        } else {
+            tree_row(
+                &mut commands,
+                host,
+                entry.path.clone(),
+                &name,
+                depth,
+                entry.is_directory,
+                expandable.then(|| state.expanded.contains(&entry.path)),
+            )
+        };
+        order.push(row);
         if state.focus_path.as_ref() == Some(&entry.path) {
             focus_row = Some(row);
+        }
+    }
+    for entity in existing.into_values() {
+        commands.entity(entity).despawn();
+    }
+    for (mut disclosure, mut transform) in &mut disclosures {
+        let expanded = state.expanded.contains(&disclosure.path);
+        if disclosure.expanded != expanded {
+            disclosure.expanded = expanded;
+            *transform =
+                UiTransform::from_rotation(Rot2::degrees(if expanded { 45. } else { -45. }));
         }
     }
     if restore_focus
@@ -199,10 +282,24 @@ pub(crate) fn update_tree(
         focus.set(focus_row, bevy::input_focus::FocusCause::Navigated);
     }
     if project.tree_truncated() {
-        commands.spawn((
-            label("Tree limited to 10,000 entries / 32 levels", 11.),
-            ChildOf(*host),
-        ));
+        let limit = limits.iter().next().unwrap_or_else(|| {
+            commands
+                .spawn((
+                    TreeLimit,
+                    label("Tree limited to 10,000 entries / 32 levels", 11.),
+                    ChildOf(host),
+                ))
+                .id()
+        });
+        order.push(limit);
+    } else {
+        for entity in &limits {
+            commands.entity(entity).despawn();
+        }
+    }
+    // Reorder only when the visible paths change, never for selection/focus alone.
+    if children.is_none_or(|children| children.iter().ne(order.iter().copied())) {
+        commands.entity(host).replace_children(&order);
     }
 }
 
@@ -293,9 +390,11 @@ fn tree_row(
         .id();
     if expandable {
         if !directory {
-            commands
-                .entity(chevron)
-                .insert((Button, Interaction::None, Folder(disclosure_path)));
+            commands.entity(chevron).insert((
+                Button,
+                Interaction::None,
+                Folder(disclosure_path.clone()),
+            ));
             commands
                 .entity(chevron)
                 .observe(|mut event: On<PointerClick>| {
@@ -314,6 +413,10 @@ fn tree_row(
                 ..default()
             },
             BorderColor::all(INK),
+            Disclosure {
+                path: disclosure_path,
+                expanded,
+            },
             UiTransform::from_rotation(Rot2::degrees(if expanded { 45. } else { -45. })),
             ChildOf(chevron),
         ));
@@ -383,7 +486,17 @@ pub(crate) fn keyboard(
     mut queue: ResMut<crate::application::CommandQueue>,
     menu: Option<Res<super::tree_menu::State>>,
 ) {
-    if menu.is_some_and(|m| m.is_open()) {
+    if menu.is_some_and(|m| m.is_open())
+        || ![
+            KeyCode::ArrowDown,
+            KeyCode::ArrowUp,
+            KeyCode::ArrowRight,
+            KeyCode::ArrowLeft,
+            KeyCode::Enter,
+        ]
+        .into_iter()
+        .any(|key| keys.just_pressed(key))
+    {
         return;
     }
     let Some(item) = focus
@@ -452,6 +565,195 @@ pub(crate) fn keyboard(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn expansion_reuses_unaffected_rows_and_preserves_focus_and_scroll() {
+        use bevy::input_focus::{FocusCause, InputFocus};
+        let root = PathBuf::from("project");
+        let folder = root.join("scripts/section");
+        let designer = folder.join("scene.smdesign");
+        let companion = folder.join("scene-init.code");
+        let sibling = root.join("scripts/main");
+        let entries = vec![
+            ProjectEntry {
+                path: folder.clone(),
+                is_directory: true,
+            },
+            ProjectEntry {
+                path: designer.clone(),
+                is_directory: false,
+            },
+            ProjectEntry {
+                path: companion.clone(),
+                is_directory: false,
+            },
+            ProjectEntry {
+                path: sibling.clone(),
+                is_directory: false,
+            },
+        ];
+        let mut app = App::new();
+        app.insert_resource(Session::new(
+            Project::new(root, vec![]).with_entries(entries, false),
+        ))
+        .init_resource::<TreeState>()
+        .init_resource::<InputFocus>()
+        .add_message::<ViewChange>()
+        .add_systems(Update, update_tree);
+        let host = app
+            .world_mut()
+            .spawn((Browser, Node::default(), ScrollPosition(Vec2::new(0., 40.))))
+            .id();
+        app.update();
+        let snapshot = |world: &mut World| -> HashMap<PathBuf, (Entity, Vec<Entity>)> {
+            world
+                .query::<(Entity, &TreeItem, &Children)>()
+                .iter(world)
+                .map(|(e, row, children)| (row.path.clone(), (e, children.iter().collect())))
+                .collect()
+        };
+        let initial = snapshot(app.world_mut());
+        let folder_row = initial[&folder].0;
+        app.world_mut()
+            .resource_mut::<InputFocus>()
+            .set(folder_row, FocusCause::Navigated);
+        app.world_mut()
+            .entity_mut(folder_row)
+            .insert(Interaction::Pressed);
+        app.update();
+        let expanded = snapshot(app.world_mut());
+        assert_eq!(expanded[&folder], initial[&folder]);
+        assert_eq!(expanded[&sibling], initial[&sibling]);
+        assert!(expanded.contains_key(&designer));
+        assert!(!expanded.contains_key(&companion));
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(folder_row));
+        assert_eq!(app.world().get::<ScrollPosition>(host).unwrap().y, 40.);
+        // A no-op filesystem refresh and keyboard focus move retain every child.
+        let hierarchy_tick = app
+            .world()
+            .entity(host)
+            .get_ref::<Children>()
+            .unwrap()
+            .last_changed();
+        app.world_mut()
+            .write_message(ViewChange::ProjectTreeChanged);
+        app.update();
+        app.world_mut().resource_mut::<TreeState>().focus_path = Some(sibling.clone());
+        app.update();
+        assert_eq!(snapshot(app.world_mut()), expanded);
+        assert_eq!(
+            app.world()
+                .entity(host)
+                .get_ref::<Children>()
+                .unwrap()
+                .last_changed(),
+            hierarchy_tick
+        );
+        // Designer companions use the same incremental path as real directories.
+        let disclosure = app
+            .world_mut()
+            .query::<(Entity, &Folder)>()
+            .iter(app.world())
+            .find(|(_, item)| item.0 == designer)
+            .unwrap()
+            .0;
+        app.world_mut()
+            .entity_mut(disclosure)
+            .insert(Interaction::Pressed);
+        app.update();
+        let with_companion = snapshot(app.world_mut());
+        assert!(with_companion.contains_key(&companion));
+        assert_eq!(with_companion[&designer], expanded[&designer]);
+        app.world_mut()
+            .entity_mut(folder_row)
+            .insert(Interaction::None);
+        app.update();
+        app.world_mut()
+            .entity_mut(folder_row)
+            .insert(Interaction::Pressed);
+        app.update();
+        assert_eq!(snapshot(app.world_mut()), initial);
+        assert!(app.world().get_entity(expanded[&designer].0).is_err());
+        assert!(
+            app.world()
+                .get_entity(with_companion[&companion].0)
+                .is_err()
+        );
+        assert_eq!(app.world().resource::<InputFocus>().get(), Some(folder_row));
+        assert_eq!(app.world().get::<ScrollPosition>(host).unwrap().y, 40.);
+        let arrow = app
+            .world_mut()
+            .query::<(&Disclosure, &UiTransform)>()
+            .iter(app.world())
+            .find(|(d, _)| d.path == folder)
+            .unwrap();
+        assert!(!arrow.0.expanded);
+        assert_eq!(*arrow.1, UiTransform::from_rotation(Rot2::degrees(-45.)));
+    }
+
+    #[test]
+    fn added_scene_folder_and_companions_appear_after_worker_refresh() {
+        use crate::application::{Command, CommandQueue, EditorServices};
+        use scenemax_ide_services::TreeOperation;
+        for relative_parent in ["scripts", ""] {
+            let (mut app, _dir, _) = crate::tests::app();
+            let root = app
+                .world()
+                .resource::<Session>()
+                .workspace
+                .project()
+                .root()
+                .to_owned();
+            let parent = root.join(relative_parent);
+            app.world_mut()
+                .resource_mut::<CommandQueue>()
+                .0
+                .push_back(Command::Tree(TreeOperation::AddScene {
+                    parent: parent.clone(),
+                    name: "Opening".into(),
+                }));
+            app.update();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            while app
+                .world()
+                .resource::<EditorServices>()
+                .storage
+                .is_pending()
+            {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "Scene worker timed out"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                app.update();
+            }
+            app.update();
+            let scene = parent.join("Opening");
+            let session = app.world().resource::<Session>();
+            let active = session
+                .workspace
+                .document(session.workspace.active_id().unwrap())
+                .unwrap();
+            assert_eq!(active.path(), scene.join("Opening.smdesign"));
+            let world = app.world_mut();
+            let rows: HashSet<_> = world
+                .query::<&TreeItem>()
+                .iter(world)
+                .map(|row| row.path.clone())
+                .collect();
+            assert!(rows.contains(&scene), "Missing scene folder: {scene:?}");
+            for name in [
+                "Opening.smdesign",
+                "Opening-init.code",
+                "Opening-end.code",
+                "Opening.code",
+                "main",
+            ] {
+                let path = scene.join(name);
+                assert!(path.is_file(), "Missing file: {path:?}");
+                assert!(rows.contains(&path), "Missing tree row: {path:?}");
+            }
+        }
+    }
     #[test]
     fn companion_keyboard_navigation_uses_designer_parent_and_opens_files() {
         use bevy::ecs::system::RunSystemOnce;

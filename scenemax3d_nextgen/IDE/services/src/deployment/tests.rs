@@ -839,3 +839,101 @@ fn ik_packages_by_asset_id_without_editor_preview_models() {
     assert!(!output.join("resources/Models/authoring.glb").exists());
     assert!(!output.join("resources/Models/preview.glb").exists());
 }
+
+#[test]
+fn bundled_exports_package_without_sources_or_compilers() {
+    use scenemax_ide_core::deployment::Target;
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path();
+    let snapshot = base.join("snapshot");
+    fs::create_dir_all(snapshot.join("scripts")).unwrap();
+    fs::write(snapshot.join("scripts/main"), "sys.print \"Hello\"").unwrap();
+    fs::write(snapshot.join("launch.json"), r#"{"script":"scripts/main"}"#).unwrap();
+    let workspace = base.join("workspace");
+    let web = workspace.join("prebuilt/web");
+    let native = workspace.join("prebuilt/x86_64-pc-windows-msvc");
+    fs::create_dir_all(web.join("snippets/example")).unwrap();
+    fs::create_dir_all(&native).unwrap();
+    fs::write(web.join("runtime.js"), "// binding fixture").unwrap();
+    fs::write(web.join("runtime_bg.wasm"), b"\0asm").unwrap();
+    fs::write(web.join("snippets/example/helper.js"), "// helper").unwrap();
+    fs::write(
+        native.join("scenemax_projector_nextgen.exe"),
+        b"MZprojector fixture",
+    )
+    .unwrap();
+    fs::write(
+        native.join("scenemax_game_launcher.exe"),
+        b"MZlauncher fixture",
+    )
+    .unwrap();
+    fs::write(
+        native.join("scenemax_effekseer_bevy.dll"),
+        b"MZeffects fixture",
+    )
+    .unwrap();
+    let mut settings = Settings::default();
+    settings.name = "fixture".into();
+    settings.output = base.join("output").to_string_lossy().into_owned();
+    for platform in &mut settings.platforms {
+        platform.selected = matches!(platform.target, Target::Windows | Target::Web);
+    }
+    let request = Request {
+        multiplayer_override: None,
+        project: snapshot.clone(),
+        entry: snapshot.join("scripts/main"),
+        workspace,
+        settings,
+    };
+    let staging = base.join("staging");
+    let output = base.join("output");
+    fs::create_dir_all(&staging).unwrap();
+    fs::create_dir_all(&output).unwrap();
+    let log = base.join("build.log");
+    pipeline::check(&request, &context()).unwrap();
+    let artifact =
+        super::web::build(&request, &snapshot, &staging, &output, &context(), &log).unwrap();
+    let mut archive = zip::ZipArchive::new(fs::File::open(artifact).unwrap()).unwrap();
+    assert!(archive.by_name("runtime_bg.wasm").is_ok());
+    assert!(archive.by_name("snippets/example/helper.js").is_ok());
+    assert!(archive.by_name("game/scripts/main").is_ok());
+    let platform = request
+        .settings
+        .platforms
+        .iter()
+        .find(|p| p.target == Target::Windows)
+        .unwrap();
+    let artifact = pipeline::desktop(
+        &request,
+        platform,
+        &snapshot,
+        &staging,
+        &output,
+        &context(),
+        &log,
+    )
+    .unwrap();
+    let mut archive = zip::ZipArchive::new(fs::File::open(artifact).unwrap()).unwrap();
+    assert!(archive.by_name("projector.exe").is_ok());
+    assert!(archive.by_name("scenemax_effekseer_bevy.dll").is_ok());
+    assert!(
+        !log.exists(),
+        "Packaging must not invoke the compiler process runner"
+    );
+    // Opting in switches to source/toolchain validation instead of silently using the bundle.
+    let mut rebuild = request;
+    rebuild.settings.rebuild_runtime = true;
+    assert!(
+        pipeline::check(&rebuild, &context())
+            .unwrap_err()
+            .to_string()
+            .contains("Projector/launcher")
+    );
+    let saved = serde_json::to_value(&rebuild.settings).unwrap();
+    assert!(saved.get("rebuild_runtime").is_none());
+    assert!(
+        !serde_json::from_value::<Settings>(serde_json::json!({"rebuild_runtime":true}))
+            .unwrap()
+            .rebuild_runtime
+    );
+}

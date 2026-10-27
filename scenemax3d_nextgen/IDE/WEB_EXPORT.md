@@ -2,31 +2,26 @@
 
 ## What a new installation needs
 
-Web export is built into the Rust/Bevy SceneMax IDE, but the IDE executable alone
-is **not a complete build installation**. It compiles the browser runtime locally.
-The SceneMax Studio preview installer (`INNO-SETUP/build-studio-installer.ps1`)
-includes the matching source workspace and configures its paths through the
-SceneMax Studio shortcut. Keep **Download and install build tools** selected during
-installation to install the prerequisites automatically, or install them later
-through Settings.
-The Studio installer still needs clean-machine validation.
+The Studio installer includes a prebuilt WebAssembly projector and its matching
+JavaScript bindings, plus the Windows projector and packaging launcher. Normal
+Windows and Web exports package these with your scripts and assets without
+running Cargo, rustc or wasm-bindgen. No compiler or internet is needed to export.
+A WebGPU-capable browser/GPU is required to play; Butler is optional for itch.io.
 
-| Requirement | How to obtain it | When needed |
-| --- | --- | --- |
-| Matching SceneMax source workspace | Full matching source distribution/checkout, including vendored dependencies | Every built-in Web build |
-| Rust and Cargo | Settings > Build Configuration > Install / repair Rust | Every built-in Web build |
-| Microsoft C++ x64 tools and Windows SDK | Install C++ / SDK / CMake | Windows host compilation, including the Web binding generator |
-| Rust browser target and matching wasm-bindgen | Install Web tools | Every built-in Web build |
-| Internet and free disk space | Allow several GB for tools, downloaded dependencies and compilation cache | Setup and first build; later builds may need dependency downloads |
-| WebGPU-capable browser and GPU/driver | Use a supported browser with hardware acceleration | Local testing and players |
-| Butler | Optional download from [itch.io](https://itchio.itch.io/butler) | Automatic itch.io upload only |
+Export runtimes live in `scenemax3d_nextgen/prebuilt`: `web/` contains the generated
+bindings and Wasm (including any binding snippets), and `x86_64-pc-windows-msvc/`
+contains the desktop projector, launcher and native effects DLL. Keep these from
+the same installer release as the IDE. Missing bundles produce a repair message;
+they never trigger automatic compilation.
 
-No separate browser SDK, Emscripten, Node.js, Python, Java/JVM or Effekseer SDK is
-required for the built-in exporter and local preview. The Windows SDK is installed
-by the C++ setup button. CMake is included by that button for native desktop
-effects; browser effects use bundled JavaScript/Wasm binaries. Creating/editing
-effect assets in an external editor is separate from exporting existing effects.
-Players do not need any authoring tools installed.
+Select **Rebuild engine from source** in Build & Deploy only when intentionally
+rebuilding. This opt-in is not restored from saved preferences. Rebuilding needs
+the matching source workspace, Rust/Cargo, platform tools and, for Web, the
+`wasm32-unknown-unknown` target and matching wasm-bindgen. Other desktop targets
+need a supplied projector and bundled launcher for their target triple, or an
+explicit source rebuild with the appropriate toolchain.
+
+The following source setup applies only to explicit engine rebuilds.
 
 ## 1. Keep the source workspace available
 
@@ -62,7 +57,7 @@ workspace files before compilation.
 
 ## 2. Install build tools on Windows x64
 
-In the Studio installer, **Download and install build tools** is selected by default.
+In the Studio installer, **Download and install optional engine rebuild tools** is unchecked by default. Select it only for source rebuilding.
 It downloads missing components in order and saves their paths for the IDE.
 Existing compatible installations are reused. Internet, additional disk space,
 and administrator approval for Microsoft Setup may be required. A failed step
@@ -121,13 +116,13 @@ establish Linux/macOS export support on a clean machine.
    static selection cannot identify them. Identical file contents are downloaded
    once while all original logical paths remain available.
 6. Leave automatic upload off for a local test. Click **Check requirements**, fix
-   reported problems, then **Build release**. First compilation can take a long
-   time; subsequent builds reuse unchanged compiler output. Checks do not replace
-   an actual build or browser test.
-7. After completion, choose **Test With Local Server** or **Test With Remote Server**. SceneMax runs its own localhost
-   server and opens the browser; no extra server software is needed. Rebuild after
-   source/asset changes: this previews the completed ZIP. **Stop local server**
-   stops it; exiting the IDE also stops it.
+   reported problems, then **Build release**. Keep **Rebuild engine from source**
+   unchecked to package the bundled runtime without compilation.
+7. After completion, choose **Open In Browser**. SceneMax serves the completed ZIP
+   on localhost and opens the browser without requiring a multiplayer server.
+   Multiplayer projects can also use **Test With Local Server** or **Test With
+   Remote Server**. **Stop Test** stops the preview; exiting the IDE also stops it.
+   Export again after changing scripts or assets.
 
 Each build gets a separate output directory and a `<name>-web.zip`. The ZIP has
 `index.html` at its root. Settings edits are saved per project in

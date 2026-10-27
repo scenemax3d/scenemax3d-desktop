@@ -92,7 +92,14 @@ pub enum StorageRequest {
         retire: Vec<PathBuf>,
     },
     /// Create a new project at a previously nonexistent directory.
-    NewProject(PathBuf),
+    NewProject {
+        /// Directory containing project folders.
+        parent: PathBuf,
+        /// Validated single folder name.
+        name: String,
+        /// Enable multiplayer in the created project.
+        multiplayer: bool,
+    },
     /// Refresh inventory without replacing buffers.
     Refresh(PathBuf),
     /// Create a script relative to scripts/.
@@ -327,9 +334,14 @@ fn perform(
             }
             journal.checkpoint(&root, documents, retire)
         })()),
-        StorageRequest::NewProject(root) => {
-            StorageResult::Project(Filesystem::create_project(&root).map(|(p, d)| (p, Some(d))))
-        }
+        StorageRequest::NewProject {
+            parent,
+            name,
+            multiplayer,
+        } => StorageResult::Project(
+            Filesystem::create_named_project(&parent, &name, multiplayer)
+                .map(|(p, d)| (p, Some(d))),
+        ),
         StorageRequest::Refresh(root) => StorageResult::Refreshed(Filesystem::open_project(&root)),
         StorageRequest::Create { root, path } => StorageResult::Created((|| {
             let project = Project::new(root.clone(), vec![]);

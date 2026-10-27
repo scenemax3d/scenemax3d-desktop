@@ -18,6 +18,21 @@ pub(crate) struct AnalyzerHost;
 pub(crate) struct Field(String, String);
 #[derive(Component)]
 pub(crate) struct Control(&'static str, String);
+impl Control {
+    fn differs(&self, value: &str) -> bool {
+        if matches!(self.0, "start" | "end" | "seek" | "speed") {
+            if let (Ok(previous), Ok(current)) = (self.1.parse::<f64>(), value.parse::<f64>()) {
+                // Feathers uses compact numeric formatting. A display-only rewrite
+                // (for example 0.0 -> 0) is not a manual seek or range edit.
+                if previous.is_finite() && current.is_finite() && previous == current {
+                    return false;
+                }
+            }
+        }
+        self.1 != value
+    }
+}
+
 #[derive(Component)]
 struct RecordRow(usize);
 #[derive(Component)]
@@ -43,12 +58,23 @@ pub(crate) struct State {
     open: bool,
     opening: Option<(
         std::path::PathBuf,
-        bevy::tasks::Task<Result<std::path::PathBuf, String>>,
+        bevy::tasks::Task<
+            Result<
+                (
+                    std::path::PathBuf,
+                    Vec<scenemax_ide_services::animation_analyzer::InventoryModel>,
+                ),
+                String,
+            >,
+        >,
     )>,
     current: Option<(DocumentId, DocumentRevision)>,
     host: Option<Entity>,
     parts: Option<view::Parts>,
     data: Value,
+    inventory: Vec<scenemax_ide_services::animation_analyzer::InventoryModel>,
+    visible_inventory: Vec<scenemax_ide_services::animation_analyzer::InventoryModel>,
+    project_count: usize,
     model: usize,
     filter: String,
     selected: Option<usize>,
@@ -84,9 +110,15 @@ fn load(s: &mut State, path: &std::path::Path) {
         s.playing = false;
         return;
     }
-    let path = path.to_owned();
-    let data = s.data.clone();
-    let model = s.model;
+    let (path, data, model) = if let Some(entry) = s
+        .model
+        .checked_sub(s.project_count)
+        .and_then(|i| s.visible_inventory.get(i))
+    {
+        (entry.catalog.clone(), entry.data.clone(), entry.index)
+    } else {
+        (path.to_owned(), s.data.clone(), s.model)
+    };
     s.source = None;
     s.error = "Loading model animation timelines…".into();
     s.task = Some(bevy::tasks::IoTaskPool::get().spawn(async move {
@@ -139,8 +171,11 @@ pub(crate) fn update(
         let copy = root.clone();
         s.opening = Some((
             root,
-            bevy::tasks::IoTaskPool::get()
-                .spawn(async move { scenemax_ide_services::animation_analyzer::catalog(&copy) }),
+            bevy::tasks::IoTaskPool::get().spawn(async move {
+                let inventory = scenemax_ide_services::animation_analyzer::inventory(&copy)?;
+                let path = scenemax_ide_services::animation_analyzer::catalog(&copy)?;
+                Ok((path, inventory))
+            }),
         ));
     }
     if let Some((root, task)) = s.opening.as_mut()
@@ -148,7 +183,11 @@ pub(crate) fn update(
     {
         if root == session.workspace.project().root() {
             match result {
-                Ok(path) => queue.0.push_back(Command::Open(path)),
+                Ok((path, inventory)) => {
+                    s.inventory = inventory;
+                    s.redraw = true;
+                    queue.0.push_back(Command::Open(path));
+                }
                 Err(e) => {
                     session.status = e.clone();
                     s.error = e;
@@ -169,6 +208,7 @@ pub(crate) fn update(
             c.entity(host).despawn_children();
         }
         let opening = s.opening.take();
+        let inventory = std::mem::take(&mut s.inventory);
         let same_document = target.map(|v| v.1) == s.current.map(|v| v.0);
         let (model, filter, mode) = if same_document {
             (s.model, s.filter.clone(), s.mode)
@@ -177,6 +217,7 @@ pub(crate) fn update(
         };
         *s = State {
             opening,
+            inventory,
             model,
             filter,
             mode,
@@ -199,7 +240,8 @@ pub(crate) fn update(
             t.is_some_and(|t| t.value().to_string() != f.1) || v.is_some_and(|v| v.0 != f.1)
         })
         && !ui.controls.iter().any(|(f, t, v)| {
-            t.is_some_and(|t| t.value().to_string() != f.1) || v.is_some_and(|v| v.0 != f.1)
+            t.is_some_and(|t| f.differs(&t.value().to_string()))
+                || v.is_some_and(|v| f.differs(&v.0))
         })
     {
         scrub(&s, &mut ui.controls);
@@ -221,6 +263,11 @@ pub(crate) fn update(
             return;
         }
     };
+    s.project_count = data["models"].as_array().map_or(0, Vec::len);
+    let project_data = data;
+    let (data, visible) =
+        scenemax_ide_services::animation_analyzer::with_inventory(&project_data, &s.inventory);
+    s.visible_inventory = visible;
     let count = data["models"].as_array().map_or(0, Vec::len);
     s.model = s.model.min(count.saturating_sub(1));
     let stamp = (id, doc.revision());
@@ -302,9 +349,12 @@ pub(crate) fn update(
         }
     }
     s.current = Some(stamp);
-    let mut pending = data.clone();
+    let mut pending = project_data.clone();
     let mut changed = false;
     for (mut field, text, choice, _) in &mut ui.fields {
+        if s.model >= s.project_count {
+            continue;
+        }
         let value = text
             .map(|t| t.value().to_string())
             .or_else(|| choice.map(|v| v.0.clone()))
@@ -347,7 +397,8 @@ pub(crate) fn update(
         ) {
             s.error = e.to_string();
         }
-        s.data = pending;
+        s.data =
+            scenemax_ide_services::animation_analyzer::with_inventory(&pending, &s.inventory).0;
         s.error.clear();
         if let Some(row) = s.selected {
             select(&mut s, row);
@@ -359,7 +410,7 @@ pub(crate) fn update(
             .map(|t| t.value().to_string())
             .or_else(|| choice.map(|v| v.0.clone()))
             .unwrap_or_default();
-        if value == control.1 {
+        if !control.differs(&value) {
             continue;
         }
         control.1 = value.clone();
@@ -449,6 +500,11 @@ pub(crate) fn update(
             }
             Action::Select(row) => select(&mut s, *row),
             Action::Add | Action::Delete => {
+                if s.model >= s.project_count {
+                    s.error =
+                        "Inventory model: import it into the project to edit saved ranges".into();
+                    continue;
+                }
                 let base = format!("/models/{}", s.model);
                 let (pointer, value) = if matches!(action, Action::Add) {
                     let rows = s.data["models"][s.model]["animationFrameRanges"].as_array();
@@ -526,13 +582,19 @@ pub(crate) fn update(
             Action::Mode(mode) => s.mode = *mode,
         }
     }
-    if range_edited && let Some(row) = s.selected {
+    if range_edited
+        && s.model < s.project_count
+        && let Some(row) = s.selected
+    {
         let revision = session
             .workspace
             .document(id)
             .map(|d| d.revision())
             .unwrap_or(doc.revision());
         let mut data = s.data.clone();
+        if let Some(models) = data["models"].as_array_mut() {
+            models.truncate(s.project_count);
+        }
         data["models"][s.model]["animationFrameRanges"][row]["start"] = json!(s.start);
         data["models"][s.model]["animationFrameRanges"][row]["end"] = json!(s.end);
         if let Err(e) = crate::application::animation_analyzer::edit(
@@ -604,7 +666,7 @@ fn scrub(s: &State, controls: &mut Controls) {
         if control.0 == "seek"
             && let Some(mut text) = text
         {
-            let value = format!("{:.1}", s.time);
+            let value = ((s.time as f64 * 10.).round() / 10.).to_string();
             if control.1 != value {
                 text.editor_mut().set_text(&value);
                 control.1 = value;

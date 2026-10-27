@@ -361,6 +361,7 @@ mod properties;
 mod render;
 pub(crate) mod rig;
 pub(crate) mod segments;
+pub(crate) mod shadows;
 pub(crate) mod tools;
 mod view;
 use render::spawn_world;

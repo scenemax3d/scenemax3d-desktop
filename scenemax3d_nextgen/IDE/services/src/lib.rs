@@ -10,6 +10,7 @@ mod filesystem;
 pub mod multiplayer;
 mod projector;
 mod recovery;
+mod resource_roots;
 mod runtime_log;
 mod scene_save;
 mod search;

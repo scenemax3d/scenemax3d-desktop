@@ -148,9 +148,21 @@ fn resources(project: &Path, root: &Path, origin: &str, out: &mut Inventory) -> 
                 let mut file = file_path(row)
                     .and_then(|p| confined(&root, Path::new(&p.replace('\\', "/"))).ok());
                 if *cat == "Models"
-                    && let Ok(res) = scenemax_assets::resolve_model_resource(&root, &name)
+                    && let Ok(res) = scenemax_assets::resolve_model_resource_with_builtin_fallback(
+                        &root,
+                        Some(&root),
+                        &name,
+                    )
                 {
-                    file = confined(&root, Path::new(&res.asset_path)).ok();
+                    file = confined(
+                        &root,
+                        Path::new(
+                            res.asset_path
+                                .strip_prefix("builtin://")
+                                .unwrap_or(&res.asset_path),
+                        ),
+                    )
+                    .ok();
                 }
                 if *cat == "Animations"
                     && let Ok(res) = scenemax_assets::resolve_animation_resource(&root, &name)
@@ -297,12 +309,7 @@ pub fn scan(project: &Path) -> io::Result<Inventory> {
             }
         }
     }
-    if let Some(shared) = project
-        .ancestors()
-        .skip(1)
-        .map(|p| p.join("resources"))
-        .find(|p| p.is_dir())
-    {
+    if let Some(shared) = crate::resource_roots::shared(&project) {
         resources(&project, &shared, "Shared", &mut result)?;
     }
     result.assets.sort_by_key(|a| {

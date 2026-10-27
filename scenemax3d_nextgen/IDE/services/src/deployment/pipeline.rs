@@ -69,11 +69,12 @@ pub(super) fn check(request: &Request, context: &Context) -> io::Result<()> {
             "The entry script must be inside this project's scripts directory.",
         ));
     }
-    if request
-        .settings
-        .platforms
-        .iter()
-        .any(|p| p.selected && p.target.desktop())
+    if request.settings.rebuild_runtime
+        && request
+            .settings
+            .platforms
+            .iter()
+            .any(|p| p.selected && p.target.desktop())
         && !request
             .workspace
             .join("Projector/launcher/Cargo.toml")
@@ -92,7 +93,9 @@ pub(super) fn check(request: &Request, context: &Context) -> io::Result<()> {
     for platform in request.settings.platforms.iter().filter(|p| p.selected) {
         context.check()?;
         let result = if platform.target.desktop() {
-            if !available(&crate::build_configuration::cargo_path()) {
+            if !request.settings.rebuild_runtime {
+                super::prebuilt::check_desktop(request, platform)
+            } else if !available(&crate::build_configuration::cargo_path()) {
                 Err(io::Error::other(
                     "Open File > Settings > Build Configuration to detect or install Rust/Cargo.",
                 ))
@@ -159,15 +162,11 @@ fn cargo(
         out.push(&platform.triple);
     }
     let binary = out.join("release").join(format!("{package}{suffix}"));
-    if package != "scenemax_game_launcher"
-        && may_reuse_installed_runtime(&request.workspace, request.settings.rebuild_runtime)
-        && binary.is_file()
-        && (!effects || release_has_effects(&out.join("release"), package))
-    {
+    if !request.settings.rebuild_runtime {
+        let binary = super::prebuilt::desktop(&request.workspace, platform, package)?;
         files::native_binary(&binary, platform.target)?;
-        // Only installations without source may bypass Cargo's freshness checks.
         context.log(format!(
-            "Reusing release {package} for {}. Engine rebuild skipped.\n",
+            "Using bundled {package} for {}; no compilation required.\n",
             platform.triple
         ));
         return Ok(binary);
@@ -200,51 +199,6 @@ fn cargo(
     process::run(&mut command, context, log)?;
     files::native_binary(&binary, platform.target)?;
     Ok(binary)
-}
-fn may_reuse_installed_runtime(workspace: &Path, force: bool) -> bool {
-    !force && !workspace.join("Cargo.toml").is_file()
-}
-
-#[cfg(test)]
-mod runtime_freshness_tests {
-    use super::*;
-    #[test]
-    fn source_installations_always_check_cargo_freshness() {
-        let root = tempfile::tempdir().unwrap();
-        assert!(may_reuse_installed_runtime(root.path(), false));
-        assert!(!may_reuse_installed_runtime(root.path(), true));
-        fs::write(root.path().join("Cargo.toml"), "[workspace]\n").unwrap();
-        assert!(!may_reuse_installed_runtime(root.path(), false));
-        assert!(!may_reuse_installed_runtime(root.path(), true));
-    }
-}
-fn release_has_effects(release: &Path, package: &str) -> bool {
-    // Cargo's most recently completed package fingerprint describes the installed
-    // release binary. Unknown/custom runtimes must be selected explicitly in the form.
-    let Ok(entries) = fs::read_dir(release.join(".fingerprint")) else {
-        return false;
-    };
-    let latest = entries
-        .flatten()
-        .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with(&format!("{package}-"))
-        })
-        .filter_map(|entry| {
-            let path = entry.path().join(format!("bin-{package}.json"));
-            Some((fs::metadata(&path).ok()?.modified().ok()?, path))
-        })
-        .max_by_key(|(stamp, _)| *stamp);
-    latest
-        .and_then(|(_, path)| files::read_small(&path).ok())
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .is_some_and(|value| {
-            value["features"]
-                .as_str()
-                .is_some_and(|s| s.contains("\"effekseer_native\""))
-        })
 }
 pub(super) fn build(request: &Request, context: &Context) -> io::Result<()> {
     files::save_settings(&request.project, &request.settings)?;
@@ -503,7 +457,7 @@ pub(super) fn desktop(
     context.advance(
         share * 0.45,
         format!(
-            "Building the {} single-file launcher…",
+            "Preparing the {} single-file launcher…",
             platform.target.id()
         ),
     )?;

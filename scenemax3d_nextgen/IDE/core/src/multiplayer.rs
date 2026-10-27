@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
+    /// Explicit opt-in for multiplayer launches and server tools.
+    pub enabled: bool,
     /// Server hostname or IP.
     pub server: String,
     /// UDP listener port.
@@ -27,6 +29,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            enabled: false,
             server: "127.0.0.1".into(),
             port: 9001,
             project_guid: String::new(),

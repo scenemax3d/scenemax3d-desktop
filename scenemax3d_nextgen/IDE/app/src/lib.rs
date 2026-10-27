@@ -496,7 +496,11 @@ impl Plugin for StudioPlugin {
                         )
                             .chain(),
                         presentation::scene3d::tools::lighting,
-                        presentation::scene3d::asset_status,
+                        (
+                            presentation::scene3d::asset_status,
+                            presentation::scene3d::shadows::update,
+                        )
+                            .chain(),
                         presentation::scene3d::playback::update,
                         presentation::scene3d::playback::cadence,
                     )

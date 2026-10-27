@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Dialog {
+    Project,
     AddScene,
     Material,
     Weapon,
@@ -45,6 +46,10 @@ struct MotionTemplate;
 #[derive(Component)]
 struct IkTemplate;
 #[derive(Component)]
+struct ProjectMultiplayer;
+#[derive(Component)]
+struct ProjectError;
+#[derive(Component)]
 pub(crate) struct Host;
 #[derive(Clone)]
 struct Target {
@@ -60,6 +65,14 @@ pub(crate) struct State {
     generation: u64,
 }
 impl State {
+    pub(crate) fn create_project(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::Project);
+    }
+    pub(crate) fn create_scene(&mut self, parent: PathBuf) {
+        self.open(parent, true, Vec2::new(300., 180.));
+        self.dialog = Some(Dialog::AddScene);
+    }
     pub(crate) fn create_ik(&mut self, parent: PathBuf) {
         self.open(parent, true, Vec2::new(300., 180.));
         self.dialog = Some(Dialog::Ik);
@@ -178,6 +191,7 @@ fn operation(dialog: Dialog, target: &Target, value: &str, root: &std::path::Pat
         }
     };
     match dialog {
+        Dialog::Project => Command::NewProject { parent: target.path.clone(), name: value.into(), multiplayer: false },
         Dialog::Ik => Command::Tree(TreeOperation::CreateIk {name:value.into(),kind:"TwoBoneIK".into()}),
         Dialog::Motion => Command::Tree(TreeOperation::CreateMotion { name: value.into(), kind: "target_arc".into() }),
         Dialog::Weapon => Command::Tree(TreeOperation::CreateWeapon { name: value.into() }),
@@ -202,6 +216,9 @@ fn operation(dialog: Dialog, target: &Target, value: &str, root: &std::path::Pat
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Views<'w, 's> {
+    multiplayer:
+        Query<'w, 's, &'static scenemax_ide_ui::property::Choice, With<ProjectMultiplayer>>,
+    project_errors: Query<'w, 's, &'static mut Text, With<ProjectError>>,
     keys: Res<'w, ButtonInput<KeyCode>>,
     focus: Option<ResMut<'w, InputFocus>>,
     clipboard: Option<ResMut<'w, bevy::clipboard::Clipboard>>,
@@ -259,12 +276,46 @@ pub(crate) fn update(
                         .next()
                         .map(|i| i.value().to_string())
                         .unwrap_or_default();
+                    if dialog == Dialog::Project {
+                        let error =
+                            scenemax_ide_services::Filesystem::validate_project_name(&value)
+                                .err()
+                                .map(|e| e.to_string())
+                                .or_else(|| {
+                                    target.path.join(&value).exists().then(|| {
+                                        "A project or folder with this name already exists".into()
+                                    })
+                                })
+                                .or_else(|| {
+                                    session.workspace.has_dirty_documents().then(|| {
+                                        "Save your open documents before creating a project".into()
+                                    })
+                                });
+                        if let Some(error) = error {
+                            for mut text in &mut views.project_errors {
+                                text.0 = error.clone();
+                            }
+                            session.status = error;
+                            return;
+                        }
+                    }
                     if !matches!(dialog, Dialog::Delete | Dialog::Reload) && value.trim().is_empty()
                     {
                         session.status = "Enter a name or destination folder".into();
                     } else {
                         let mut command =
                             operation(dialog, &target, &value, session.workspace.project().root());
+                        if let Command::NewProject {
+                            multiplayer, name, ..
+                        } = &mut command
+                        {
+                            *name = value;
+                            *multiplayer = views
+                                .multiplayer
+                                .iter()
+                                .next()
+                                .is_some_and(|choice| choice.0 == "Yes");
+                        }
                         if let Command::Tree(TreeOperation::CreateMotion { kind, .. }) =
                             &mut command
                         {
@@ -445,6 +496,7 @@ fn dialog_view(
         .entity(host)
         .insert(bevy::input_focus::tab_navigation::TabGroup::modal());
     let title = match dialog {
+        Dialog::Project => "Create New Project",
         Dialog::AddScene => "Add Scene",
         Dialog::Material => "Create Material",
         Dialog::Weapon => "Create New Weapon",
@@ -462,11 +514,16 @@ fn dialog_view(
     commands.spawn((label(title, 15.), ChildOf(host)));
     commands.spawn((
         label(
-            target
-                .path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy(),
+            if dialog == Dialog::Project {
+                format!("Create in: {}", super::projects::display_path(&target.path))
+            } else {
+                target
+                    .path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            },
             12.,
         ),
         ChildOf(host),
@@ -483,6 +540,8 @@ fn dialog_view(
             label(
                 if dialog == Dialog::Move {
                     "Destination folder (relative to project or absolute)"
+                } else if dialog == Dialog::Project {
+                    "Project name"
                 } else {
                     "Name"
                 },
@@ -524,6 +583,17 @@ fn dialog_view(
             ))
             .id();
         focus.set(input, FocusCause::Navigated);
+    }
+    if dialog == Dialog::Project {
+        commands.spawn((label("Multiplayer project?", 12.), ChildOf(host)));
+        scenemax_ide_ui::property::dropdown(
+            commands,
+            host,
+            ProjectMultiplayer,
+            "No",
+            &["No".into(), "Yes".into()],
+        );
+        commands.spawn((label("", 12.), ProjectError, ChildOf(host)));
     }
     if dialog == Dialog::Ik {
         commands.spawn((label("Solver", 12.), ChildOf(host)));
@@ -595,6 +665,8 @@ Tune its trajectory in the designer.",
             "Delete"
         } else if dialog == Dialog::Reload {
             "Reload"
+        } else if dialog == Dialog::Project {
+            "Create Project"
         } else {
             "OK"
         },
@@ -1039,6 +1111,63 @@ mod tests {
         app.update();
         assert!(
             matches!(app.world_mut().resource_mut::<CommandQueue>().0.pop_front(),Some(Command::Tree(TreeOperation::CreateIk {name,kind})) if name=="Contact fixture" && kind=="ThreeBoneIK")
+        );
+    }
+    #[test]
+    fn project_dialog_validates_name_and_uses_multiplayer_choice() {
+        let mut app = App::new();
+        crate::tests::ui_resources(&mut app);
+        app.init_resource::<State>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<InputFocus>()
+            .init_resource::<CommandQueue>()
+            .insert_resource(Session::new(scenemax_ide_core::Project::new(
+                "project".into(),
+                vec![],
+            )))
+            .add_message::<ViewChange>()
+            .add_systems(Update, update);
+        app.world_mut()
+            .spawn((Window::default(), bevy::window::PrimaryWindow));
+        app.world_mut().spawn((Host, Node::default()));
+        app.world_mut()
+            .resource_mut::<State>()
+            .create_project("project".into());
+        app.update();
+        let input = app.world().resource::<InputFocus>().get().unwrap();
+        app.world_mut()
+            .get_mut::<EditableText>(input)
+            .unwrap()
+            .editor_mut()
+            .set_text("New project fixture");
+        let template = {
+            let w = app.world_mut();
+            w.query_filtered::<Entity, With<ProjectMultiplayer>>()
+                .single(w)
+                .unwrap()
+        };
+        app.world_mut()
+            .get_mut::<scenemax_ide_ui::property::Choice>(template)
+            .unwrap()
+            .0 = "Yes".into();
+        app.world_mut()
+            .get_mut::<EditableText>(input)
+            .unwrap()
+            .editor_mut()
+            .set_text("CON");
+        app.world_mut().resource_mut::<State>().pending_action = Some(Action::Confirm);
+        app.update();
+        assert!(app.world().resource::<State>().is_open());
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        app.world_mut()
+            .get_mut::<EditableText>(input)
+            .unwrap()
+            .editor_mut()
+            .set_text("New project fixture");
+        app.world_mut().resource_mut::<State>().pending_action = Some(Action::Confirm);
+        app.update();
+        assert!(
+            matches!(app.world_mut().resource_mut::<CommandQueue>().0.pop_front(),Some(Command::NewProject {parent, name, multiplayer}) if parent == PathBuf::from("project") && name=="New project fixture" && multiplayer)
         );
     }
 }

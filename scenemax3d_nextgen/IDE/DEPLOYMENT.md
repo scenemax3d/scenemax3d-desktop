@@ -13,20 +13,20 @@ prebuilt runtimes must also include this support.
 
 | Platform | Artifact | Requirements |
 | --- | --- | --- |
-| Windows | One self-extracting `.exe` | Release projector and independent Rust launcher |
-| Linux | `.zip` containing one executable game | Matching Rust target/linker, or prebuilt projector; launcher still needs the target toolchain |
-| macOS | `.zip` containing one executable game | Apple SDK, normally a Mac; editable architecture, ARM64 by default |
+| Windows | One self-extracting `.exe` | Bundled Windows projector and launcher; no compiler |
+| Linux | `.zip` containing one executable game | Matching bundled projector and launcher, or explicit source rebuild with target/linker |
+| macOS | `.zip` containing one executable game | Matching bundled projector and launcher, or explicit source rebuild with Apple SDK |
 | Android | `.apk` | Explicit SDK builder recipe and Android runtime host |
 | iOS | `.ipa` | Explicit SDK builder recipe, iOS runtime host and signing on a Mac |
-| Web | `.zip` with `index.html`, JavaScript, Wasm and game files | Rust Wasm target and matching wasm-bindgen; built-in WebGPU projector |
+| Web | `.zip` with `index.html`, JavaScript, Wasm and game files | Bundled WebGPU Wasm projector and JavaScript bindings; no compiler |
 
 **Android and iOS remain external builder integrations.** They require a platform recipe and runtime host. Web uses the built-in browser projector when its optional custom recipe is blank.
 
 ## Browser exports
 
 New installation? Start with the [Web setup and publishing guide](WEB_EXPORT.md).
-The built-in exporter needs the matching full SceneMax source workspace in a
-writable folder as well as the build tools; the IDE executable alone is insufficient.
+The Studio installer supplies the matching runtime bundles. Source and build tools
+are needed only when explicitly rebuilding the engine.
 
 When updating exporter source, save and close the IDE, then run
 `cargo build --locked -p scenemax_ide` from `scenemax3d_nextgen` and reopen it.
@@ -35,28 +35,25 @@ rebuilding a projector or validation example does not update the running IDE.
 The old message “This export contains native Effekseer effects. Their browser
 renderer is not available” indicates an IDE built before browser effect support.
 
-Install **Web tools** in File → Settings → Build Configuration. This installs
+For explicit engine rebuilding, install **Web tools** in File → Settings → Build Configuration. This installs
 `wasm32-unknown-unknown` for the IDE's pinned Rust toolchain and a matching
 `wasm-bindgen-cli` in a versioned SceneMax tools folder, preserving other installed
 versions. The installer also installs Rust if needed; C++ build tools are needed
 on Windows to compile the binding generator.
 
 Select Web in Package & Deploy and leave the custom recipe blank. The worker
-compiles the shared runtime for Wasm, generates browser bindings, stages the
-selected scripts/assets and creates a static-site ZIP. Unchanged engine builds
-reuse Cargo's cache. Neither Java nor a separate game-specific runtime is used.
+copies the bundled Wasm runtime and generated bindings, stages the selected
+scripts/assets and creates a static-site ZIP. Only **Rebuild engine from source**
+invokes Cargo and wasm-bindgen; it is not restored from saved preferences.
 
-After a Web artifact completes, **Test With Local Server** or **Test With Remote Server** in the right-hand build report
-extracts that ZIP into a private temporary folder, starts the IDE's loopback-only
-HTTP server on an available port, and opens the default browser. No Python or Node
-installation is needed. The report shows the URL and **Stop local server**; closing
-the report keeps the preview running, while stopping, rebuilding, or exiting the IDE
-releases it. This previews the completed artifact, so rebuild to test source edits.
-Opening Package and Deploy also discovers the newest completed Web ZIP for the saved
-game filename in its configured output folder, including exports from earlier IDE
-sessions. It can be run immediately without rebuilding or checking build SDKs.
-Multiplayer still requires the gateway configured in the exported network.json,
-with the preview's origin allowed by that gateway.
+After a Web artifact completes, **Open In Browser** serves the ZIP from a private
+loopback HTTP server and opens the browser without requiring Zig. **Stop Test**
+stops the preview. Multiplayer projects can additionally use **Test With Local
+Server** or **Test With Remote Server** to prepare their server connection and
+export the game for testing. Export again after changing scripts or assets.
+Package & Deploy also discovers the newest completed Web ZIP for the saved game
+filename, including exports from earlier IDE sessions. Multiplayer connections
+still require the configured gateway and allowed browser origin.
 
 For manual hosting, serve the extracted ZIP through HTTP on localhost or HTTPS in production.
 Opening `index.html` directly from disk is unsupported. A WebGPU-capable browser
@@ -122,7 +119,11 @@ Packaging always starts at the project's root `main` (the shallowest `scripts/**
 
 Resource-name selection is conservative: literal names in reachable code and UI documents remain eligible even in conditional branches. For resource names assembled dynamically, enable **Include all assets (dynamic resource names)**. Static selection cannot prove the values of arbitrary runtime expressions. `package-size.json` lists the selected resource files, byte counts and excluded bytes in the build folder. Unsupported legacy game content is not converted by packaging.
 
-The release projector is reused by default. **Rebuild engine from source (slower)** explicitly updates it after engine/source changes; missing releases or a required native-effects feature invoke Cargo. The small launcher still gets Cargo's incremental freshness check. Native Effekseer compilation no longer gets forced on every package. A first engine build can still take minutes; ordinary script/asset releases do not rebuild Bevy.
+The installer supplies both projectors and the packaging launcher under
+`scenemax3d_nextgen/prebuilt`. Normal exports never run Cargo, rustc or wasm-bindgen,
+even when sources are present. Missing bundles fail with repair instructions.
+**Rebuild engine from source** is an explicit, unsaved opt-in for source changes.
+Unsupported targets require matching runtime bundles or an explicit source build.
 
 Identical resource payloads are byte-verified, archived once and restored at their original paths by the launcher. Already compressed media is stored directly; other files use fast deflate. No lossy asset conversion is performed. The September 18 Windows benchmark on the user's project produced a 245.9 MiB executable in 17.5 seconds, down from approximately 1 GiB and a six-minute engine compilation. Timings depend on the machine, cache and asset contents.
 
@@ -140,7 +141,7 @@ This is staged content analysis, not compressed artifact size or a GPU/frame-tim
 
 Bootstrap errors are written to `scenemax-launch-error.txt` in the system temporary directory. Runtime writes inside the extracted project are temporary; durable game saves must use a user-data location. `SCENEMAX_DISTRIBUTION_EXE` identifies the original package. Forced termination or a machine crash can leave temporary files behind.
 
-The bundle includes adjacent libraries, not an arbitrary SDK installation. Clean-machine testing must still verify graphics drivers, OS runtime prerequisites and transitive native dependencies. Code signing/notarization is not implemented by this form. Cargo is required even with a prebuilt projector because the launcher is compiled independently. `SCENEMAX_BUILD_WORKSPACE` overrides the source-workspace location.
+The bundle includes adjacent libraries, not an arbitrary SDK installation. Clean-machine testing must still verify graphics drivers, OS runtime prerequisites and transitive native dependencies. Code signing/notarization is not implemented by this form. The installer ships the launcher already compiled. `SCENEMAX_BUILD_WORKSPACE` selects the workspace containing the `prebuilt` bundles and optional rebuild sources.
 
 ## itch.io
 

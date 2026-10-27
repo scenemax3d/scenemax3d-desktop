@@ -25,6 +25,10 @@ fn command(program: impl AsRef<std::ffi::OsStr>, request: &Request) -> Command {
     c
 }
 pub(super) fn check(request: &Request) -> io::Result<()> {
+    if !request.settings.rebuild_runtime {
+        super::prebuilt::web(&request.workspace)?;
+        return Ok(());
+    }
     check_workspace(&request.workspace)?;
     let generator = command(build_configuration::wasm_bindgen_path(), request)
         .arg("--version")
@@ -188,33 +192,39 @@ pub(super) fn build(
             .map_err(io::Error::other)?
     };
     write_network_config(&site, &gateway_url, &allowed_origin)?;
-    context.log(
+    if request.settings.rebuild_runtime {
+        context.log(
         "Building the browser projector (WebGPU); Cargo reuses unchanged compilation outputs.\n",
     );
-    let target = request.workspace.join("target");
-    let mut cargo = command(build_configuration::cargo_path(), request);
-    cargo
-        .args([
-            "build",
-            "--locked",
-            "--release",
-            "--target",
-            "wasm32-unknown-unknown",
-            "-p",
-            "scenemax_projector_nextgen",
-            "--no-default-features",
-            "--target-dir",
-        ])
-        .arg(&target);
-    cargo.env_remove("CARGO_BUILD_TARGET");
-    process::run(&mut cargo, context, log)?;
-    let wasm = target.join("wasm32-unknown-unknown/release/scenemax_projector_nextgen.wasm");
-    let mut bindings = command(build_configuration::wasm_bindgen_path(), request);
-    bindings
-        .arg(&wasm)
-        .args(["--target", "web", "--out-name", "runtime", "--out-dir"])
-        .arg(&site);
-    process::run(&mut bindings, context, log)?;
+        let target = request.workspace.join("target");
+        let mut cargo = command(build_configuration::cargo_path(), request);
+        cargo
+            .args([
+                "build",
+                "--locked",
+                "--release",
+                "--target",
+                "wasm32-unknown-unknown",
+                "-p",
+                "scenemax_projector_nextgen",
+                "--no-default-features",
+                "--target-dir",
+            ])
+            .arg(&target);
+        cargo.env_remove("CARGO_BUILD_TARGET");
+        process::run(&mut cargo, context, log)?;
+        let wasm = target.join("wasm32-unknown-unknown/release/scenemax_projector_nextgen.wasm");
+        let mut bindings = command(build_configuration::wasm_bindgen_path(), request);
+        bindings
+            .arg(&wasm)
+            .args(["--target", "web", "--out-name", "runtime", "--out-dir"])
+            .arg(&site);
+        process::run(&mut bindings, context, log)?;
+    } else {
+        let runtime = super::prebuilt::web(&request.workspace)?;
+        context.log("Using bundled browser projector; no compilation required.\n");
+        files::tree(&runtime, &site, context)?;
+    }
     fs::write(site.join("index.html"), loading_html)?;
     fs::write(site.join("game.js"), include_str!("web/game.js"))?;
     fs::write(site.join("audio.mjs"), include_str!("web/audio.mjs"))?;

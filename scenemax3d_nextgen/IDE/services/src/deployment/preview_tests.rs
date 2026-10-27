@@ -241,3 +241,34 @@ fn exported_game_browser_preview() {
         server.join().unwrap().unwrap();
     });
 }
+
+#[test]
+fn standalone_preview_ignores_multiplayer_gateway_and_remote_origin() {
+    let temp = tempfile::tempdir().unwrap();
+    let zip = archive(temp.path(), &[("index.html", b"standalone"), ("network.json", br#"{"websocket_url":"wss://unavailable.example","allowed_origin":"https://game.example"}"#)]);
+    let state = Arc::new(Mutex::new(Status::default()));
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (worker_state, worker_cancel) = (state.clone(), cancel.clone());
+    let worker = std::thread::spawn(move || {
+        serve_archive_at(
+            &zip,
+            &worker_cancel,
+            &worker_state,
+            false,
+            Some(((std::net::Ipv4Addr::LOCALHOST, 0).into(), String::new())),
+        )
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let url = loop {
+        if let Some(url) = state.lock().unwrap().url.clone() {
+            break url;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let host = url.trim_start_matches("http://").trim_end_matches('/');
+    let response = request(host, "/", host, "GET");
+    cancel.store(true, Ordering::Relaxed);
+    worker.join().unwrap().unwrap();
+    assert!(String::from_utf8_lossy(&response).contains("standalone"));
+}

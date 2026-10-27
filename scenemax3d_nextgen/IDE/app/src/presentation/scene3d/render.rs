@@ -169,6 +169,12 @@ pub(super) fn spawn_world(
                 .resource_root
                 .as_ref()
                 .and_then(|root| project_assets.asset(root, path))
+                .or_else(|| {
+                    scene
+                        .shared_resource_root
+                        .as_ref()
+                        .and_then(|root| project_assets.asset(root, path))
+                })
             else {
                 continue;
             };

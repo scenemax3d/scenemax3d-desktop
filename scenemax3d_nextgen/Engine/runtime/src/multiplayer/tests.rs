@@ -1063,7 +1063,7 @@ fn imported_launch_defaults_are_lowest_priority_and_cannot_supply_passwords() {
     fs::create_dir(root.join(".scenemax-studio")).unwrap();
     fs::write(
         root.join(".scenemax-studio/multiplayer.json"),
-        r#"{"server":"native","port":9346}"#,
+        r#"{"enabled":true,"server":"native","port":9346}"#,
     )
     .unwrap();
     assert_eq!(resolve(None).0, "native");
@@ -3061,5 +3061,25 @@ fn scoped_position_operands_freeze_numeric_wire_values_and_follow_rebinding() {
     );
     assert!(
         replication::encode(&action, &vars, Some(&scope), &HashMap::new(), &transforms).is_none()
+    );
+}
+
+#[test]
+fn offline_project_disables_connection_even_with_old_metadata_and_environment() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join(".scenemax-studio")).unwrap();
+    fs::write(
+        dir.path().join(".scenemax-studio/multiplayer.json"),
+        r#"{"enabled":false,"server":"saved.example"}"#,
+    )
+    .unwrap();
+    let script = dir.path().join("main");
+    fs::write(&script, "//$[multiplayer_server]=stale.example;").unwrap();
+    assert!(
+        configured_settings(Some(dir.path()), Some(&script), None, |_| Some(
+            "override".into()
+        ))
+        .unwrap()
+        .is_none()
     );
 }

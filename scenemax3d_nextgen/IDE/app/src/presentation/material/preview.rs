@@ -331,7 +331,10 @@ pub(crate) fn update(
                 MeshMaterial3d(state.material.clone()),
             ));
             state.frame = true;
-        } else if let Some(path) = assets.asset(&library.root, &library.root.join(&state.model)) {
+        } else if let Some(path) = library
+            .model_path(&state.model)
+            .and_then(|(root, path)| assets.asset(root, &path))
+        {
             cache.model = Some(server.load(path));
             cache.waiting = true;
             cache.auto_frame = true;

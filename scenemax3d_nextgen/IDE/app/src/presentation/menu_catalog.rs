@@ -74,6 +74,11 @@ pub(crate) const MENUS: &[MenuEntry] = &[
                 children: &[],
             },
             MenuEntry {
+                name: "Create New Scene...",
+                command: "create_scene",
+                children: &[],
+            },
+            MenuEntry {
                 name: "Create New Material...",
                 command: "create_material_document",
                 children: &[],

@@ -378,6 +378,11 @@ fn settings_path(root: &Path) -> Result<PathBuf, String> {
     }
     Ok(path)
 }
+/// Whether the project explicitly opts into multiplayer.
+pub fn enabled(root: &Path) -> Result<bool, String> {
+    Ok(load(root)?.settings.enabled)
+}
+
 fn load(root: &Path) -> Result<Snapshot, String> {
     let path = settings_path(root)?;
     if path.exists() {
@@ -407,8 +412,19 @@ fn load(root: &Path) -> Result<Snapshot, String> {
         original: None,
     })
 }
+pub(crate) fn initialize_project(root: &Path, enabled: bool) -> Result<(), String> {
+    let mut snapshot = load(root)?;
+    snapshot.settings.enabled = enabled;
+    // Room names have a shorter wire limit than filesystem folder names.
+    if snapshot.settings.session_name.len() >= 64 {
+        snapshot.settings.session_name = "local".into();
+    }
+    save(root, &mut snapshot)
+}
 fn save(root: &Path, snapshot: &mut Snapshot) -> Result<(), String> {
-    snapshot.settings.validate()?;
+    if snapshot.settings.enabled {
+        snapshot.settings.validate()?;
+    }
     let path = settings_path(root)?;
     let current = if path.exists() {
         Some(read(&path, 1024 * 1024)?)
@@ -490,7 +506,9 @@ pub(crate) fn embed_settings(root: &Path, entry: &Path) -> Result<(), String> {
 }
 
 pub(crate) fn embed_values(s: &Settings, entry: &Path) -> Result<(), String> {
-    s.validate()?;
+    if s.enabled {
+        s.validate()?;
+    }
     let s = s.clone();
     let fields = [
         ("multiplayer_server", s.server),
@@ -504,6 +522,7 @@ pub(crate) fn embed_values(s: &Settings, entry: &Path) -> Result<(), String> {
     let source = String::from_utf8(read(entry, 16 * 1024 * 1024)?).map_err(|e| e.to_string())?;
     let mut result = fields
         .iter()
+        .filter(|_| s.enabled)
         .map(|(key, value)| format!("//$[{key}]={value};\n"))
         .collect::<String>();
     for line in source.lines() {
@@ -677,6 +696,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         let mut snapshot = load(&root).unwrap();
+        snapshot.settings.enabled = true;
         snapshot.settings.server = "192.0.2.1".into();
         save(&root, &mut snapshot).unwrap();
         let staged = root.join("staged-main");
@@ -821,5 +841,34 @@ mod browser_settings_tests {
             connected,
             "bundled gateway must read its adjacent configuration"
         );
+    }
+}
+
+#[cfg(test)]
+mod project_mode_tests {
+    use super::*;
+    #[test]
+    fn offline_setting_roundtrips_and_removes_packaged_connection_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let mut snapshot = load(&root).unwrap();
+        assert!(!snapshot.settings.enabled);
+        snapshot.settings.enabled = true;
+        snapshot.settings.server = "saved.example".into();
+        save(&root, &mut snapshot).unwrap();
+        assert!(enabled(&root).unwrap());
+        snapshot.settings.enabled = false;
+        save(&root, &mut snapshot).unwrap();
+        let loaded = load(&root).unwrap();
+        assert!(!loaded.settings.enabled);
+        assert_eq!(loaded.settings.server, "saved.example");
+        let entry = root.join("main");
+        fs::write(
+            &entry,
+            "//$[multiplayer_server]=old;\n//$[project_guid]=old;\nvar value = 1\n",
+        )
+        .unwrap();
+        embed_settings(&root, &entry).unwrap();
+        assert_eq!(fs::read_to_string(entry).unwrap(), "var value = 1\n");
     }
 }
