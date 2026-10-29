@@ -51,6 +51,8 @@ pub enum StorageRequest {
     },
     /// Read the Java-compatible project catalog on a worker.
     Catalog {
+        /// Recover the default project for an empty installed collection at startup.
+        initialize_default: bool,
         /// Installation/project directory from which to discover the catalog.
         root: PathBuf,
         /// Optional application last-project state for startup selection.
@@ -291,11 +293,17 @@ fn perform(
             StorageResult::Scene3d(crate::scene3d::load(&root, &source))
         }
         StorageRequest::Catalog {
+            initialize_default,
             root,
             path,
             last_project,
-        } => StorageResult::Catalog(crate::catalog::load_catalog(&root, path.as_deref()).map(
-            |mut catalog| {
+        } => StorageResult::Catalog(
+            (if initialize_default {
+                crate::catalog::load_startup_catalog(&root, path.as_deref())
+            } else {
+                crate::catalog::load_catalog(&root, path.as_deref())
+            })
+            .map(|mut catalog| {
                 if let Some(selected) = last_project
                     .as_deref()
                     .and_then(crate::workspace_state::last_project)
@@ -303,8 +311,8 @@ fn perform(
                     catalog.selected = Some(selected);
                 }
                 catalog
-            },
-        )),
+            }),
+        ),
         StorageRequest::SaveCopy {
             root,
             path,

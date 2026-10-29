@@ -13,47 +13,7 @@ pub(super) fn find_builtin_resources_root(
             return Some(builtin);
         }
     }
-    let active_asset_root = active_asset_root.and_then(canonicalize_existing);
-    let mut candidates = Vec::new();
-
-    if let Ok(path) = env::var("SCENEMAX_BUILTIN_RESOURCES") {
-        candidates.push(PathBuf::from(path));
-    }
-    if let Ok(current_dir) = env::current_dir() {
-        add_resources_ancestor_candidates(&current_dir, &mut candidates);
-    }
-    if let Ok(current_exe) = env::current_exe()
-        && let Some(parent) = current_exe.parent()
-    {
-        add_resources_ancestor_candidates(parent, &mut candidates);
-    }
-    if let Some(project_root) = project_root {
-        add_resources_ancestor_candidates(project_root, &mut candidates);
-    }
-    if let Some(script_root) = script_root {
-        add_resources_ancestor_candidates(script_root, &mut candidates);
-    }
-
-    let mut seen = HashSet::new();
-    candidates.into_iter().find(|candidate| {
-        let Some(canonical) = canonicalize_existing(candidate) else {
-            return false;
-        };
-        if !seen.insert(canonical.clone()) {
-            return false;
-        }
-        if active_asset_root.as_ref() == Some(&canonical) {
-            return false;
-        }
-        scenemax_assets::filesystem::is_dir(&canonical.join("Models"))
-            || scenemax_assets::filesystem::is_dir(&canonical.join("models"))
-    })
-}
-
-pub(super) fn add_resources_ancestor_candidates(base: &Path, candidates: &mut Vec<PathBuf>) {
-    for ancestor in base.ancestors() {
-        candidates.push(ancestor.join("resources"));
-    }
+    scenemax_assets::resource_roots::shared(project_root, script_root, active_asset_root)
 }
 
 pub(super) fn canonicalize_existing(path: impl AsRef<Path>) -> Option<PathBuf> {

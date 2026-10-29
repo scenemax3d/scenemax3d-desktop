@@ -18,6 +18,19 @@ if (!$SkipBuild) {
         if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
         & cargo build --locked --release --target wasm32-unknown-unknown -p scenemax_projector_nextgen --no-default-features
         if ($LASTEXITCODE -ne 0) { throw 'Browser projector release build failed.' }
+        & cargo build --locked --release -p scenemax_multiplayer --features web-gateway --bin scenemax_web_gateway
+        if ($LASTEXITCODE -ne 0) { throw 'Windows browser gateway build failed.' }
+        $oldLinker = $env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER
+        $oldFlags = $env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS
+        try {
+            $env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = 'rust-lld'
+            $env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS = '-C link-self-contained=yes -C target-feature=+crt-static'
+            & cargo build --locked --release -p scenemax_multiplayer --features web-gateway --bin scenemax_web_gateway --target x86_64-unknown-linux-musl --target-dir target/browser-gateway
+            if ($LASTEXITCODE -ne 0) { throw 'Linux browser gateway build failed.' }
+        } finally {
+            $env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = $oldLinker
+            $env:CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS = $oldFlags
+        }
     } finally { Pop-Location }
 }
 # Bindings and Wasm must come from the same locked runtime release.
@@ -57,6 +70,12 @@ function Copy-SourceTree([string]$Source, [string]$Destination) {
             if (Test-StudioPayloadFile $relative) {
                 Copy-Item -LiteralPath $item.FullName -Destination $Destination
             } else {
+                # Retain license notices without retaining the associated source tree.
+                if ($relative.StartsWith('scenemax3d_nextgen\') -and $item.Name -match '^(?i:LICENSE|NOTICE|COPYING)' -and $item.Extension -in @('', '.md', '.txt', '.rtf')) {
+                    $notice = Join-Path $payload ('licenses\' + $relative.Substring('scenemax3d_nextgen\'.Length))
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $notice) -Force | Out-Null
+                    Copy-Item -LiteralPath $item.FullName -Destination $notice
+                }
                 Add-ObsoleteFile $destinationFile
             }
         }
@@ -119,50 +138,40 @@ New-Item -ItemType Directory -Path $webRuntime -Force | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Browser runtime binding generation failed.' }
 $native = Join-Path $payload 'native'
 New-Item -ItemType Directory -Path $native | Out-Null
-Copy-Item -LiteralPath (Join-Path $payload 'scenemax_effekseer_bevy.dll') -Destination $native
-Copy-Item -LiteralPath (Join-Path $repo 'tmp\eb\release\i\lib\scenemax_effekseer_bevy.lib') -Destination $native
 foreach ($license in @('LICENSE','LICENSE_RUNTIME_VULKAN')) {
     Copy-Item -LiteralPath (Join-Path $repo "third_party\Effekseer\$license") -Destination (Join-Path $native "Effekseer-$license.txt")
 }
 Copy-Item -LiteralPath (Join-Path $repo 'scenemax.ico') -Destination $payload
 Copy-Item -LiteralPath (Join-Path $repo 'LICENSE') -Destination $payload
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'setup-studio-dependencies.ps1') -Destination $payload
 & rustc (Join-Path $PSScriptRoot 'studio-launcher.rs') --edition 2024 -C opt-level=z -C strip=symbols -C linker=rust-lld.exe -C link-arg=/DEBUG:NONE -o (Join-Path $payload 'SceneMaxStudio.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Studio installation launcher failed to build.' }
+# Multiplayer exports use prebuilt servers/adapters, never installed Rust sources.
+Copy-SourceTree (Join-Path $repo 'tools/multiplayer-server/bin') (Join-Path $payload 'tools/multiplayer-server/bin')
+foreach ($gateway in @(
+    @('windows-x64', 'target/release/scenemax_web_gateway.exe'),
+    @('linux-x64', 'target/browser-gateway/x86_64-unknown-linux-musl/release/scenemax_web_gateway')
+)) {
+    $gatewayDir = Join-Path $payload ('tools/browser-gateway/bin/' + $gateway[0])
+    New-Item -ItemType Directory -Path $gatewayDir -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $workspace $gateway[1]) -Destination $gatewayDir
+}
 @'
 SceneMax Studio - Windows x64 distribution
 
-Launch using the SceneMax Studio shortcut (SceneMaxStudio.exe). It configures
-installation-relative source, resource and native tool paths for this process.
-The IDE, desktop runtime, standard resources, import tools, Web effect binaries,
-rebuild sources and export instructions are included. No user game projects, test fixtures or J3O models are included.
-Each installed copy keeps its own project history in user-state next to the IDE.
-A fresh installation opens projects\Hello World, with scripts\main and resources.
-The starter project includes a glTF dragon and its named fly animation.
-Upgrades preserve existing starter files and the last project you opened.
-Existing glTF/GLB models are included. Legacy-only model entries are omitted.
-Use a supported GPU with current drivers, including the Vulkan loader used by
-the bundled native effects library.
+Launch using the SceneMax Studio shortcut (SceneMaxStudio.exe).
+Includes the IDE, Windows and Web export runtimes, standard resources,
+model import tools, multiplayer server/gateway binaries, and license notices.
+Rust sources, Cargo/CMake build files, compiler setup scripts, development
+fixtures and J3O models are not included. No compiler is needed for normal exports.
 
-Normal Windows and Web game exports use bundled projectors and the packaging launcher.
-They do not require Rust, Cargo or compilation.
-Select optional build tools only to rebuild the engine or build unsupported targets.
-Setup detects installed tools, downloads missing components, and saves their paths.
-To retry later, use "Set up SceneMax build tools" in the Start menu, or open
-File > Settings > Build Configuration and install missing components in order:
-1. Install / repair Rust.
-2. Install C++ / SDK / CMake.
-3. Install Web tools for browser builds, then Refresh detection.
-Optional rebuild tools and Cargo dependencies require internet and additional disk space.
-Setup never forces a restart. If Microsoft Setup requires one, restart Windows
-and rerun dependency setup to finish. Logs: %LOCALAPPDATA%\SceneMax\setup\dependencies.log
-Butler is optional and downloaded separately for
-automatic itch.io publishing. No Java or separate Effekseer SDK is required.
+A fresh installation opens projects\Hello World. Upgrades preserve existing
+project files and project history. Each game build gets its own output folder.
+Use a supported GPU with current drivers and the Vulkan loader for native effects.
+Butler is optional for itch.io publishing; it is acquired separately.
 
-Read scenemax3d_nextgen\IDE\WEB_EXPORT.md for full setup and publishing details.
-This installer is unsigned and has not been certified on a clean machine.
-Native effect rebuilding uses the bundled prebuilt bridge; rebuilding that bridge
-itself requires a separate complete upstream Effekseer/Vulkan source checkout.
+Read scenemax3d_nextgen\IDE\WEB_EXPORT.md for export and preview instructions.
+Engine source builds require a separate developer checkout and toolchain.
+This installer is unsigned.
 '@ | Set-Content -LiteralPath (Join-Path $payload 'INSTALLATION.txt') -Encoding UTF8
 # Do not install the empty shells of excluded development/model directories.
 $payloadRoot = [IO.Path]::GetFullPath($payload).TrimEnd('\') + '\'

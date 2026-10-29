@@ -347,6 +347,7 @@ pub(super) fn execute(
         }
         Command::RefreshProjects => {
             services.catalog_storage.request(StorageRequest::Catalog {
+                initialize_default: false,
                 root: services.catalog_root.clone(),
                 path: services.catalog_path.clone(),
                 last_project: None,
