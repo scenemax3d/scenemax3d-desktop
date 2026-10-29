@@ -7,6 +7,25 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
+mod starter;
+
+/// Startup recovery is limited to the installed project collection.
+pub fn load_startup_catalog(
+    root: &Path,
+    explicit: Option<&Path>,
+) -> Result<ProjectCatalog, ServiceError> {
+    if explicit.is_none() {
+        let installation = crate::workspace_state::installation_root().or_else(|| {
+            crate::workspace_state::is_installation_root(root).then(|| root.to_owned())
+        });
+        if let Some(installation) = installation {
+            // Validate existing metadata before considering recovery.
+            load_catalog(&installation, None)?;
+            starter::ensure(&installation)?;
+        }
+    }
+    load_catalog(root, explicit)
+}
 #[derive(Deserialize)]
 struct Catalog {
     projects: Vec<Row>,
@@ -157,8 +176,17 @@ mod installation_tests {
         let seeded = super::load_catalog(&installed, None).unwrap();
         assert_eq!(seeded.projects.len(), 1);
         assert_eq!(seeded.projects[0].name, "Starter");
-        assert_eq!(seeded.selected, Some(installed.join("projects/Starter").canonicalize().unwrap()));
+        assert_eq!(
+            seeded.selected,
+            Some(installed.join("projects/Starter").canonicalize().unwrap())
+        );
 
-        assert_eq!(super::load_catalog(&installed, Some(&catalog)).unwrap().projects.len(), 1);
+        assert_eq!(
+            super::load_catalog(&installed, Some(&catalog))
+                .unwrap()
+                .projects
+                .len(),
+            1
+        );
     }
 }

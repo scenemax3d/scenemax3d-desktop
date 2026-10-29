@@ -1,5 +1,6 @@
 pub mod animation_ranges;
 pub mod filesystem;
+pub mod resource_roots;
 
 use crate::filesystem as fs;
 use std::path::{Path, PathBuf};

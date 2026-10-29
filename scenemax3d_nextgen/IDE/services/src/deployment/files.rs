@@ -33,11 +33,12 @@ pub(super) fn load_settings(root: &Path) -> io::Result<Settings> {
             "Deployment settings must contain each of the six platforms exactly once.",
         ));
     }
+    if settings.builtin_resources.is_empty()
+        && let Some(shared) = crate::resource_roots::shared(root)
+    {
+        settings.builtin_resources = shared.to_string_lossy().into_owned();
+    }
     if !path.is_file() {
-        let shared = super::workspace().join("../resources");
-        if shared.is_dir() {
-            settings.builtin_resources = shared.canonicalize()?.to_string_lossy().into_owned();
-        }
         import_java_defaults(root, &mut settings);
     }
     Ok(settings)

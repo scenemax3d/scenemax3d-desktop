@@ -74,6 +74,7 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         .projector
         .set_catalog(options.project_catalog.clone());
     services.catalog_storage.request(StorageRequest::Catalog {
+        initialize_default: options.select_catalog_project,
         root: options.project_root.clone(),
         path: options.project_catalog,
         last_project: services.last_project_file.clone(),

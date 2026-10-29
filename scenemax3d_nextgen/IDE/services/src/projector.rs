@@ -204,6 +204,9 @@ fn prepare_command(
     let defaults = crate::multiplayer::launch::defaults(root, catalog)
         .map_err(|e| ServiceError::Process(std::io::Error::other(e)))?;
     let mut command = command(executable, root, script);
+    if let Some(shared) = crate::resource_roots::shared(root) {
+        command.env("SCENEMAX_BUILTIN_RESOURCES", shared);
+    }
     // Clear inherited defaults to prevent settings leaking across project runs.
     command.env_remove("SCENEMAX_MULTIPLAYER_DEFAULTS");
     if let Some(defaults) = defaults {

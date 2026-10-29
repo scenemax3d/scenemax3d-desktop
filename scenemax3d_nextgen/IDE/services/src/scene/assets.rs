@@ -47,24 +47,10 @@ pub fn load(project: &Path, source: &str) -> Result<ScenePreview, String> {
         .join("resources")
         .canonicalize()
         .unwrap_or_else(|_| project.join("resources"));
-    let mut candidates = Vec::new();
-    if let Some(path) = std::env::var_os("SCENEMAX_BUILTIN_RESOURCES") {
-        candidates.push(PathBuf::from(path));
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        candidates.extend(cwd.ancestors().map(|a| a.join("resources")));
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        candidates.extend(exe.ancestors().skip(1).map(|a| a.join("resources")));
-    }
-    candidates.extend(project.ancestors().map(|a| a.join("resources")));
-    let builtin = candidates
-        .into_iter()
-        .filter_map(|p| p.canonicalize().ok())
-        .find(|p| *p != root && (p.join("Models").is_dir() || p.join("models").is_dir()));
+    let builtin = crate::resource_roots::shared(project);
     let mut sprites = HashMap::new();
     let mut fonts = HashMap::new();
-    for asset_root in std::iter::once(&root).chain(builtin.iter()) {
+    for asset_root in builtin.iter().chain(std::iter::once(&root)) {
         for file in ["sprites/sprites.json", "sprites/sprites-ext.json"] {
             for v in registry(asset_root, file, "sprites") {
                 if let (Some(name), Some(path)) = (v["name"].as_str(), v["path"].as_str()) {
@@ -308,6 +294,29 @@ pub fn refresh_cached(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_sprite_preview_works_without_local_resources_and_local_override_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("resources/sprites");
+        let project = dir.path().join("projects/example");
+        fs::create_dir_all(&shared).unwrap();
+        fs::create_dir_all(&project).unwrap();
+        let mut png = vec![0u8; 24];
+        png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        png[16..20].copy_from_slice(&32u32.to_be_bytes());
+        png[20..24].copy_from_slice(&32u32.to_be_bytes());
+        fs::write(shared.join("shared.png"), &png).unwrap();
+        fs::write(shared.join("sprites.json"), r#"{"sprites":[{"name":"icon","path":"sprites/shared.png"}]}"#).unwrap();
+        let source = r#"{"name":"hud","layers":[{"name":"ui","widgets":[{"name":"image","type":"IMAGE","spriteName":"icon"}]}]}"#;
+        let scene = load(&project, source).unwrap();
+        assert_eq!(scene.widgets[0].visual.as_ref().unwrap().path, shared.join("shared.png").canonicalize().unwrap());
+        let local = project.join("resources/sprites");
+        fs::create_dir_all(&local).unwrap();
+        fs::write(local.join("local.png"), &png).unwrap();
+        fs::write(local.join("sprites-ext.json"), r#"{"sprites":[{"name":"icon","path":"sprites/local.png"}]}"#).unwrap();
+        let scene = load(&project, source).unwrap();
+        assert_eq!(scene.widgets[0].visual.as_ref().unwrap().path, local.join("local.png").canonicalize().unwrap());
+    }
     #[test]
     fn resolves_registered_sprite_frames_fonts_and_panel_semantics() {
         let dir = tempfile::tempdir().unwrap();

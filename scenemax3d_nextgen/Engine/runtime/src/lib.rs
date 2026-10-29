@@ -162,8 +162,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
     let effective_script_root = scene_program.1.clone().or_else(|| script_root.clone());
     let asset_root = project_root
         .as_ref()
-        .map(|root| root.join("resources"))
-        .filter(|path| scenemax_assets::filesystem::is_dir(&path));
+        .map(|root| root.join("resources"));
     let builtin_asset_root = find_builtin_resources_root(
         project_root.as_deref(),
         effective_script_root.as_deref(),
