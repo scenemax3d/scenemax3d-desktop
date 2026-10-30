@@ -80,6 +80,7 @@ pub(crate) struct State {
     model: usize,
     filter: String,
     selected: Option<usize>,
+    focused: Option<Entity>,
     task: Option<bevy::tasks::Task<Result<Source, String>>>,
     reload: bool,
     source: Option<std::sync::Arc<Source>>,
@@ -153,6 +154,8 @@ type Controls<'w, 's> = Query<
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct Ui<'w, 's> {
     fields: Fields<'w, 's>,
+    focus: Option<Res<'w, bevy::input_focus::InputFocus>>,
+    parents: Query<'w, 's, &'static ChildOf>,
     controls: Controls<'w, 's>,
     buttons: Query<'w, 's, (&'static Interaction, &'static Action), Changed<Interaction>>,
     texts: Query<'w, 's, &'static mut Text>,
@@ -235,7 +238,10 @@ pub(crate) fn update(
     let Ok(doc) = session.workspace.document(id) else {
         return;
     };
-    if s.current == Some((id, doc.revision()))
+    let focused = ui.focus.as_ref().and_then(|focus| focus.get());
+    let focus_changed = s.focused != focused;
+    if !focus_changed
+        && s.current == Some((id, doc.revision()))
         && s.task.is_none()
         && !s.redraw
         && !s.transport
@@ -362,30 +368,59 @@ pub(crate) fn update(
             }
         }
     }
+    if focus_changed {
+        s.focused = focused;
+        let mut entity = focused;
+        while let Some(current) = entity {
+            if let Ok((row, _)) = ui.rows.get(current) {
+                select(&mut s, row.0);
+                break;
+            }
+            entity = ui.parents.get(current).ok().map(ChildOf::parent);
+        }
+    }
     s.current = Some(stamp);
     let mut pending = project_data.clone();
     let mut changed = false;
-    for (mut field, text, choice, _) in &mut ui.fields {
+    let mut edited_row = None;
+    for (mut field, mut text, choice, _) in &mut ui.fields {
         if s.model >= s.project_count {
             continue;
         }
         let value = text
+            .as_ref()
             .map(|t| t.value().to_string())
             .or_else(|| choice.map(|v| v.0.clone()))
             .unwrap_or_default();
         if value == field.1 {
             continue;
         }
-        field.1 = value.clone();
+        let row = field
+            .0
+            .split("/animationFrameRanges/")
+            .nth(1)
+            .and_then(|tail| tail.split('/').next())
+            .and_then(|row| row.parse::<usize>().ok());
         let parsed = if field.0.ends_with("/start") || field.0.ends_with("/end") {
-            match value.parse::<u64>() {
-                Ok(v) => json!(v),
-                Err(_) => {
-                    s.error = "Frames must be nonnegative integers".into();
-                    continue;
-                }
+            let previous = pending
+                .pointer(&field.0)
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as usize;
+            let proposed = value.parse::<usize>().unwrap_or(previous);
+            let record = &pending["models"][s.model]["animationFrameRanges"][row.unwrap_or(0)];
+            let start = record["start"].as_u64().unwrap_or(0) as usize;
+            let end = record["end"].as_u64().unwrap_or(1) as usize;
+            let bounded = bound_frame(field.0.ends_with("/start"), proposed, start, end);
+            let corrected = bounded.to_string();
+            if corrected != value
+                && let Some(text) = text.as_mut()
+            {
+                text.editor_mut().set_text(&corrected);
             }
+            field.1 = corrected;
+            json!(bounded)
         } else {
+            field.1 = value.clone();
             json!(value)
         };
         if let Ok(text) =
@@ -394,6 +429,7 @@ pub(crate) fn update(
         {
             pending = v;
             changed = true;
+            edited_row = row;
         }
     }
     if changed {
@@ -410,17 +446,19 @@ pub(crate) fn update(
             &mut changes,
         ) {
             s.error = e.to_string();
+            return;
         }
         s.data =
             scenemax_ide_services::animation_analyzer::with_inventory(&pending, &s.inventory).0;
         s.error.clear();
-        if let Some(row) = s.selected {
+        if let Some(row) = edited_row.or(s.selected) {
             select(&mut s, row);
         }
     }
     let mut range_edited = false;
-    for (mut control, text, choice) in &mut ui.controls {
+    for (mut control, mut text, choice) in &mut ui.controls {
         let value = text
+            .as_ref()
             .map(|t| t.value().to_string())
             .or_else(|| choice.map(|v| v.0.clone()))
             .unwrap_or_default();
@@ -470,9 +508,17 @@ pub(crate) fn update(
             "start" | "end" => {
                 if let Ok(v) = value.parse::<usize>() {
                     if control.0 == "start" {
-                        s.start = v;
+                        s.start = bound_frame(true, v, s.start, s.end);
                     } else {
-                        s.end = v;
+                        s.end = bound_frame(false, v, s.start, s.end);
+                    }
+                    s.playing = true;
+                    s.stop = false;
+                    s.seek = None;
+                    let corrected = if control.0 == "start" { s.start } else { s.end }.to_string();
+                    control.1 = corrected.clone();
+                    if let Some(text) = text.as_mut() {
+                        text.editor_mut().set_text(&corrected);
                     }
                     s.restart = true;
                     range_edited = true;
@@ -566,7 +612,15 @@ pub(crate) fn update(
                     value,
                     continuing: false,
                 }));
-                s.selected = None;
+                s.selected = if matches!(action, Action::Add) {
+                    Some(
+                        s.data["models"][s.model]["animationFrameRanges"]
+                            .as_array()
+                            .map_or(0, Vec::len),
+                    )
+                } else {
+                    None
+                };
             }
             Action::UseFull => {
                 s.start = 0;
@@ -576,6 +630,9 @@ pub(crate) fn update(
                     .and_then(|v| v.timelines.get(s.animation))
                     .map_or(0, |t| t.times.len().saturating_sub(1));
                 range_edited = true;
+                s.playing = true;
+                s.stop = false;
+                s.seek = None;
                 s.transport = true;
                 s.restart = true;
             }
@@ -629,6 +686,9 @@ pub(crate) fn update(
         }
     }
     if range_edited && let Some(row) = s.selected {
+        let model = s.model;
+        s.data["models"][model]["animationFrameRanges"][row]["start"] = json!(s.start);
+        s.data["models"][model]["animationFrameRanges"][row]["end"] = json!(s.end);
         for (mut field, text, _, _) in &mut ui.fields {
             for (key, value) in [("start", s.start), ("end", s.end)] {
                 if field.0 == format!("/models/{}/animationFrameRanges/{row}/{key}", s.model) {
@@ -738,6 +798,14 @@ fn status(s: &State, texts: &mut Query<&mut Text>) {
         }
     }
 }
+// A playable range needs distinct endpoints; keep the other endpoint fixed.
+fn bound_frame(start_field: bool, value: usize, start: usize, end: usize) -> usize {
+    if start_field {
+        value.min(end.saturating_sub(1))
+    } else {
+        value.max(start.saturating_add(1))
+    }
+}
 fn select(s: &mut State, row: usize) {
     let record = &s.data["models"][s.model]["animationFrameRanges"][row];
     let source = record["sourceAnimation"]
@@ -767,6 +835,17 @@ fn select(s: &mut State, row: usize) {
         return;
     }
     s.selected = Some(row);
+    s.playing = s
+        .source
+        .as_ref()
+        .and_then(|source| source.timelines.get(s.animation))
+        .is_some_and(|timeline| s.start < s.end && s.end < timeline.times.len());
+    if s.playing {
+        s.stop = false;
+        s.seek = None;
+        s.time = s.start as f32;
+        s.error.clear();
+    }
     s.range = true;
     s.restart = true;
     s.transport = true;

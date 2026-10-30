@@ -323,3 +323,148 @@ fn numeric_scrub_formatting_does_not_pause_playback() {
     assert!(!app.world().resource::<State>().playing);
     assert_eq!(app.world().resource::<State>().seek, Some(0.5));
 }
+
+#[test]
+fn focusing_and_editing_tracks_plays_the_range_and_prevents_crossed_endpoints() {
+    bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
+    let (mut app, dir, _) = crate::tests::app();
+    let folder = dir.path().join("resources/Models");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("fixture.gltf"),
+        include_bytes!(
+            "../../../../../Tests/fixtures/animation_analyzer/project/resources/Models/fixture.gltf"
+        ),
+    )
+    .unwrap();
+    let path = folder.join("models-ext.json");
+    std::fs::write(&path, include_bytes!("../../../../../Tests/fixtures/animation_analyzer/project/resources/Models/models-ext.json")).unwrap();
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Open(path.clone()));
+    for _ in 0..1000 {
+        app.update();
+        if app.world().resource::<State>().source.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    app.update();
+    let field = |app: &mut App, row: usize, key: &str| {
+        let world = app.world_mut();
+        world
+            .query::<(Entity, &Field)>()
+            .iter(world)
+            .find(|(_, f)| f.0 == format!("/models/0/animationFrameRanges/{row}/{key}"))
+            .unwrap()
+            .0
+    };
+    let start = field(&mut app, 0, "start");
+    app.world_mut()
+        .resource_mut::<bevy::input_focus::InputFocus>()
+        .set(start, bevy::input_focus::FocusCause::Navigated);
+    app.update();
+    {
+        let state = app.world().resource::<State>();
+        assert_eq!(state.selected, Some(0));
+        assert!(state.playing && state.range && state.restart);
+        assert_eq!((state.start, state.end), (0, 3));
+    }
+    // Editing another track selects and plays it even without pressing its row number.
+    let end = field(&mut app, 1, "end");
+    app.world_mut()
+        .get_mut::<EditableText>(end)
+        .unwrap()
+        .editor_mut()
+        .set_text("5");
+    app.update();
+    {
+        let state = app.world().resource::<State>();
+        assert_eq!(state.selected, Some(1));
+        assert!(state.playing && state.range);
+        assert_eq!(state.end, 5);
+        let record = scenemax_assets::animation_ranges::Record {
+            name: "preview".into(),
+            source: "".into(),
+            start: state.start,
+            end: state.end,
+        };
+        assert_eq!(
+            state.source.as_ref().unwrap().timelines[state.animation]
+                .interval(&record)
+                .unwrap()
+                .1,
+            1.6
+        );
+    }
+    let start = field(&mut app, 1, "start");
+    app.world_mut()
+        .get_mut::<EditableText>(start)
+        .unwrap()
+        .editor_mut()
+        .set_text("99");
+    app.update();
+    assert_eq!(app.world().resource::<State>().start, 4);
+    assert_eq!(
+        app.world()
+            .get::<EditableText>(start)
+            .unwrap()
+            .value()
+            .to_string(),
+        "4"
+    );
+    app.world_mut()
+        .get_mut::<EditableText>(end)
+        .unwrap()
+        .editor_mut()
+        .set_text("0");
+    app.update();
+    assert_eq!(app.world().resource::<State>().end, 5);
+    assert_eq!(
+        app.world()
+            .get::<EditableText>(end)
+            .unwrap()
+            .value()
+            .to_string(),
+        "5"
+    );
+    // The preview controls enforce the same bound and update the selected record.
+    let control = {
+        let world = app.world_mut();
+        world
+            .query::<(Entity, &Control)>()
+            .iter(world)
+            .find(|(_, c)| c.0 == "start")
+            .unwrap()
+            .0
+    };
+    app.world_mut()
+        .get_mut::<EditableText>(control)
+        .unwrap()
+        .editor_mut()
+        .set_text("100");
+    app.update();
+    let state = app.world().resource::<State>();
+    assert_eq!((state.start, state.end), (4, 5));
+    assert_eq!(
+        state.data["models"][0]["animationFrameRanges"][1]["start"],
+        4
+    );
+    assert!(state.playing);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Save);
+    for _ in 0..1000 {
+        app.update();
+        let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        if saved["models"][0]["animationFrameRanges"][1]["start"] == 4 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["models"][0]["animationFrameRanges"][1]["start"], 4);
+    assert_eq!(saved["models"][0]["animationFrameRanges"][1]["end"], 5);
+}
