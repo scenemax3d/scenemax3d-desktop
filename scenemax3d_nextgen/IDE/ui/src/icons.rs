@@ -108,6 +108,15 @@ pub(crate) fn hover(
 
 #[derive(Component)]
 pub(crate) struct Icon(Vec<Vec<Vec2>>);
+#[derive(Component)]
+pub(crate) struct StrokeStyle {
+    color: [u8; 3],
+    width: f32,
+}
+/// Colored, heavier artwork using the same antialiased 20-pixel coordinate grid.
+pub fn styled_drawing(paths: Vec<Vec<Vec2>>, color: [u8; 3], width: f32) -> impl Bundle {
+    (Icon(paths), StrokeStyle { color, width })
+}
 /// Antialiased strokes in a 20 by 20 coordinate system, sized by the host node.
 pub fn drawing(paths: Vec<Vec<Vec2>>) -> impl Bundle {
     Icon(paths)
@@ -116,13 +125,15 @@ pub fn drawing(paths: Vec<Vec<Vec2>>) -> impl Bundle {
 // sampling keep thin strokes smooth at fractional Windows display scales.
 pub(crate) fn rasterize(
     mut commands: Commands,
-    icons: Query<(Entity, &Icon), Added<Icon>>,
+    icons: Query<(Entity, &Icon, Option<&StrokeStyle>), Added<Icon>>,
     images: Option<ResMut<Assets<Image>>>,
 ) {
     let Some(mut images) = images else {
         return;
     };
-    for (entity, icon) in &icons {
+    for (entity, icon, style) in &icons {
+        let color = style.map_or([207, 211, 219], |s| s.color);
+        let radius = style.map_or(0.78, |s| s.width * 0.5);
         let mut data = vec![0u8; 80 * 80 * 4];
         for y in 0..80 {
             for x in 0..80 {
@@ -138,10 +149,8 @@ pub(crate) fn rasterize(
                     })
                     .fold(f32::INFINITY, f32::min);
                 let i = (y * 80 + x) * 4;
-                data[i] = 207;
-                data[i + 1] = 211;
-                data[i + 2] = 219;
-                data[i + 3] = ((0.78 - distance) * 4. + 0.5)
+                data[i..i + 3].copy_from_slice(&color);
+                data[i + 3] = ((radius - distance) * 4. + 0.5)
                     .clamp(0., 1.)
                     .mul_add(255., 0.) as u8;
             }

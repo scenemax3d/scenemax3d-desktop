@@ -113,16 +113,7 @@ pub(super) fn build(
                 .entities
                 .get(i + 1)
                 .is_some_and(|child| child.parent == Some(i));
-        let icon = match e.kind.as_str() {
-            "CAMERA" => "◉",
-            "SECTION" => "▱",
-            "MODEL" => "◇",
-            "CODE" => "{}",
-            "CINEMATIC_RIG" => "▷",
-            "CINEMATIC_TRACK" => "↳",
-            _ => "□",
-        };
-        let row = scenemax_ide_ui::tree::row(
+        let row = scenemax_ide_ui::tree::row_with_icon(
             commands,
             if e.kind == "CAMERA" {
                 camera_slot
@@ -131,7 +122,7 @@ pub(super) fn build(
             },
             scenemax_ide_ui::tree::TreeRow {
                 caption: &e.name,
-                icon,
+                icon: "",
                 depth: e.depth,
                 expanded: branch.then(|| !collapsed.contains(&i)),
                 selected: i == selected,
@@ -139,6 +130,7 @@ pub(super) fn build(
             },
             Choose::Select(i),
             Choose::Toggle(i),
+            super::hierarchy_icons::drawing(&e.kind),
         );
         commands.entity(row).insert(SceneRow(i));
         super::hierarchy::row(commands, row, i);
