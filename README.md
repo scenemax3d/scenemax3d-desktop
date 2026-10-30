@@ -5,7 +5,7 @@
 SceneMax3D brings scene editing, game scripting, asset previews, and release packaging into one desktop workspace. Both the IDE and the game runtime are built with Rust and Bevy. Create scenes visually, write gameplay in the SceneMax language, and run your project as a native game or publish it to the browser with WebAssembly and WebGPU. Browser and desktop players can join the same multiplayer sessions.
 SceneMax is the authoring language. Rust and Bevy powers the editor, parser, engine, and deployment tools underneath.
 
-<img width="1917" height="1016" alt="image" src="https://github.com/user-attachments/assets/d30a32de-5644-4d73-8dce-0257de0350f0" />
+<img width="1897" height="1012" alt="image" src="https://github.com/user-attachments/assets/19e510d9-e7bd-487a-8b29-872a9df1f5c4" />
 
 [Product website](https://scenemax3d.com/cook-book/) · [IDE guide](scenemax3d_nextgen/IDE/README.md) · [Scripting reference](docs/README.md) · [Package & Deploy](scenemax3d_nextgen/IDE/DEPLOYMENT.md) · [Web publishing](scenemax3d_nextgen/IDE/WEB_EXPORT.md) · [Multiplayer](docs/multiplayer.md)
 
