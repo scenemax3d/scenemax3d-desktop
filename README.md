@@ -3,10 +3,15 @@
 **A native Rust/Bevy environment for creating and publishing desktop and browser games, including multiplayer.**
 
 SceneMax3D brings scene editing, game scripting, asset previews, and release packaging into one desktop workspace. Both the IDE and the game runtime are built with Rust and Bevy. Create scenes visually, write gameplay in the SceneMax language, and run your project as a native game or publish it to the browser with WebAssembly and WebGPU. Browser and desktop players can join the same multiplayer sessions.
+SceneMax is the authoring language. Rust and Bevy powers the editor, parser, engine, and deployment tools underneath.
 
-SceneMax is the authoring language: you do not need to write Rust to create game scripts. Rust powers the editor, parser, engine, and deployment tools underneath.
+<img width="1917" height="1016" alt="image" src="https://github.com/user-attachments/assets/d30a32de-5644-4d73-8dce-0257de0350f0" />
 
 [Product website](https://scenemax3d.com/cook-book/) · [IDE guide](scenemax3d_nextgen/IDE/README.md) · [Scripting reference](docs/README.md) · [Package & Deploy](scenemax3d_nextgen/IDE/DEPLOYMENT.md) · [Web publishing](scenemax3d_nextgen/IDE/WEB_EXPORT.md) · [Multiplayer](docs/multiplayer.md)
+
+## History
+SceneMax3D was first created by Adi Barda in 2005 as a C++/DirectX game engine and scripting language. In 2017-2018 it was rewritten in Java from scratch using JME3 as the target renderer and ANTLR4 for the language parsing. In Mar-22, 2026 the entire solution was uploaded to GitHub as an open source (MIT license) project. On August 08 2026, the initial next generation projector, based on Rust/Bevy engine was committed.
+On October 29, 2026 - First official Rust/Bevy release was deployed as a GitHub artifact featuring full Bevy UI based IDE with SceneMax choreography programming language, multiplayer integrated into the language and Zig UDP server supporting both native and web (browser) games.
 
 ## Create, preview, and play
 
