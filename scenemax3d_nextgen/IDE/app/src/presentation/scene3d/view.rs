@@ -152,7 +152,6 @@ pub(super) fn build(
                 ..default()
             });
         }
-        super::focus::observe(commands, row, camera, i);
     }
     let viewport_frame = panel(
         commands,

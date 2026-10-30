@@ -158,6 +158,7 @@ pub(crate) fn update(
                 {
                     match result {
                         Ok(scene) => {
+                            let added = state.pending_selection.is_some();
                             if let Some(pointer) = state.pending_selection.take()
                                 && let Some(index) =
                                     scene.entities.iter().position(|e| e.pointer == pointer)
@@ -214,6 +215,14 @@ pub(crate) fn update(
                             state.camera = Some(camera);
                             state.selected =
                                 state.selected.min(scene.entities.len().saturating_sub(1));
+                            if added
+                                && scene
+                                    .entities
+                                    .get(state.selected)
+                                    .is_some_and(|e| primitives::view_distance(e).is_some())
+                            {
+                                focus::added(&mut commands, camera, state.selected);
+                            }
                             if state.saved_view.is_none() {
                                 state.collapsed = scene
                                     .entities

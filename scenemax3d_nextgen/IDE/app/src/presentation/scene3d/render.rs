@@ -219,20 +219,22 @@ pub(super) fn spawn_world(
 }
 
 pub(super) fn overview(scene: &Scene3d) -> Orbit {
-    Orbit {
-        target: scene
-            .entities
-            .iter()
-            .find(|e| e.kind == "BOX" && !e.hidden)
-            .or_else(|| {
-                scene
-                    .entities
-                    .iter()
-                    .find(|e| !e.hidden && e.model.is_some())
+    let subject = scene
+        .entities
+        .iter()
+        .find(|e| e.kind == "BOX" && !e.hidden)
+        .or_else(|| {
+            scene.entities.iter().find(|e| {
+                !e.hidden && (super::primitives::view_distance(e).is_some() || e.model.is_some())
             })
+        });
+    Orbit {
+        target: subject
             .map(|e| Vec3::from_array(e.position))
             .unwrap_or(Vec3::ZERO),
-        distance: 220.,
+        distance: subject
+            .and_then(super::primitives::view_distance)
+            .unwrap_or(if subject.is_some() { 220. } else { 6. }),
         yaw: 0.65,
         pitch: 0.4,
     }

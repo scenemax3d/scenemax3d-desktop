@@ -490,7 +490,11 @@ impl Plugin for StudioPlugin {
                         presentation::scene3d::synchronize_names,
                         presentation::scene3d::rig::highlight,
                         presentation::scene3d::navigation::update,
-                        presentation::scene3d::focus::update,
+                        (
+                            presentation::scene3d::focus::selection,
+                            presentation::scene3d::focus::update,
+                        )
+                            .chain(),
                         (
                             presentation::scene3d::game_camera::synchronize,
                             presentation::scene3d::game_camera::size_marker,
