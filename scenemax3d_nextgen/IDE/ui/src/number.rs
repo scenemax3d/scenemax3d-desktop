@@ -5,6 +5,7 @@ use bevy::{feathers::controls::*, prelude::*, text::EditableText, ui_widgets::Va
 pub(crate) struct NumberEditor(Entity);
 
 /// Draggable numeric input. Dragging uses the soft range; typed values remain unrestricted.
+/// All designers share the compact 20-pixel field and 18-pixel text line.
 /// Returns the control container; the caller's marker is attached to its editable text child.
 pub fn input<T: Component>(
     commands: &mut Commands,
@@ -27,7 +28,11 @@ pub fn input<T: Component>(
             SoftLimit::f64(min..=max)
             NumberInputStep(step)
             NumberInputPrecision(precision)
-            Node { width: percent(100.), min_width: px(0.), height: px(26.), flex_shrink: 0. }
+            Node {
+                width: percent(100.), min_width: px(0.),
+                height: px(20.), min_height: px(20.), max_height: px(20.), flex_shrink: 0.,
+                padding: UiRect::ZERO,
+            }
             ChildOf(parent)
         })
         .observe(|event: On<ValueChange<f64>>, mut commands: Commands| {
@@ -50,6 +55,7 @@ pub fn input<T: Component>(
                 marker,
                 NumberEditor(control),
                 crate::theme::TEXT_CURSOR_STYLE,
+                bevy::text::LineHeight::Px(18.),
             ));
             if let Some(mut text) = world.get_mut::<EditableText>(editor) {
                 text.pending_edits.clear();
