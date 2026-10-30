@@ -20,86 +20,36 @@ the matching source workspace, Rust/Cargo, platform tools and, for Web, the
 need a supplied projector and bundled launcher for their target triple, or an
 explicit source rebuild with the appropriate toolchain.
 
-The following source setup applies only to explicit engine rebuilds.
+For an installed Studio, skip directly to [Build and preview](#3-build-and-preview). The following source setup applies only to explicit engine rebuilds.
 
-## 1. Keep the source workspace available
+## 1. Obtain sources for engine development
 
-The Studio installer defaults to `%LOCALAPPDATA%\Programs\SceneMax Studio` and
-checks that the selected folder is writable before installing. It rejects Windows
-and Program Files locations. Run the installer normally, without administrator
-elevation. A previous installation path is not reused automatically; select your
-existing custom folder explicitly when upgrading it.
+The Studio installer contains prebuilt runtimes and tools, not the Rust source
+workspace. To change or rebuild the engine, obtain the matching release from the
+[source repository](https://github.com/scenemax3d/scenemax3d-desktop). Keep the full
+`scenemax3d_nextgen` workspace, lockfile, toolchain configuration, local dependencies,
+and vendored sources together in a writable checkout.
 
-Keep the complete matching `scenemax3d_nextgen` directory, including `Cargo.toml`,
-`Cargo.lock`, `rust-toolchain.toml`, `.cargo`, `Projector`, `Engine`, `Language`,
-`Common`, `IDE`, and `third_party`. Do not copy just `Projector/app` or just the IDE
-executable. Cargo must be able to resolve the full workspace and local dependencies.
-Use a writable location: the exporter writes compilation results into `target`.
-The [source repository](https://github.com/scenemax3d/scenemax3d-desktop) contains
-the workspace; select the revision matching your IDE instead of mixing versions.
+Normal installed exports do not need `SCENEMAX_BUILD_WORKSPACE`. For a source-build
+workflow that uses an IDE compiled elsewhere, this variable can point to the
+matching developer checkout. Restart the IDE after changing its environment.
 
-The Studio installer shortcut configures the bundled workspace automatically.
-Source-built IDEs default to the workspace where they were compiled. If you move
-the installation, or receive an IDE binary compiled elsewhere, set the Windows
-user environment variable `SCENEMAX_BUILD_WORKSPACE` to your matching workspace
-folder and restart the IDE. For example, in PowerShell:
+## 2. Prepare an engine-build toolchain
 
-```powershell
-[Environment]::SetEnvironmentVariable('SCENEMAX_BUILD_WORKSPACE', 'C:\SceneMax\scenemax3d_nextgen', 'User')
-```
+Follow the repository's source-build requirements. On Windows, install Rust through
+rustup and the Microsoft C++ build tools/Windows SDK, plus the native effects build
+dependencies. Install the workspace's Wasm target and the exact wasm-bindgen CLI
+version required by `IDE/services/src/build_configuration.rs`. Use the pinned
+toolchain and lockfile; a mismatched binding generator cannot process the runtime.
 
-Replace the example path with your actual folder. A new IDE process must inherit
-the variable (reopen its launcher/terminal too). This is the engine source folder,
-not your game's project folder. The prerequisite installer installs build tools;
-it does not download SceneMax sources. **Check requirements** reports missing
-workspace files before compilation.
+The developer IDE's **File → Settings → Build Configuration** provides tool
+detection and setup actions. These are for source development, not ordinary
+installed exports. Tool installation can require downloads, administrator approval,
+and a manual restart. On other hosts, install the appropriate host linker and SDK.
 
-## 2. Install build tools on Windows x64
-
-In the Studio installer, **Download and install optional engine rebuild tools** is unchecked by default. Select it only for source rebuilding.
-It downloads missing components in order and saves their paths for the IDE.
-Existing compatible installations are reused. Internet, additional disk space,
-and administrator approval for Microsoft Setup may be required. A failed step
-shows Retry/Cancel; a requested reboot stops the remaining steps and never
-restarts Windows automatically. After restarting, use **Set up SceneMax build tools**
-in the Start menu. The same shortcut can retry a failed installation. Review
-`%LOCALAPPDATA%\SceneMax\setup\dependencies.log` if setup is incomplete.
-The native Effekseer bridge is bundled and checked for missing load dependencies;
-GPU driver support must still be verified on the actual machine. No full Vulkan
-SDK is installed because it cannot substitute for a working GPU driver.
-
-If you skipped automatic setup or want to repair individual tools, open
-**File > Settings > Build Configuration**. Opening the dialog scans only;
-downloads start when you choose an installation button.
-
-1. Choose **Install / repair Rust** if Rust is missing. Wait for completion.
-2. Choose **Install C++ / SDK / CMake** if the compiler or Windows SDK is missing.
-   Approve Microsoft's administrator prompt. If setup requests a reboot, save
-   your work and restart Windows before continuing.
-3. Choose **Install Web tools**. It installs `wasm32-unknown-unknown` for the pinned
-   Rust toolchain and compiles the matching `wasm-bindgen-cli`. This can take
-   several minutes and needs the C++ tools even though the game runs in a browser.
-4. Choose **Refresh detection**. Check that Rust, Microsoft C++ compiler, Windows
-   SDK, Rust browser target and Web bindings are installed. A missing CMake alone
-   concerns native effects, not the browser renderer.
-
-Keep the IDE running until setup finishes; closing Settings leaves its worker
-running. Failed installation details appear in the console area. The current
-source pins Rust **1.97.1** and wasm-bindgen **0.2.129**; use the versions requested
-by your IDE, not an arbitrary latest binding generator. Web tools keeps its
-binding generator in `%LOCALAPPDATA%\SceneMax\web-tools\<version>\bin` and preserves
-other installed versions. Detection saves paths in
-`%LOCALAPPDATA%\SceneMax\build-tools.json`; refresh after moving/installing tools.
-See [Rust's Windows prerequisites](https://rust-lang.github.io/rustup/installation/windows-msvc.html)
-for manual C++ installation.
-
-Automatic prerequisite setup supports **Windows x64 only**. On other hosts,
-install Rust through rustup and your host's compiler/linker prerequisites manually.
-From the matching workspace, run `rustup target add wasm32-unknown-unknown` and
-`cargo install wasm-bindgen-cli --version 0.2.129 --locked`, using the version
-required by that workspace. Ensure Cargo, rustc and wasm-bindgen are on PATH.
-These hosts still need platform-specific validation; Windows testing does not
-establish Linux/macOS export support on a clean machine.
+Do not mix an updated Wasm binary with older JavaScript bindings. Generate and
+ship them together when preparing a new runtime bundle. The installer maintainer
+workflow is documented in the source repository under `INNO-SETUP/STUDIO.md`.
 
 ## 3. Build and preview
 
@@ -107,7 +57,8 @@ establish Linux/macOS export support on a clean machine.
 2. Open **Tools > Package & Deploy**. Set the game filename and
    release version. Builds use a new folder under the project’s `build_games` directory. Select **Web**; deselect other platforms if you only want Web.
 3. Use **Edit** on Web and leave **Custom Web recipe** blank for the built-in
-   exporter. **Open Web build setup** opens the prerequisite dialog directly.
+   exporter. **Open Web build setup** is for developer tool setup; it is not
+   required when using the installed runtime bundle.
 4. Optionally choose a PNG/JPEG loading background, heading, loading text and
    footer. The default footer is `powered by SceneMax3D`; the progress bar remains.
 5. Shared resources are located automatically. Exports select referenced assets. Advanced projects
@@ -180,11 +131,12 @@ compiling again. The release version is entered manually; repeatedly uploading
 
 | Symptom | Action |
 | --- | --- |
-| Missing browser source / Cargo workspace | Install the full matching source distribution in a writable folder and set `SCENEMAX_BUILD_WORKSPACE`; restart the IDE |
-| Rust, linker, compiler or Windows SDK missing | Run the relevant setup buttons, complete any requested reboot, then refresh detection |
-| Wrong wasm-bindgen version or missing Wasm target | Run Install Web tools for this IDE; do not substitute a different version |
+| Missing source workspace during an explicit engine rebuild | Install the full matching source distribution in a writable folder and set `SCENEMAX_BUILD_WORKSPACE`; restart the IDE |
+| Rust, linker, compiler or Windows SDK missing during an engine rebuild | Run the relevant setup buttons, complete any requested reboot, then refresh detection |
+| Wrong wasm-bindgen version or missing Wasm target during an engine rebuild | Run Install Web tools for this IDE; do not substitute a different version |
 | Setup/build download fails | Check internet/proxy access and the log; rerun the failed setup after correcting the connection |
 | Access denied / disk full during compilation | Use a writable source workspace/output folder and free space for dependencies and `target` |
+| Missing prebuilt export runtime | Repair or reinstall the matching Studio runtime bundle; ordinary export does not compile a replacement |
 | No WebGPU adapter / unavailable WebGPU | Use HTTPS or localhost, check browser hardware acceleration and GPU drivers, and try a supported device |
 | Silent automatic startup | Click or press a key inside the game to enable audio; check browser/site mute settings |
 | Failed to fetch an asset | Check the build/browser log, preserve the ZIP layout and filename case, and confirm all files were uploaded |
@@ -208,15 +160,9 @@ for local defaults and deployment details.
 
 ## Distribution maintainer checklist
 
-Ship this guide and the matching full build workspace, including lockfile, toolchain
-file, Cargo configuration, workspace members and vendored dependencies. Configure
-`SCENEMAX_BUILD_WORKSPACE` for its actual installed, writable location; the binary's
-compile-time developer path is not a portable installation path. Bundled exporter
-templates/effect binaries are embedded in the IDE, so rebuild the IDE when they
-change. Do not claim clean-install readiness based on a developer machine's caches.
-Before releasing, test setup, Web compilation, local preview, first-interaction
-audio and effect rendering on a clean Windows x64 machine without preinstalled
-Rust/Visual Studio/Butler, then test the resulting ZIP on the hosting site.
+Ship this guide with matching prebuilt Windows and Web runtime bundles, exporter templates, effect binaries, and their licenses. Rebuild the IDE when embedded exporter templates change. Source distributions intended for engine rebuilding must include the complete matching workspace and toolchain configuration.
+
+Verify installation, compiler-free Windows/Web export, local browser preview, first-interaction audio, supported effects, and multiplayer on a clean Windows x64 machine. Test the resulting Web ZIP on its intended hosting site. Verify optional engine-rebuild setup separately; developer-machine caches do not establish clean-install readiness.
 
 Browser test buttons in both forms use the Multiplayer Deployment progress view.
 Local testing starts an IDE-owned loopback Zig server and WebSocket gateway using

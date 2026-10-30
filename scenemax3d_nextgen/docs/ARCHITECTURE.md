@@ -4,7 +4,7 @@
 
 `scenemax3d_nextgen` owns all first-party NextGen Rust components. IDE and Projector are sibling products. Cargo is used as a shared build workspace, not as an application dependency. Each crate has a specific responsibility and independent tests. Create new crates for meaningful dependency or ownership boundaries; use modules for ordinary features.
 
-The Swing IDE is the behavioral and architectural reference for each migration slice. Preserve its separation of editing, project management, design tools and supporting services while expressing those boundaries idiomatically in Rust. Do not translate Java classes mechanically or put feature implementations into the executable bootstrap.
+Keep editing, project management, design tools, and supporting services in focused Rust components. The executable bootstrap composes those components; it does not own feature implementations. Existing project data remains supported without dependencies on the former implementation.
 
 ## Allowed dependency direction
 
@@ -60,7 +60,7 @@ Project replacement rechecks dirty buffers when loading completes, since users c
 
 ## Multiplayer boundary
 
-`Engine/multiplayer` owns the version-one Java/Zig wire contract and nonblocking
+`Engine/multiplayer` owns the version-one SceneMax/Zig wire contract and nonblocking
 bounded UDP client. It does not depend on Bevy or IDE components. Runtime bindings
 under `Engine/runtime/src/multiplayer` own local/remote entity identity and replay
 through the existing action queue. Network source may not execute local includes,
@@ -71,7 +71,7 @@ IDE core owns multiplayer settings, services owns bounded background storage and
 server-template patching, application owns project identity and actions, and the
 presentation owns retained widgets. IDE does not link the runtime/client crate.
 Package metadata is written only into the deployment snapshot. See
-[the multiplayer guide](../IDE/MULTIPLAYER.md) for implemented scope and remaining Java parity gaps.
+[the multiplayer guide](../../docs/multiplayer.md) for configuration and deployment.
 
 ## Verification
 
@@ -79,9 +79,9 @@ Package metadata is written only into the deployment snapshot. See
 
 Tests cover domain transitions without Bevy; actual filesystem safety in temporary directories; stale diagnostics; safe process argument construction; and headless application behavior using the real command dispatcher. GPU smoke captures verify startup and layout separately. Full interactive keyboard, clipboard, IME, accessibility and designer parity require explicit acceptance testing.
 
-Measure launch time, typing latency, idle CPU, large-document behavior and memory against Swing on the same hardware. Performance targets in the migration roadmap remain targets until measured; a successful screenshot is not a performance result.
+Measure launch time, typing latency, idle CPU, large-document behavior, and memory against a recorded baseline on the same hardware. Performance targets remain targets until measured; a successful screenshot is not a performance result.
 
-The Rust CI workflow verifies the default Windows build without invoking Java. Native Effekseer builds need their external C++ sources/SDKs and remain a distinct configuration. The final migration gate must additionally prove clean-machine distribution with every Java tool and payload removed.
+The Rust CI workflow verifies the default Windows build without invoking Java. Native Effekseer builds need their external C++ sources/SDKs and remain a distinct configuration. Distribution verification must also exercise installed and exported games on a clean machine without development tools.
 
 ## Working editor milestone
 
@@ -104,7 +104,7 @@ Designer embedding must use the retained Bevy UI [hosting contract](DESIGNER_HOS
 
 ## Syntax presentation boundary
 
-`IDE/core/syntax.rs` owns SceneMax lexical categories and UTF-8 ranges, without Bevy or filesystem dependencies. The application maps categories to the Java editor palette. `IDE/ui/syntax.rs` accepts generic source/color spans and colors native Bevy UI glyphs during render extraction. It uses Parley's visual cluster order, caches mappings by component change ticks, rejects stale source/layout, preserves selection foreground overrides and colored emoji, and leaves IME preedit rendering to Bevy. No second text layer, engine dependency or Bevy/Parley fork is introduced. The adapter targets pinned Bevy 0.20; upgrades must revalidate cluster-to-glyph ordering with Unicode/ligatures and GPU captures. Full-buffer lexing/layout remains a known scaling limitation.
+`IDE/core/syntax.rs` owns SceneMax lexical categories and UTF-8 ranges, without Bevy or filesystem dependencies. The application maps categories to the SceneMax editor palette. `IDE/ui/syntax.rs` accepts generic source/color spans and colors native Bevy UI glyphs during render extraction. It uses Parley's visual cluster order, caches mappings by component change ticks, rejects stale source/layout, preserves selection foreground overrides and colored emoji, and leaves IME preedit rendering to Bevy. No second text layer, engine dependency or Bevy/Parley fork is introduced. The adapter targets pinned Bevy 0.20; upgrades must revalidate cluster-to-glyph ordering with Unicode/ligatures and GPU captures. Full-buffer lexing/layout remains a known scaling limitation.
 
 
 ## Editing assistance
@@ -114,12 +114,12 @@ Designer embedding must use the retained Bevy UI [hosting contract](DESIGNER_HOS
 
 ## Completion boundary
 
-`IDE/core/completion.rs` provides a bounded, ranked static catalog copied from the Java completion source and lexical declarations from unsaved source, with UTF-8 prefix ranges. The application owns each popup's exact source/caret snapshot, input arbitration before native edits, dismissal and acceptance. Suggestions use `IDE/ui/completion.rs` retained nodes; the reusable UI has no language dependency. Accepted candidates enter the existing native text queue and document undo synchronization. No filesystem or parser process is called by popup rendering. Full project semantic indexing and incremental large-buffer updates remain separate future work. `Tools/check_java_completion_parity.py` prevents static-catalog drift during the side-by-side migration.
+`IDE/core/completion.rs` provides a bounded, ranked static catalog for SceneMax vocabulary and lexical declarations from unsaved source, with UTF-8 prefix ranges. The application owns each popup's exact source/caret snapshot, input arbitration before native edits, dismissal and acceptance. Suggestions use `IDE/ui/completion.rs` retained nodes; the reusable UI has no language dependency. Accepted candidates enter the existing native text queue and document undo synchronization. No filesystem or parser process is called by popup rendering. Full project semantic indexing and incremental large-buffer updates remain separate future work.
 
 
 ### Background project declarations
 
-IDE/services owns a bounded symbol-index worker and source cache. It parses Rust AST top-level declarations without walking nested function/event scopes. IDE/app snapshots the validated script inventory and open buffers after a 350 ms debounce; project identity, inventory, refresh generation and document revisions guard publication. Unsaved buffers override disk, even after a disk deletion. Tree filtering does not invalidate the index. The core merges project candidates with local lexical declarations and static vocabulary, with local names taking precedence. The retained popup refreshes matching source/caret snapshots and reports indexing coverage. Include visibility, resource catalogs, parameter scopes and expression types remain outstanding Java parity work.
+IDE/services owns a bounded symbol-index worker and source cache. It parses Rust AST top-level declarations without walking nested function/event scopes. IDE/app snapshots the validated script inventory and open buffers after a 350 ms debounce; project identity, inventory, refresh generation and document revisions guard publication. Unsaved buffers override disk, even after a disk deletion. Tree filtering does not invalidate the index. The core merges project candidates with local lexical declarations and static vocabulary, with local names taking precedence. The retained popup refreshes matching source/caret snapshots and reports indexing coverage. Include visibility, resource catalogs, parameter scopes and expression types remain language-service follow-up work.
 
 
 ### Include-aware completion visibility
@@ -150,7 +150,7 @@ Language/parser owns IK command syntax; Engine/scripting substitutes function ar
 
 ## Shared animation intervals
 
-`Engine/animation` owns generic Bevy curve interval wrappers consumed by IDE/app and Engine/runtime. It has no filesystem, UI, project, or game dependencies. Wrappers retain source interpolation/property types while translating time and duration; no source model is rewritten. Common/assets owns Java-compatible record decoding and bounded, resource-contained glTF timing reads. The IDE core edits catalog JSON without I/O, services validates modified records before the ordinary atomic save, application performs revision-checked transactions, and presentation owns the retained analyzer and its layer-13 preview. Authored model identity is kept separately from resolved source aliases so alias-specific records remain instance-correct.
+`Engine/animation` owns generic Bevy curve interval wrappers consumed by IDE/app and Engine/runtime. It has no filesystem, UI, project, or game dependencies. Wrappers retain source interpolation/property types while translating time and duration; no source model is rewritten. Common/assets owns SceneMax catalog record decoding and bounded, resource-contained glTF timing reads. The IDE core edits catalog JSON without I/O, services validates modified records before the ordinary atomic save, application performs revision-checked transactions, and presentation owns the retained analyzer and its layer-13 preview. Authored model identity is kept separately from resolved source aliases so alias-specific records remain instance-correct.
 
 ### Local MCP automation boundary
 

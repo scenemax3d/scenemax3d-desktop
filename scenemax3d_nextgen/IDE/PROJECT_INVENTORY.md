@@ -24,4 +24,4 @@ Move copies first, then removes selected source registrations and archives unsha
 
 The UI stays open during operations, shows progress and a completion dialog, and prevents project changes or orderly IDE shutdown while a mutation is committing. Refresh rescans the active project and shared resource indexes. Unreadable indexes are reported rather than silently dropped. File transfers reject paths outside their resource roots and linked/junction dependencies.
 
-Java IDE implementation is unchanged.
+Inventory operations use the native IDE services.

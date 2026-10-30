@@ -2,7 +2,7 @@
 
 The independent Rust/Bevy products live in one Cargo workspace. The IDE is not a subproject of the projector. Each product can be built and shipped independently; workspace-level versions, policy, fixtures and build artifacts are shared.
 
-Continuing the migration in a new conversation? Start with the [migration handoff](docs/MIGRATION_HANDOFF.md) for current status, decisions, known gaps and verification commands.
+Start with the [IDE guide](IDE/README.md), [Web publishing](IDE/WEB_EXPORT.md), and [multiplayer guide](../docs/multiplayer.md) for current workflows.
 
 | Component | Responsibility |
 |---|---|
@@ -18,7 +18,7 @@ Continuing the migration in a new conversation? Start with the [migration handof
 | `Tests/fixtures` | IDE sample project and existing local projector fixtures |
 | `Tests/artifacts` | Ignored local captures/logs preserved from migration |
 
-Read the [architecture and coding standards](docs/ARCHITECTURE.md), [IDE guide](IDE/README.md), [projector guide](Projector/README.md), and [migration roadmap](../docs/RUST_IDE_MIGRATION.md).
+Read the [architecture and coding standards](docs/ARCHITECTURE.md), [IDE guide](IDE/README.md), [projector guide](Projector/README.md), and [deployment guide](IDE/DEPLOYMENT.md).
 
 Creating browser games? Follow the [Web export setup guide](IDE/WEB_EXPORT.md) for fresh-install prerequisites, local testing and publishing.
 
@@ -44,4 +44,4 @@ cargo run --locked -p scenemax_projector_nextgen -- --help
 
 `cargo` invoked from a component folder discovers this workspace automatically. Do not create nested workspaces, duplicate lockfiles, or duplicate copies of runtime/parser code. Package and executable names remain unchanged for launcher/export compatibility. The old `scenemax_projector_nextgen` source directory has been replaced by this directory.
 
-The Swing launchers discover the new workspace and adapt persisted paths pointing to the removed directory, while preserving valid custom locations. This compatibility adapter is Java-only and is not a dependency of either Rust executable.
+Launch the current IDE with the Studio shortcut or `run-rust-ide.ps1` from the repository root. Earlier release tags retain the former implementation; its launchers and build commands are not used by this workspace.

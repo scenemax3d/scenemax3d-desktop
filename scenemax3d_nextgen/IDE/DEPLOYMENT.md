@@ -1,6 +1,6 @@
 # Package & Deploy
 
-Open **Tools → Package & Deploy…**. The retained Bevy form runs inside the IDE. Web Start is intentionally absent.
+Open **Tools → Package & Deploy…**. The retained Bevy form runs inside the IDE.
 
 Players can override a desktop game's packaged UDP endpoint by placing
 `network.json` beside the built executable, with `host` and numeric `port` fields.
@@ -110,7 +110,7 @@ Linux/macOS package assembly is implemented but not executed on those OSes in th
 6. Follow phase progress and live stdout/stderr. Logs wrap inside the panel; disable **Follow log** to inspect earlier output. **Cancel build** stops the owned tool tree and preserves finished artifacts and logs. Partial artifacts remain private and are removed.
 7. A modal **Release complete** or **Build stopped** message clearly marks the end. It offers output/log actions and stays until dismissed. **Open output** opens the artifact directory; **Log folder** locates `build.log`.
 
-Settings edits are saved in `.scenemax-studio/deployment.json` without requiring a build. Closing/reopening the form also preserves its draft for the same project. Unknown top-level settings fields are preserved. Existing source documents, undo history, Java code and Java settings remain untouched. Relative form paths resolve against the project.
+Settings edits are saved in `.scenemax-studio/deployment.json` without requiring a build. Closing/reopening the form also preserves its draft for the same project. Unknown top-level settings fields are preserved. Packaging preserves source documents and editor undo history. Relative form paths resolve against the project.
 
 ## Fast packaging and resource selection
 
@@ -128,15 +128,15 @@ Identical resource payloads are byte-verified, archived once and restored at the
 
 ## Asset sizing report
 
-Every build writes `size-report-analysis.txt` and `size-report-analysis.json` next to `build.log`, using the Java report's title, category/top-contributor sections and JSON fields. The report is generated from the actual staged snapshot, after dependency selection and before platform compilation, and survives later build/upload failures. It is also generated when `include_all_resources` is enabled in the advanced deployment configuration.
+Every build writes `size-report-analysis.txt` and `size-report-analysis.json` next to `build.log`, with category totals, top contributors, and machine-readable fields. The report is generated from the actual staged snapshot, after dependency selection and before platform compilation, and survives later build/upload failures. It is also generated when `include_all_resources` is enabled in the advanced deployment configuration.
 
-Use **Open output** to open the build folder containing the text report and platform output folders. Categories are sorted by total size; the 40 largest individual files are listed with snapshot-relative paths. Project/shared resources are separate, and categories account for every staged byte without overlapping. Counts explicitly represent files, including catalogs and sidecars, rather than Java's sometimes-partial logical resource counts. Machine-readable byte sizes remain exact; MiB figures are rounded to two decimals. Generation times use UTC.
+Use **Open output** to open the build folder containing the text report and platform output folders. Categories are sorted by total size; the 40 largest individual files are listed with snapshot-relative paths. Project/shared resources are separate, and categories account for every staged byte without overlapping. Counts explicitly represent files, including catalogs and sidecars. Machine-readable byte sizes remain exact; MiB figures are rounded to two decimals. Generation times use UTC.
 
 This is staged content analysis, not compressed artifact size or a GPU/frame-time profiler. The runtime and platform libraries are added later; archive compression and deduplication can reduce the game content size. The report files stay outside the payload and upload directories. Existing `package-size.json` remains available for dependency-selection details.
 
 ## Single-file launcher
 
-`Projector/launcher` is a safe-Rust executable with no IDE, Java, Zig or Bevy dependency. The service appends a ZIP containing the projector, scripts, resources, launch manifest and adjacent native libraries. On launch it validates paths and CRCs, extracts into a private temporary directory, passes explicit project/script paths, sets the bundled resource/library paths, waits for the game and cleans up. The caller's working directory is irrelevant. Linux/macOS ZIP entries preserve executable permissions.
+`Projector/launcher` is a safe-Rust executable with no IDE, Zig or Bevy dependency. The service appends a ZIP containing the projector, scripts, resources, launch manifest and adjacent native libraries. On launch it validates paths and CRCs, extracts into a private temporary directory, passes explicit project/script paths, sets the bundled resource/library paths, waits for the game and cleans up. The caller's working directory is irrelevant. Linux/macOS ZIP entries preserve executable permissions.
 
 Bootstrap errors are written to `scenemax-launch-error.txt` in the system temporary directory. Runtime writes inside the extracted project are temporary; durable game saves must use a user-data location. `SCENEMAX_DISTRIBUTION_EXE` identifies the original package. Forced termination or a machine crash can leave temporary files behind.
 
@@ -144,9 +144,9 @@ The bundle includes adjacent libraries, not an arbitrary SDK installation. Clean
 
 ## itch.io
 
-Enter `https://username.itch.io/game` or `username/game` and review each platform's channel. **Sign in with Butler…** starts Butler's browser authentication. Alternatively it inherits `BUTLER_API_KEY`. Credentials are never entered into or serialized by this form, and the Java database's private keys are not migrated.
+Enter `https://username.itch.io/game` or `username/game` and review each platform's channel. **Sign in with Butler…** starts Butler's browser authentication. Alternatively it inherits `BUTLER_API_KEY`. Credentials are never entered into or serialized by this form.
 
-New forms import matching non-secret page/channel defaults from the Java project catalog. Butler detection checks shipped tools and the Windows itch application's selected Butler version, then falls back to PATH. Its path is also editable.
+New forms import matching non-secret page/channel defaults from the existing project catalog. Butler detection checks shipped tools and the Windows itch application's selected Butler version, then falls back to PATH. Its path is also editable.
 
 Automatic upload starts only after all selected artifacts succeed. Each channel uses `butler push` and `--userversion`. ZIPs are passed directly, so their contents become the upload root. Executable/APK/IPA files are pushed from their dedicated platform directory. Source folders, settings and build logs are not uploaded. A failed upload preserves local artifacts. **Upload / retry existing builds** publishes those outputs without compiling again; keep their platform selection. Retrying can re-push already successful channels.
 

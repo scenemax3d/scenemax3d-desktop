@@ -78,4 +78,4 @@ Common parameters: `path` selects a project file; `base` is workspace/project/sc
 | `ui.update_widget` | Patch a widget, including constraints and appearance. | `widgetPath`, `widgetId`, `updates`* |
 | `ui.validate_document` | Inspect or validate the current JSON document, including unsaved edits. | — |
 
-Java-name coverage: 61 of 63 names, adapted to native formats and documented schemas. Sketchfab search/import remains outside the native migration scope. Native additions: `asset.list_models`, `editor.check`, `editor.list_documents`, `editor.redo`, `editor.save_all`, `editor.undo`, `ide.get_status`, `run.stop`.
+Sketchfab search/import is not available. Use registered local models with `asset.list_models`. Editing and runtime tools include: `asset.list_models`, `editor.check`, `editor.list_documents`, `editor.redo`, `editor.save_all`, `editor.undo`, `ide.get_status`, `run.stop`.

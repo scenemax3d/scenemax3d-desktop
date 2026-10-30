@@ -2,7 +2,7 @@
 
 Assets > Create New IK Asset opens a name/solver dialog and creates `resources/ik/ik_<name>.smik`. The same action is available from project folders. Existing `.smik` and legacy `.ik.json` documents open in the native designer.
 
-Choose a registered skinned glTF/GLB model. Use IK ID to identify the asset and Layer ID to identify each contact layer; the layer selector displays these IDs. Add independent layers for each contact, select actual skin bones, and set a target object or `object."joint name"`. TwoBoneIK, ThreeBoneIK, FABRIK (arbitrary ancestor chain), FootIK, LookAtIK and AimIK retain the original asset names. Positional layers use the pinned Bevy community solver; LookAt/Aim use the SceneMax directional adapter. FootIK is a targeted limb contact, as in the Java runtime, not automatic terrain raycasting.
+Choose a registered skinned glTF/GLB model. Use IK ID to identify the asset and Layer ID to identify each contact layer; the layer selector displays these IDs. Add independent layers for each contact, select actual skin bones, and set a target object or `object."joint name"`. TwoBoneIK, ThreeBoneIK, FABRIK (arbitrary ancestor chain), FootIK, LookAtIK and AimIK retain the original asset names. Positional layers use the pinned Bevy community solver; LookAt/Aim use the SceneMax directional adapter. FootIK targets an authored limb contact; it does not automatically raycast terrain.
 
 The inspector provides add/duplicate/delete, humanoid/use-case presets, enabled/weight/priority/blend, bone dropdowns, affected joints, target/pole, stretch limits, solver iterations, contact offsets and optional target orientation matching. Presets resolve names against the selected model's actual skin joints; unmatched fields remain unbound. Unknown legacy metadata is preserved.
 
@@ -28,11 +28,11 @@ Applying an asset prepares its layers; `.play` activates them. The script weight
 
 Contact position offsets are in the target's local space. Match target orientation aligns the endpoint to the target's rotation plus the authored degree offsets. Model root scaling is supported; bone-local scale must be unit scale. Invalid/ambiguous joints, missing targets, invalid chains and degenerate solves produce diagnostics and preserve finite poses. Shared-chain layers are evaluated in ascending priority. Cyclic constraints across separate characters are not a supported constraint graph.
 
-The legacy smoothing/rotationSpeed/ground/pelvis fields are retained for compatibility; this port does not claim terrain planting or pelvis compensation. The original Java runtime did not implement those behaviors either.
+The legacy smoothing/rotationSpeed/ground/pelvis fields are retained for compatibility; terrain planting and pelvis compensation are not implemented.
 
 ## Solver source
 
-SceneMax uses a dedicated IK solver with Bevy 0.20. SceneMax vendors [bevy_mod_inverse_kinematics](https://github.com/Kurble/bevy_mod_inverse_kinematics) 0.12.0 at revision `5c037a33b55e8056ec24222d2968972f59e009d5`, with its local dependency updated to Bevy 0.20. The shared `Engine/ik` adapter runs the solver in the correct animation schedule and handles targets, layering, weighting, restoration and scaled model roots. It deliberately does not install upstream's Update-scheduled plugin. No Java/JME IK implementation is linked into the Bevy product.
+SceneMax uses a dedicated IK solver with Bevy 0.20. SceneMax vendors [bevy_mod_inverse_kinematics](https://github.com/Kurble/bevy_mod_inverse_kinematics) 0.12.0 at revision `5c037a33b55e8056ec24222d2968972f59e009d5`, with its local dependency updated to Bevy 0.20. The shared `Engine/ik` adapter runs the solver in the correct animation schedule and handles targets, layering, weighting, restoration and scaled model roots. It deliberately does not install upstream's Update-scheduled plugin.
 
 
 ## Tune IK directly in the scene designer

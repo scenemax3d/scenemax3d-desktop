@@ -13,8 +13,10 @@ The server hosts multiple game sessions. Clients create or join a session, then 
 within that session. The scene id is the scene folder path (`main` for the root scene,
 `game_level1` for a switched scene folder, and so on).
 
-If a prebuilt executable is missing, SceneMax attempts to build `zig/scenemax_multiplayer_server.zig`
-with `zig build-exe -O ReleaseFast`.
+Installed Studio uses bundled platform templates. In a developer checkout with
+source and Zig available, SceneMax builds `zig/scenemax_multiplayer_server.zig`
+with `zig build-exe -O ReleaseFast`; a missing compiler/source uses the template.
+Compiler errors are reported without silently selecting an older binary.
 
 ## Action ordering
 

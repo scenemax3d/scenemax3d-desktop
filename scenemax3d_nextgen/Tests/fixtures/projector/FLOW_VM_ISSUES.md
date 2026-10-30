@@ -1,3 +1,5 @@
+> **Historical fixture report.** Findings and missing-feature lists describe the recorded run, not the current release. Use the [current IDE guide](../../../IDE/README.md) and [language reference](../../../../docs/README.md) for user documentation.
+
 # SceneMax NextGen Flow/Expression VM Tracker
 
 ## Logger Fixtures

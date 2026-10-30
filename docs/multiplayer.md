@@ -371,51 +371,15 @@ The `multi-player-test` project demonstrates this pattern. Its `main` script inc
 
 ## Local IDE Runs
 
-When the IDE launcher sees the word `multiplayer` in the scanned program source, it adds
-multiplayer JVM properties to the game process.
+Configure the project in **File → Projects → Project Settings**. The IDE saves connection settings in `.scenemax-studio/multiplayer.json` and passes the selected project's settings to its Rust game process. With no server configured, the runtime opens no multiplayer connection.
 
-Default IDE values:
-
-| Setting | Default |
-| --- | --- |
-| Server | Project Settings multiplayer server IP, or `127.0.0.1` |
-| Port | Project Settings multiplayer port, or `9001` |
-| Password | Project Settings multiplayer password, if present |
-| Session id | `1000` |
-| Create session | `false` |
-| Session name | Active project name, or `local` |
-| Scene | `main` |
-| Player | Windows user name plus a short timestamp suffix |
-
-The client only starts if `scenemax.multiplayer.server` or `SCENEMAX_MULTIPLAYER_SERVER` is
-set. If no server is configured, multiplayer code still runs locally, but no network traffic
-is sent.
+Use **Run Server Locally** for a local server/gateway pair, or the browser test buttons for an exported game. Server and clients must agree on project GUID, credentials, session, and scene. The usual UDP port is `9001` and initial room is `1000`.
 
 ## Packaged Games
 
-Packaged games cannot rely on IDE-only project paths. The packager embeds multiplayer metadata
-at the beginning of the packaged `main` script when it detects multiplayer source code:
+Package & Deploy stages the configured connection metadata with the game without modifying source scripts. Browser exports include the gateway URL and allowed origin in `network.json`. Desktop exports accept an optional adjacent `network.json` for endpoint overrides; see [external multiplayer configuration](../scenemax3d_nextgen/Projector/README.md#external-multiplayer-configuration) for its schema and precedence.
 
-```text
-//$[multiplayer_server]=127.0.0.1;
-//$[multiplayer_port]=9001;
-//$[multiplayer_session_id]=1000;
-//$[multiplayer_create_session]=false;
-//$[multiplayer_session_name]=my-game;
-//$[multiplayer_scene]=main;
-```
-
-At runtime, `MainWinApp` reads those metadata values and turns them into the same
-`scenemax.multiplayer.*` system properties used by the IDE flow.
-
-Before distributing a multiplayer game, verify:
-
-- The packaged `main` contains the multiplayer metadata.
-- The packaged game contains every model, material, texture, animation, IK resource, effect,
-  and code file needed by multiplayer spawn commands.
-- The executable can reach the configured UDP server IP and port.
-- The server executable was built for the target platform and patched with the correct
-  project GUID, port, game name, project path, and password hash.
+Include the models, textures, animations, IK resources, effects, and scripts used by remote spawn commands. Test the packaged game against the intended server and gateway, as well as inside the IDE.
 
 ## Multiplayer Server
 
@@ -437,27 +401,29 @@ The Project Settings multiplayer tab can build/copy the selected server into the
 - Password hash, or disabled password state.
 - Project GUID.
 
-If no prebuilt executable exists, SceneMax attempts to build the server from
-`tools/multiplayer-server/zig/scenemax_multiplayer_server.zig` using Zig.
+Installed distributions use bundled server templates. In a developer checkout,
+SceneMax compiles `tools/multiplayer-server/zig/scenemax_multiplayer_server.zig`
+when the source and Zig compiler are available; otherwise it uses the platform
+template. Compilation failures are reported rather than silently using stale output.
 
 Run the server before running clients. The default port is UDP `9001`; make sure local
 firewalls and deployment hosts allow UDP traffic on that port.
 
 ## Runtime Configuration Reference
 
-Every runtime setting can be supplied as a Java system property or environment variable:
+Native runtime settings can be overridden with environment variables. A desktop executable's adjacent `network.json` takes precedence for the fields it supplies; browser exports use their packaged browser configuration.
 
-| Purpose | Java property | Environment variable |
-| --- | --- | --- |
-| Server host/IP | `scenemax.multiplayer.server` | `SCENEMAX_MULTIPLAYER_SERVER` |
-| Server UDP port | `scenemax.multiplayer.port` | `SCENEMAX_MULTIPLAYER_PORT` |
-| Password | `scenemax.multiplayer.password` | `SCENEMAX_MULTIPLAYER_PASSWORD` |
-| Session id | `scenemax.multiplayer.sessionId` | `SCENEMAX_MULTIPLAYER_SESSION_ID` |
-| Create session | `scenemax.multiplayer.createSession` | `SCENEMAX_MULTIPLAYER_CREATE_SESSION` |
-| Session name | `scenemax.multiplayer.sessionName` | `SCENEMAX_MULTIPLAYER_SESSION_NAME` |
-| Player name | `scenemax.multiplayer.player` | `SCENEMAX_MULTIPLAYER_PLAYER` |
-| Scene id | `scenemax.multiplayer.scene` | `SCENEMAX_MULTIPLAYER_SCENE` |
-| Project GUID | `scenemax.multiplayer.projectGuid` | `SCENEMAX_MULTIPLAYER_PROJECT_GUID` |
+| Purpose | Environment variable |
+| --- | --- |
+| Server host/IP | `SCENEMAX_MULTIPLAYER_SERVER` |
+| Server UDP port | `SCENEMAX_MULTIPLAYER_PORT` |
+| Password | `SCENEMAX_MULTIPLAYER_PASSWORD` |
+| Session id | `SCENEMAX_MULTIPLAYER_SESSION_ID` |
+| Create session | `SCENEMAX_MULTIPLAYER_CREATE_SESSION` |
+| Session name | `SCENEMAX_MULTIPLAYER_SESSION_NAME` |
+| Player name | `SCENEMAX_MULTIPLAYER_PLAYER` |
+| Scene id | `SCENEMAX_MULTIPLAYER_SCENE` |
+| Project GUID | `SCENEMAX_MULTIPLAYER_PROJECT_GUID` |
 
 If `sessionId` is `0`, or `createSession` is `true`, the server allocates the next session
 id. Otherwise the client uses the requested session id; if that session does not exist yet,
@@ -465,24 +431,11 @@ the server creates it with that id. The built-in desktop/package flow uses sessi
 
 ## Diagnostics
 
-The client writes multiplayer diagnostics to:
-
-```text
-scenemax-multiplayer-client.log
-```
-
-Useful successful lines look like:
-
-```text
-[SceneMax MP] registered local entity runtime=hero@1 type=1 archetype=hero_native
-[SceneMax MP] send create runtime=hero@1 createRequestId=1 archetype=hero_native
-[SceneMax MP] create accepted runtime=hero@1 createRequestId=1 networkId=101
-[SceneMax MP] send command entity=101 command="{network_entity}.move forward 1 in 0.1 seconds"
-```
+Inspect IDE Run / Output or the browser console for connection failures. Native runtime logging is opt-in: launch an exported game with `--runtime-log` to write a report beside its executable after exit. A standalone projector writes `scenemax-nextgen-runtime.log` in the project folder when that flag is enabled. See [runtime logging](../scenemax3d_nextgen/docs/RUNTIME_LOGGING.md).
 
 Common troubleshooting checks:
 
-- No log file: the client did not start. Check server settings or packaged metadata.
+- No log file: logging is off by default. Enable `--runtime-log` for native diagnostics, then check server settings or packaged metadata.
 - Login rejected: password, project GUID, or server configuration does not match.
 - Entity never appears remotely: the entity is not marked `multiplayer`, did not register,
   or its resource is missing from the packaged game.

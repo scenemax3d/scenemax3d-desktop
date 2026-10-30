@@ -26,4 +26,4 @@ The output uses `SceneMaxWeaponDefinition` schema 1.0, with `modelAssetId`, `def
 
 Weapons already directly under `resources/weapons` or `resources/Weapons` save in place. Changing an ID preserves the source filename; runtime ID lookup supports this. A legacy source elsewhere in a project also publishes an ID-named runtime copy under `resources/weapons` on save. Existing conflicting definitions, external source changes, read-only files and linked output paths block publication. Failed source saves roll back their runtime copy. The editor does not silently delete other weapon documents.
 
-The pure schema/edit operations live in `IDE/core/weapon.rs`; creation and publication live in `IDE/services/weapon.rs`; the retained workbench and isolated render layer live in `IDE/app/presentation/weapon`. The Java implementation and the game runtime are unchanged.
+The pure schema/edit operations live in `IDE/core/weapon.rs`; creation and publication live in `IDE/services/weapon.rs`; the retained workbench and isolated render layer live in `IDE/app/presentation/weapon`.
