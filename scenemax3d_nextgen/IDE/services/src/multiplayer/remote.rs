@@ -176,13 +176,19 @@ fn preflight(d: &RemoteDeployment) -> String {
 fn status_script(d: &RemoteDeployment) -> String {
     include_str!("remote_status.sh")
         .replace("@SERVER@", &quote(&format!("{}.service", d.service)))
-        .replace("@GATEWAY@", &quote(&format!("{}-gateway.service", d.service)))
+        .replace(
+            "@GATEWAY@",
+            &quote(&format!("{}-gateway.service", d.service)),
+        )
 }
 fn status_summary(output: &str) -> String {
     let current = output.split("----- HISTORICAL LOGS").next().unwrap_or("");
-    let states: Vec<_> = current.lines().filter(|line| {
-        line.starts_with("Zig UDP server:") || line.starts_with("Browser WebSocket gateway:")
-    }).collect();
+    let states: Vec<_> = current
+        .lines()
+        .filter(|line| {
+            line.starts_with("Zig UDP server:") || line.starts_with("Browser WebSocket gateway:")
+        })
+        .collect();
     if states.len() == 2 {
         states.join(" | ")
     } else {
@@ -203,7 +209,9 @@ pub(super) fn execute(
     }
     match action {
         RemoteAction::Test => ssh(d, &preflight(d), cancel),
-        RemoteAction::Status => ssh(d, &status_script(d), cancel).map(|output| status_summary(&output)),
+        RemoteAction::Status => {
+            ssh(d, &status_script(d), cancel).map(|output| status_summary(&output))
+        }
         RemoteAction::Deploy => {
             super::progress::stage(15, "Validating Linux bundle");
             s.validate()?;
@@ -357,7 +365,10 @@ mod tests {
     #[test]
     fn status_banner_contains_both_current_states_and_never_historical_errors() {
         let output = "CURRENT SERVICE STATUS\nZig UDP server: RUNNING\nBrowser WebSocket gateway: STOPPED\n----- HISTORICAL LOGS\nZig UDP server: FAILED\nold protocol error\n";
-        assert_eq!(status_summary(output), "Zig UDP server: RUNNING | Browser WebSocket gateway: STOPPED");
+        assert_eq!(
+            status_summary(output),
+            "Zig UDP server: RUNNING | Browser WebSocket gateway: STOPPED"
+        );
         assert!(status_summary("unexpected output").contains("unavailable"));
     }
     fn settings() -> Settings {

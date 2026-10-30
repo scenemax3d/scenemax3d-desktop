@@ -394,6 +394,7 @@ impl Plugin for StudioPlugin {
             .add_systems(
                 Update,
                 (
+                    presentation::folding::prepare,
                     presentation::completion::prepare,
                     presentation::assistance::indent_newlines,
                     scenemax_ide_ui::commit_pending_input,
@@ -407,7 +408,11 @@ impl Plugin for StudioPlugin {
             .add_systems(
                 Update,
                 (
-                    presentation::input::sync_documents,
+                    (
+                        presentation::input::sync_documents,
+                        presentation::folding::toggle,
+                    )
+                        .chain(),
                     presentation::input::collect_actions,
                     (presentation::chrome::controls, presentation::about::update).chain(),
                     (
@@ -533,6 +538,7 @@ impl Plugin for StudioPlugin {
                     (
                         presentation::editing::apply_editor_zoom,
                         presentation::editing::update_gutters,
+                        presentation::folding::draw,
                         presentation::editing::highlight_documents,
                         presentation::assistance::bracket_emphasis,
                         presentation::completion::refresh,

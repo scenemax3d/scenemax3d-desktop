@@ -16,12 +16,12 @@ mod browser_test;
 mod build;
 pub use browser_test::{LocalTest, TestTarget};
 mod gateway;
+#[cfg(test)]
+mod installed_tests;
 pub(crate) mod launch;
 pub mod local_server;
 mod progress;
 mod remote;
-#[cfg(test)]
-mod installed_tests;
 pub use progress::Progress;
 pub use remote::RemoteAction;
 

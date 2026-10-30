@@ -140,7 +140,14 @@ pub(crate) fn editor(
         },
         ChildOf(gutter),
     ));
-    spawn_editor(commands, host, Editor(id), doc.text(), true);
+    let editor = spawn_editor(commands, host, Editor(id), doc.text(), true);
+    commands.entity(editor).insert(super::folding::View(
+        scenemax_ide_core::folding::Projection::new(doc.text().into()),
+    ));
+    commands.entity(gutter).insert((
+        super::folding::Gutter(editor),
+        super::folding::Drawn::default(),
+    ));
     commands.entity(host).observe(
         |mut event: On<bevy::input_focus::FocusedInput<bevy::input::keyboard::KeyboardInput>>,
          keys: Res<ButtonInput<KeyCode>>,

@@ -10,6 +10,7 @@ pub(crate) mod tabs;
 pub(crate) mod tree_menu;
 
 pub(crate) mod editing;
+pub(crate) mod folding;
 
 pub(crate) mod chrome;
 

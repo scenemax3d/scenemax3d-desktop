@@ -204,6 +204,99 @@ fn edit(app: &mut App, source: &str) {
         .set_text(source);
 }
 #[test]
+fn folded_native_editor_saves_hidden_source_and_undo_restores_full_document() {
+    use crate::presentation::folding::{Toggle, View};
+    use scenemax_ide_core::folding::regions;
+    let (mut app, _dir, path) = app();
+    app.init_resource::<bevy::text::FontCx>()
+        .init_resource::<bevy::text::LayoutCx>();
+    let source = "do\n  log 42\nend do\nlog 1";
+    edit(&mut app, source);
+    app.update();
+    dispatch(&mut app, Command::Save);
+    finish_io(&mut app);
+    let world = app.world_mut();
+    let editor = world
+        .query_filtered::<Entity, With<Editor>>()
+        .single(world)
+        .unwrap();
+    let button = world
+        .spawn((
+            Interaction::Pressed,
+            Toggle {
+                editor,
+                body: regions(source)[0].body.clone(),
+            },
+        ))
+        .id();
+    app.update();
+    app.world_mut().entity_mut(button).insert(Interaction::None);
+    app.update();
+    assert_eq!(
+        app.world().get::<EditableText>(editor).unwrap().value(),
+        "do\nend do\nlog 1"
+    );
+    assert!(
+        !app.world()
+            .resource::<Session>()
+            .workspace
+            .has_dirty_documents()
+    );
+    edit(&mut app, "do\nend do\nlog 2");
+    app.update();
+    assert_eq!(
+        app.world().get::<View>(editor).unwrap().0.collapsed.len(),
+        1
+    );
+    dispatch(&mut app, Command::Save);
+    finish_io(&mut app);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        source.replace("log 1", "log 2")
+    );
+    dispatch(
+        &mut app,
+        Command::Edit(crate::application::EditCommand::Undo),
+    );
+    assert_eq!(
+        app.world().get::<EditableText>(editor).unwrap().value(),
+        source
+    );
+}
+
+#[test]
+fn opening_project_registers_it_in_catalog_and_updates_project_list() {
+    let (mut app, dir, _) = app();
+    let catalog = dir.path().join("projects/projects.json");
+    std::fs::create_dir_all(catalog.parent().unwrap()).unwrap();
+    std::fs::write(&catalog, r#"{"projects":[],"custom":true}"#).unwrap();
+    app.world_mut()
+        .resource_mut::<EditorServices>()
+        .catalog_path = Some(catalog.clone());
+    let other = tempfile::tempdir().unwrap();
+    std::fs::create_dir(other.path().join("scripts")).unwrap();
+    std::fs::write(other.path().join("scripts/main"), "// test").unwrap();
+    for _ in 0..2 {
+        dispatch(&mut app, Command::OpenProject(other.path().into()));
+        finish_io(&mut app);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while app
+            .world()
+            .resource::<EditorServices>()
+            .catalog_storage
+            .is_pending()
+        {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            app.update();
+        }
+        assert_eq!(app.world().resource::<Session>().catalog.projects.len(), 1);
+    }
+    let saved = std::fs::read_to_string(catalog).unwrap();
+    assert!(saved.contains("\"custom\": true"));
+    assert!(saved.contains("selectedProject"));
+}
+#[test]
 fn save_button_includes_latest_widget_text() {
     let (mut app, _dir, path) = app();
     edit(&mut app, "// latest שלום\n");

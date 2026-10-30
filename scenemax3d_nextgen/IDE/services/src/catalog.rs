@@ -1,4 +1,4 @@
-//! Read-only compatibility adapter for the existing project catalog.
+//! Project catalog loading, registration and recovery.
 use crate::{ServiceError, io_result};
 use scenemax_ide_core::{ProjectCatalog, ProjectSummary};
 use serde::Deserialize;
@@ -7,13 +7,18 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
+mod registration;
 mod starter;
+pub use registration::refresh_catalog;
 
 /// Startup recovery is limited to the installed project collection.
 pub fn load_startup_catalog(
     root: &Path,
     explicit: Option<&Path>,
 ) -> Result<ProjectCatalog, ServiceError> {
+    if explicit.is_some() {
+        return refresh_catalog(root, explicit, None);
+    }
     if explicit.is_none() {
         let installation = crate::workspace_state::installation_root().or_else(|| {
             crate::workspace_state::is_installation_root(root).then(|| root.to_owned())
@@ -21,6 +26,7 @@ pub fn load_startup_catalog(
         if let Some(installation) = installation {
             // Validate existing metadata before considering recovery.
             load_catalog(&installation, None)?;
+            refresh_catalog(&installation, None, None)?;
             starter::ensure(&installation)?;
         }
     }
