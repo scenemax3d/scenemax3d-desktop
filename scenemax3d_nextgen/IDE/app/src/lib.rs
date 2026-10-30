@@ -163,6 +163,7 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         .add_plugins((
             presentation::scene3d::gizmo::GizmoPlugin,
             presentation::scene3d::grid::GridPlugin,
+            presentation::scene3d::outline::OutlinePlugin,
         ));
     app.add_systems(
         Update,

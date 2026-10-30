@@ -395,3 +395,4 @@ pub(crate) mod ik_controls;
 pub(crate) mod grid;
 
 pub(crate) mod automation;
+pub(crate) mod outline;
