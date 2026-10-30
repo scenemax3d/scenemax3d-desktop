@@ -339,6 +339,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::scene3d::rig::Selection>()
             .init_resource::<presentation::scene3d::picking::Request>()
             .init_resource::<presentation::scene3d::tools::Tools>()
+            .init_resource::<presentation::scene3d::hierarchy::State>()
             .init_resource::<presentation::scene3d::path::Drawing>()
             .init_resource::<presentation::scene3d::navigation::Navigation>()
             .init_resource::<presentation::scene3d::playback::Playback>()
@@ -452,7 +453,11 @@ impl Plugin for StudioPlugin {
                         presentation::designer::interactions,
                         presentation::scene3d::live::update,
                         presentation::scene3d::inspector::apply,
-                        presentation::scene3d::tools::update,
+                        (
+                            presentation::scene3d::tools::update,
+                            presentation::scene3d::hierarchy::update,
+                        )
+                            .chain(),
                         presentation::scene3d::ambient::update,
                         presentation::scene3d::path::update,
                         presentation::scene3d::segments::update,
@@ -486,7 +491,11 @@ impl Plugin for StudioPlugin {
                         presentation::model_import::playback::update,
                         presentation::scene3d::refresh_materials,
                         presentation::scene3d::update,
-                        presentation::scene3d::synchronize_tree,
+                        (
+                            presentation::scene3d::synchronize_tree,
+                            presentation::scene3d::hierarchy::feedback,
+                        )
+                            .chain(),
                         presentation::scene3d::synchronize_names,
                         presentation::scene3d::rig::highlight,
                         presentation::scene3d::navigation::update,

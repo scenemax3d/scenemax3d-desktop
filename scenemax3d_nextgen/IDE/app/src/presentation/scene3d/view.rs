@@ -75,6 +75,7 @@ pub(super) fn build(
             ..default()
         },
     );
+    super::hierarchy::tree(commands, tree);
     commands.spawn((
         label("SCENE HIERARCHY", 11.),
         Node {
@@ -107,10 +108,11 @@ pub(super) fn build(
             }
             ancestor = scene.entities[parent].parent;
         }
-        let branch = scene
-            .entities
-            .get(i + 1)
-            .is_some_and(|child| child.parent == Some(i));
+        let branch = matches!(e.kind.as_str(), "SECTION" | "CINEMATIC_RIG")
+            || scene
+                .entities
+                .get(i + 1)
+                .is_some_and(|child| child.parent == Some(i));
         let icon = match e.kind.as_str() {
             "CAMERA" => "◉",
             "SECTION" => "▱",
@@ -139,6 +141,7 @@ pub(super) fn build(
             Choose::Toggle(i),
         );
         commands.entity(row).insert(SceneRow(i));
+        super::hierarchy::row(commands, row, i);
         if !visible {
             commands.entity(row).insert(Node {
                 display: Display::None,

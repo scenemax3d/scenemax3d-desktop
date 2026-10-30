@@ -359,6 +359,7 @@ pub(crate) mod ambient;
 mod cinematic;
 pub(crate) mod constraints;
 pub(crate) mod gizmo;
+pub(crate) mod hierarchy;
 pub(crate) mod inspector;
 pub(crate) mod live;
 pub(crate) mod navigation;
