@@ -22,6 +22,11 @@ pub fn template(kind: &str) -> Result<Value, String> {
         return Err("Unsupported scene entity type".into());
     }
     let mut entry = json!({"type":kind,"name":kind.to_lowercase(),"position":[0,0.5,0],"rotation":[0,0,0,1],"scale":[1,1,1],"hidden":false});
+    // An omitted model scale inherits its catalog default in both the designer
+    // and generated script. Explicit scales are reserved for authored overrides.
+    if kind == "MODEL" {
+        entry.as_object_mut().unwrap().remove("scale");
+    }
     let extra = match kind {
         "SPHERE" => json!({"radius":0.5}),
         "BOX" => json!({"sizeX":0.5,"sizeY":0.5,"sizeZ":0.5}),
