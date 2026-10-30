@@ -1,6 +1,26 @@
 //! Java primitive dimensions converted into editor-owned preview meshes.
 use super::*;
 use serde_json::Value;
+/// Distance that gives a primitive's bounding sphere comfortable viewport margins.
+pub(super) fn view_distance(entry: &scenemax_ide_services::scene3d::Entity3d) -> Option<f32> {
+    let scale = Vec3::from_array(entry.scale).abs();
+    let radius = if let Some(mesh) = mesh(&entry.kind, &entry.properties) {
+        let bevy::mesh::VertexAttributeValues::Float32x3(vertices) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION)?
+        else {
+            return None;
+        };
+        vertices
+            .iter()
+            .map(|v| (Vec3::from_array(*v) * scale).length())
+            .fold(0., f32::max)
+    } else if matches!(entry.kind.as_str(), "BOX" | "SPHERE" | "QUAD") {
+        (Vec3::from_array(entry.size) * scale).length() * 0.5
+    } else {
+        return None;
+    };
+    Some((radius * 4.).max(3.5))
+}
 #[derive(Default)]
 struct Faces {
     positions: Vec<[f32; 3]>,
@@ -160,6 +180,37 @@ pub(super) fn mesh(kind: &str, p: &Value) -> Option<Mesh> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn primitive_framing_accounts_for_dimensions_and_scale() {
+        let dir = tempfile::tempdir().unwrap();
+        for kind in [
+            "BOX",
+            "SPHERE",
+            "QUAD",
+            "WEDGE",
+            "CYLINDER",
+            "CONE",
+            "HOLLOW_CYLINDER",
+            "STAIRS",
+            "ARCH",
+        ] {
+            let mut entry = scenemax_ide_core::scene3d::structure::template(kind).unwrap();
+            let scene = scenemax_ide_services::scene3d::load(
+                dir.path(),
+                &serde_json::json!({"entities":[entry.clone()]}).to_string(),
+            )
+            .unwrap();
+            let distance = view_distance(&scene.entities[0]).unwrap();
+            assert!((3.5..20.).contains(&distance), "{kind}: {distance}");
+            entry["scale"] = serde_json::json!([10, 10, 10]);
+            let enlarged = scenemax_ide_services::scene3d::load(
+                dir.path(),
+                &serde_json::json!({"entities":[entry]}).to_string(),
+            )
+            .unwrap();
+            assert!(view_distance(&enlarged.entities[0]).unwrap() > distance * 5.);
+        }
+    }
     #[test]
     fn all_added_primitives_have_finite_geometry() {
         for kind in [

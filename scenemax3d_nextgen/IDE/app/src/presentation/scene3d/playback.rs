@@ -16,6 +16,7 @@ pub(crate) struct Playback {
 /// Keep camera animation smooth while retaining the IDE's idle power-saving mode.
 pub(crate) fn cadence(
     playback: Res<Playback>,
+    travel: Query<(), With<super::focus::Travel>>,
     material: Option<Res<super::super::material::State>>,
     rigs: Query<&scenemax_ik::Rig, With<gizmo::SceneObject>>,
     settings: Option<ResMut<bevy::winit::WinitSettings>>,
@@ -24,7 +25,8 @@ pub(crate) fn cadence(
     let Some(mut settings) = settings else {
         return;
     };
-    let playing = playback.active.is_some()
+    let playing = !travel.is_empty()
+        || playback.active.is_some()
         || material.is_some_and(|m| m.animating())
         || rigs.iter().any(|rig| {
             rig.active

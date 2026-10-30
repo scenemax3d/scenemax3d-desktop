@@ -2,6 +2,20 @@
 use scenemax_assets::animation_ranges::{self, Timeline};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+/// Only the discovered shared model catalogs may be opened outside the project.
+pub fn is_shared_catalog(project: &Path, path: &Path) -> bool {
+    crate::resource_roots::shared(project).is_some_and(|root| {
+        [
+            "Models/models.json",
+            "Models/models-ext.json",
+            "models/models.json",
+            "models/models-ext.json",
+        ]
+        .iter()
+        .filter_map(|name| root.join(name).canonicalize().ok())
+        .any(|catalog| catalog.starts_with(&root) && catalog == path)
+    })
+}
 /// Locate a writable project model catalog, never a shared installation catalog.
 pub fn catalog(project: &Path) -> Result<PathBuf, String> {
     for directory in ["Models", "models"] {
@@ -66,6 +80,7 @@ pub fn inventory_at(root: &Path) -> Result<Vec<InventoryModel>, String> {
         if !catalog.is_file() {
             continue;
         }
+        let catalog = catalog.canonicalize().map_err(|e| e.to_string())?;
         let data =
             crate::inventory::json(&catalog).map_err(|e| format!("{}: {e}", catalog.display()))?;
         for (index, model) in data["models"]
@@ -212,6 +227,56 @@ pub fn validate_changed(catalog: &Path, previous: &str, text: &str) -> Result<()
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn shared_catalog_open_save_conflicts_and_recovery_are_scoped() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("projects/game");
+        std::fs::create_dir_all(&project).unwrap();
+        let shared = dir.path().join("resources/Models");
+        std::fs::create_dir_all(&shared).unwrap();
+        let path = shared.join("models.json");
+        std::fs::write(&path, "{\"models\":[]}").unwrap();
+        let project = crate::Filesystem::open_project(&project).unwrap();
+        let mut doc = crate::Filesystem::open_document(&project, &path).unwrap();
+        doc.replace_text("{\"models\":[],\"custom\":true}".into());
+        let mut journal = crate::recovery::RecoveryJournal::default();
+        journal
+            .checkpoint(project.root(), vec![doc.clone()], vec![])
+            .unwrap();
+        let recovery = crate::recovery::RecoveryJournal::load(project.root()).unwrap();
+        assert_eq!(recovery.documents.len(), 1);
+        assert_eq!(recovery.documents[0].text(), doc.text());
+        crate::Filesystem::save_document(&mut doc).unwrap();
+        doc.replace_text("{\"models\":[]}".into());
+        std::fs::write(&path, "external change").unwrap();
+        assert!(crate::Filesystem::save_document(&mut doc).is_err());
+        let unrelated = shared.join("other.json");
+        std::fs::write(&unrelated, "{}").unwrap();
+        assert!(crate::Filesystem::open_document(&project, &unrelated).is_err());
+        let unrelated = dir.path().join("other/Models/models.json");
+        std::fs::create_dir_all(unrelated.parent().unwrap()).unwrap();
+        std::fs::write(&unrelated, "{}").unwrap();
+        assert!(crate::Filesystem::open_document(&project, &unrelated).is_err());
+    }
+    #[test]
+    fn bundled_flying_models_have_one_usable_fly_clip() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../resources-basic/resources");
+        let catalog = root.join("Models/models.json");
+        let data = crate::inventory::json(&catalog).unwrap();
+        for name in ["dragon", "phoenix"] {
+            let index = data["models"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|model| model["name"] == name)
+                .unwrap();
+            let loaded = source(&catalog, &data, index).unwrap();
+            assert_eq!(loaded.timelines.len(), 1, "{name}");
+            assert_eq!(loaded.timelines[0].name, "fly", "{name}");
+            assert!(loaded.timelines[0].times.len() > 1, "{name}");
+            assert!(*loaded.timelines[0].times.last().unwrap() > 0., "{name}");
+        }
+    }
     #[test]
     fn inventory_models_keep_their_own_roots_and_project_precedence() {
         let dir = tempfile::tempdir().unwrap();

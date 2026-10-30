@@ -157,10 +157,10 @@ pub(super) fn table(c: &mut Commands, parent: Entity, s: &State) {
         &s.model.to_string(),
         &options,
     );
-    if s.model >= s.project_count {
+    if s.shared_catalog {
         c.spawn((
             label(
-                "Inventory model · Import into the project to edit saved ranges",
+                "Shared model catalog · Saved ranges apply to all projects using these models",
                 11.,
             ),
             ChildOf(parent),
@@ -231,6 +231,10 @@ pub(super) fn table(c: &mut Commands, parent: Entity, s: &State) {
                 PANEL
             }),
         ));
+        c.entity(r)
+            .observe(move |_: On<PointerPress>, mut state: ResMut<State>| {
+                select(&mut state, index);
+            });
         button(c, r, &format!("{}", index + 1), Action::Select(index));
         for key in ["name", "sourceAnimation", "start", "end"] {
             let cell = c
@@ -264,7 +268,7 @@ pub(super) fn table(c: &mut Commands, parent: Entity, s: &State) {
     }
     c.spawn((
         label(
-            "Select a row, then Play range. Frame numbers follow the source keyframes.",
+            "Focus a track to play its range. Range edits update the preview immediately.",
             11.,
         ),
         ChildOf(parent),

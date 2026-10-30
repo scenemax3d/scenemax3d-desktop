@@ -437,6 +437,31 @@ fn normalized_numeric_fields_do_not_block_model_properties_or_proportional_scale
             .set_text(value);
         app.update();
     };
+    // Decimal typing must not collapse the model at its intermediate zero.
+    for draft in ["", "0", "0.", "-", "-0", "NaN", "1e-20"] {
+        edit(&mut app, axes[0], draft);
+        assert_eq!(
+            app.world().get::<Transform>(object).unwrap().scale,
+            original.scale
+        );
+        assert_eq!(
+            app.world()
+                .resource::<Session>()
+                .workspace
+                .document(id)
+                .unwrap()
+                .revision(),
+            revision
+        );
+    }
+    edit(&mut app, axes[0], "0.5");
+    assert!(
+        app.world()
+            .get::<Transform>(object)
+            .unwrap()
+            .scale
+            .abs_diff_eq(Vec3::new(0.5, 1., 1.5), 0.00001)
+    );
     edit(&mut app, axes[0], "6.24");
     let expected = Vec3::new(6.24, 12.48, 18.72);
     assert!(

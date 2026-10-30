@@ -60,7 +60,7 @@
   {
     "scaleX": 0.1,
     "scaleY": 0.1,
-    "path": "Models/dragon1/scene.j3o",
+    "path": "Models/dragon1/scene.gltf",
     "transZ": 0,
     "transX": 0,
     "transY": 0,
@@ -79,7 +79,7 @@
   {
     "scaleX": 0.01,
     "scaleY": 0.01,
-    "path": "Models/pnxbird/scene.j3o",
+    "path": "Models/pnxbird/scene.gltf",
     "transZ": 0,
     "transX": 0,
     "transY": 0,

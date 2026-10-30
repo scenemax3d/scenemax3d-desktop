@@ -13,6 +13,8 @@ const MAX_BYTES: u64 = 64 * 1024 * 1024;
 #[derive(Serialize, Deserialize)]
 struct Record {
     relative: PathBuf,
+    #[serde(default)]
+    shared_catalog: bool,
     baseline: Vec<u8>,
     text: String,
 }
@@ -111,17 +113,24 @@ impl RecoveryJournal {
             let path = Filesystem::resolve(&project, &path)?;
             let checkpoint = read(&path)?;
             for record in checkpoint.documents {
-                if record.relative.is_absolute()
-                    || record
-                        .relative
-                        .components()
-                        .any(|c| !matches!(c, std::path::Component::Normal(_)))
-                {
-                    return Err(ServiceError::Recovery(
-                        "Invalid script path in checkpoint".into(),
-                    ));
-                }
-                let path = Filesystem::resolve(&project, &record.relative)?;
+                let path = if record.shared_catalog {
+                    if !crate::animation_analyzer::is_shared_catalog(root, &record.relative) {
+                        return Err(ServiceError::OutsideProject(record.relative));
+                    }
+                    record.relative.clone()
+                } else {
+                    if record.relative.is_absolute()
+                        || record
+                            .relative
+                            .components()
+                            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+                    {
+                        return Err(ServiceError::Recovery(
+                            "Invalid script path in checkpoint".into(),
+                        ));
+                    }
+                    Filesystem::resolve(&project, &record.relative)?
+                };
                 if record.baseline.len() > 8 * 1024 * 1024 || record.text.len() > 8 * 1024 * 1024 {
                     return Err(ServiceError::Limit("Recovery buffer exceeds 8 MiB"));
                 }
@@ -167,13 +176,23 @@ impl RecoveryJournal {
             let records = documents
                 .into_iter()
                 .map(|doc| {
+                    let shared_catalog = !doc.path().starts_with(root)
+                        && crate::animation_analyzer::is_shared_catalog(root, doc.path());
                     let relative = doc
                         .path()
                         .strip_prefix(root)
+                        .or_else(|error| {
+                            if shared_catalog {
+                                Ok(doc.path())
+                            } else {
+                                Err(error)
+                            }
+                        })
                         .map_err(|_| ServiceError::OutsideProject(doc.path().to_owned()))?
                         .to_owned();
                     Ok(Record {
                         relative,
+                        shared_catalog,
                         baseline: doc.saved_bytes().to_vec(),
                         text: doc.text().to_owned(),
                     })

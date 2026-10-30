@@ -73,6 +73,16 @@ pub(super) fn transaction(
                 }
                 vector = original.map(|v| v * vector[axis] / original[axis]);
             }
+            // Live edits include intermediate drafts such as `0` while typing
+            // `0.5`. Never publish singular transforms to rendering/ray picking,
+            // and validate every proportional result, not just the edited axis.
+            if key == "scale"
+                && vector
+                    .iter()
+                    .any(|v| !v.is_finite() || v.abs() < 1e-6 || v.abs() >= 1e10)
+            {
+                return Err("Scale: each axis must be nonzero, with magnitude between 0.000001 and 10000000000 (exclusive upper bound)".into());
+            }
             patch.push((key.into(), json!(vector)));
         }
     }

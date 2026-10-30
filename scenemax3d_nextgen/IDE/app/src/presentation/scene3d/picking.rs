@@ -25,6 +25,7 @@ pub(crate) struct View<'w, 's> {
     cameras: Query<'w, 's, (&'static GlobalTransform, &'static Projection)>,
     parents: Query<'w, 's, &'static ChildOf>,
     objects: Query<'w, 's, &'static gizmo::SceneObject>,
+    masks: Query<'w, 's, (), With<super::outline::MaskMesh>>,
     drawing: Res<'w, path::Drawing>,
     ik_handles: Query<'w, 's, &'static super::ik_controls::Handle>,
     gizmo: Res<'w, gizmo::State>,
@@ -95,7 +96,7 @@ pub(crate) fn update(
         }
         None
     };
-    let filter = |entity| owner(entity).is_some();
+    let filter = |entity| !view.masks.contains(entity) && owner(entity).is_some();
     let hit = raycast
         .cast_ray(
             Ray3d::new(camera.translation(), direction),

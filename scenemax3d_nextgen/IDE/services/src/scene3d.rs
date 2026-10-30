@@ -251,6 +251,40 @@ pub fn load(root: &Path, source: &str) -> Result<Scene3d, String> {
 mod tests {
     use super::*;
     #[test]
+    fn newly_added_model_inherits_catalog_scale_in_preview_and_generated_script() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = dir.path().join("resources/Models");
+        std::fs::create_dir_all(&models).unwrap();
+        std::fs::write(models.join("sample.glb"), []).unwrap();
+        std::fs::write(models.join("models-ext.json"), r#"{"models":[{"name":"sample","path":"Models/sample.glb","scaleX":0.1,"scaleY":0.2,"scaleZ":0.3}]}"#).unwrap();
+        let mut model = scenemax_ide_core::scene3d::structure::template("MODEL").unwrap();
+        model["resourcePath"] = serde_json::json!("sample");
+        let (source, _) =
+            scenemax_ide_core::scene3d::structure::insert(r#"{"entities":[]}"#, None, model)
+                .unwrap();
+        let scene = load(dir.path(), &source).unwrap();
+        assert_eq!(scene.entities[0].scale, [0.1, 0.2, 0.3]);
+        let code =
+            scenemax_ide_core::scene_codegen::generate(&source, "scene.smdesign", "", "", &[])
+                .unwrap();
+        assert!(!code.contains("scale "), "{code}");
+        let edited = scenemax_ide_core::scene3d::patch(
+            &source,
+            "/entities/0",
+            &[("scale".into(), serde_json::json!([1, 1, 1]))],
+        )
+        .unwrap();
+        assert_eq!(
+            load(dir.path(), &edited).unwrap().entities[0].scale,
+            [1.; 3]
+        );
+        assert!(
+            scenemax_ide_core::scene_codegen::generate(&edited, "scene.smdesign", "", "", &[])
+                .unwrap()
+                .contains("scale 1")
+        );
+    }
+    #[test]
     fn nested_sections_preserve_order_and_saved_model_scale_overrides_resource_default() {
         let dir = tempfile::tempdir().unwrap();
         let models = dir.path().join("resources/Models");

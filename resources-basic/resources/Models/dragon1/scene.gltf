@@ -5141,7 +5141,7 @@
           }
         }
       ],
-      "name": "Take 001",
+      "name": "fly",
       "samplers": [
         {
           "input": 8,
