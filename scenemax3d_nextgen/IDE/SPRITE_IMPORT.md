@@ -8,7 +8,7 @@ The document offers a checkerboard sheet view with live frame outlines, highligh
 
 Rows and columns define row-major frame order, starting at the top left. Cell width/height are source pixels; 0 calculates the cell size from the image, grid, symmetric margins and gutters. Invalid or clipped rectangles are rejected. Margin and spacing edits immediately update the preview. Import removes margins/gutters and writes a uniform RGBA PNG sheet so runtime UVs match the selected source rectangles. Alpha is preserved and the original image stays unchanged.
 
-Game display width/height retain the Java importer's resource semantics. A zero display height preserves the cell aspect ratio. An explicit height updates the animation preview's display aspect. Source pixel dimensions are separate from game display units.
+Game display width/height use SceneMax resource units. A zero display height preserves the cell aspect ratio. An explicit height updates the animation preview's display aspect. Source pixel dimensions are separate from game display units.
 
 ## Animation inspection
 
@@ -23,4 +23,4 @@ Drafts live under `.scenemax-studio/imports/Import Sprite.smspriteimport`; ordin
 - `IDE/app/src/presentation/sprite_import/`: retained form, document transactions, Bevy UI previews and transport.
 - `IDE/ui/src/canvas.rs`: shared zoom/pan surface that can resize without losing navigation state.
 
-Java reference: `src/com/scenemax/desktop/ImportSpriteSheetDialog.java`. Its source/name/rows/columns/frame-size controls are supported. The separate game-launch Test workflow is replaced with embedded previews that do not temporarily register assets or write test scripts.
+Source, name, rows, columns, and frame-size controls are supported. Embedded previews do not temporarily register assets or write test scripts.

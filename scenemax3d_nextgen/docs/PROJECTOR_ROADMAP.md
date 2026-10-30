@@ -1,3 +1,5 @@
+> **Historical development record.** This document records implementation stages and test results, including superseded gaps and former Java/Swing comparisons. It is not current setup guidance or a release feature checklist. Use the [current IDE guide](../IDE/README.md) and [multiplayer guide](../../docs/multiplayer.md) for supported workflows. Earlier source references may exist only in release history.
+
 # SceneMax3D NextGen Projector Plan
 
 Target folder: `C:\dev\scenemax_desktop\scenemax3d_nextgen`

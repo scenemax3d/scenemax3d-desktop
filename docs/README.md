@@ -1,8 +1,8 @@
 # SceneMax3D Command Reference
 
-**SceneMax3D v1.8.8** — A visual scripting language for creating 3D games and interactive scenes.
+**SceneMax3D Studio** — SceneMax scripting and authoring guides for the Rust/Bevy IDE and runtime.
 
-> Author: Adi Barda | Last updated: March 2026
+Use the [IDE guide](../scenemax3d_nextgen/IDE/README.md) for editor workflows, [Package & Deploy](../scenemax3d_nextgen/IDE/DEPLOYMENT.md) for releases, and [Web publishing](../scenemax3d_nextgen/IDE/WEB_EXPORT.md) for browser games. Example model, animation, and texture names refer to project assets; substitute your own registered resources.
 
 ## Table of Contents
 
@@ -61,3 +61,7 @@ end do
 ## Language Basics
 
 SceneMax3D uses a simple, English-like syntax. Objects are created with `is a` or `=>` shorthand, properties are set with `=`, and commands use natural language patterns like `move left 3 in 2 seconds ease in out`.
+
+## Historical material
+
+The [history folder](history/README.md) labels archived references separately from the current guides.

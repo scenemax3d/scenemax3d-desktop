@@ -45,26 +45,15 @@ Rebuild existing game distributions to include this support. No IDE setting or
 game-script change is needed; replacing or removing the sidecar and restarting
 the game changes the selected server.
 
-## Local Toolchain
+## Build prerequisites
 
-Rust is installed at:
-
-```powershell
-C:\Users\adikt\.cargo\bin
-```
-
-MSVC build tools are available at:
-
-```powershell
-C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat
-```
+Follow the [source-build requirements](../../README.md#requirements) for Rust, native build tools, and graphics support. Installed Studio distributions already provide Windows and Web export runtimes.
 
 ## Commands
 
 From the `scenemax3d_nextgen` workspace root:
 
 ```powershell
-$env:PATH = 'C:\Users\adikt\.cargo\bin;' + $env:PATH
 cargo check --workspace --all-targets
 cargo test -p scenemax_parser -p scenemax_assets -p scenemax_runtime --lib
 cargo run -p scenemax_projector_nextgen -- --help
@@ -85,7 +74,7 @@ d.fly loop
 
 For that script to spawn a model, the selected project's `resources\Models\models-ext.json` must contain a `dragon` entry whose path points to a `.glb` or `.gltf` file.
 
-First-stage asset policy:
+Runtime asset formats:
 
 - GLB/GLTF models are supported.
 - JME `.j3o` models are reported as unsupported and must be exported or converted to GLB/GLTF.

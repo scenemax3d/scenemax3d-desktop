@@ -8,7 +8,7 @@ Set a range and choose **Add range**. Edit its name, source animation, start and
 
 ## Saved artifact and runtime use
 
-The artifact is Java-compatible catalog metadata:
+The artifact is SceneMax catalog metadata:
 
 ```json
 {
@@ -32,9 +32,9 @@ actor.ending at speed of 0.5 loop
 
 The runtime resolves the record on that model, wraps the source curves over the selected time interval, and gives the result its own zero-based duration. Existing speed, looping, transitions and completion/wait behavior consume that duration. Source models, meshes, skins, textures and animation curves are unchanged. Named records take precedence over equally named source clips. Restart the game after saving changes to reload its cached metadata.
 
-Frames match Java: indices in the longest transform track, including nonuniform timestamps. For animations without a transform track the fallback is 24 FPS. The end frame is the interval endpoint; a valid record requires `0 <= start < end <= last frame`. Multiple records can use different source animations and overlapping intervals. Unnamed glTF animations appear as `Animation N`. Legacy shared-source fields and J3O registrations with a supported `sourceModel` alias are understood; standalone J3O files are unsupported.
+Frames are indices in the longest transform track, including nonuniform timestamps. For animations without a transform track the fallback is 24 FPS. The end frame is the interval endpoint; a valid record requires `0 <= start < end <= last frame`. Multiple records can use different source animations and overlapping intervals. Unnamed glTF animations appear as `Animation N`. Legacy shared-source fields and J3O registrations with a supported `sourceModel` alias are understood; standalone J3O files are unsupported.
 
-This implementation uses the requested metadata-only route. It does not create a second model or embed records into GLTF, and does not offer Java's J3O export/texture optimization dialog. Model conversion and optimization remain in Import 3D Model. Shared installation catalogs are not opened for editing by this menu.
+The analyzer saves frame-range metadata without creating a second model or embedding records into GLTF. Model conversion and optimization remain in Import 3D Model. Shared installation catalogs are not opened for editing by this menu.
 
 ## Ownership and verification
 

@@ -1,6 +1,6 @@
 <h1>SceneMax3D Developer Studio</h1>
 
-<p>SceneMax3D Developer Studio is a beginner-friendly environment for building 3D games, interactive scenes, classroom projects, and playable prototypes.</p>
+<p>SceneMax3D Developer Studio is a native Rust/Bevy environment for building desktop and browser games, interactive scenes, classroom projects, and playable prototypes. Author gameplay in SceneMax without needing to write Rust.</p>
 
 <p>It is made for indie developers, students, hobbyists, and first-time creators who want a faster and friendlier way to make real 3D projects without needing a professional background.</p>
 
@@ -11,11 +11,11 @@
 <ul>
   <li><strong>Visual 3D Scene Designer</strong> - Build and arrange scenes with a dedicated editor and real-time preview.</li>
   <li><strong>Beginner-friendly scripting language</strong> - Write game logic with readable commands instead of heavy boilerplate code.</li>
-  <li><strong>Code editor built into the IDE</strong> - Includes syntax highlighting and code folding for a smoother workflow.</li>
+  <li><strong>Code editor built into the IDE</strong> - Includes syntax highlighting, completion, syntax checking, find/replace, undo, and document recovery.</li>
   <li><strong>Camera tools</strong> - Create chase cameras, attach cameras, camera systems, and cinematic camera rigs.</li>
   <li><strong>UI and HUD authoring</strong> - Build menus, HUDs, text widgets, animated messages, and screen effects.</li>
   <li><strong>3D model support</strong> - Import your own models and work with reusable scene assets.</li>
-  <li><strong>Sketchfab workflow</strong> - Search and import compatible downloadable assets into your project.</li>
+  <li><strong>Asset import and previews</strong> - Import local GLB/glTF, FBX, and OBJ models, inspect animations, and optimize supported assets before importing.</li>
   <li><strong>Materials and shaders</strong> - Work with material, shader, and environment-shader assets to shape the look of your game.</li>
   <li><strong>Animation and movement</strong> - Control characters, objects, movement, rotation, and path-based behavior.</li>
   <li><strong>Physics and collisions</strong> - Add collision logic, physics interactions, ray checks, and gameplay-driven object behavior.</li>
@@ -23,9 +23,11 @@
   <li><strong>Effects support</strong> - Add atmosphere and visual polish with effects workflows including Effekseer integration.</li>
   <li><strong>Gameplay systems</strong> - Use events, input, arrays, variables, functions, shared state, minimaps, and replay-friendly logic.</li>
   <li><strong>Workspace and multi-project support</strong> - Manage multiple projects from one workspace.</li>
-  <li><strong>AI-assisted creation</strong> - SceneMax3D includes a built-in MCP server and AI Console for Codex, Claude, Claude Desktop, and Local Gemma workflows.</li>
-  <li><strong>Plugin system</strong> - Extend the environment with plugins and custom integrations.</li>
-  <li><strong>Packaging and publishing workflow</strong> - Build desktop packages, generate shareable outputs, and use built-in itch.io publishing support for desktop builds.</li>
+  <li><strong>AI-assisted creation</strong> - Connect MCP-capable AI clients to the built-in local server for project editing, scene and UI authoring, validation, and previews. A native proxy supports stdio clients.</li>
+  <li><strong>Integrated Git tools</strong> - Manage staging, commits, branches, history, and remote workflows inside the IDE.</li>
+  <li><strong>Web publishing</strong> - Export WebAssembly/WebGPU games, preview them in a browser, and publish to itch.io or your own HTTPS host. A WebGPU-capable browser and graphics device are required.</li>
+  <li><strong>Multiplayer</strong> - Connect browser and desktop players to shared sessions through the Zig server and browser WebSocket gateway, with local testing and Linux server deployment from the IDE. Public browser play requires a WSS endpoint.</li>
+  <li><strong>Packaging and publishing workflow</strong> - Build desktop packages and browser ZIPs, inspect asset sizes, and publish through itch.io integration. Installed Windows and Web runtimes support ordinary exports without a compiler.</li>
   <li><strong>Open source</strong> - SceneMax3D is available as an MIT-licensed GitHub project.</li>
 </ul>
 
@@ -48,7 +50,8 @@
 <h2>Documentation and project links</h2>
 
 <p><strong>Documentation:</strong><br>
-<a href="https://scenemax3d.com/cook-book/">https://scenemax3d.com/cook-book/</a></p>
+<a href="https://github.com/scenemax3d/scenemax3d-desktop/blob/nextgen-projector/docs/README.md">SceneMax scripting reference</a><br>
+<a href="https://github.com/scenemax3d/scenemax3d-desktop/blob/nextgen-projector/scenemax3d_nextgen/IDE/README.md">Current IDE guide</a></p>
 
 <p><strong>GitHub Project:</strong><br>
 <a href="https://github.com/scenemax3d/scenemax3d-desktop">https://github.com/scenemax3d/scenemax3d-desktop</a></p>

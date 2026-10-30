@@ -25,57 +25,33 @@ folder page and again immediately before installation, including `/DIR` and sile
 installs. Permissions or locks can still change after validation.
 Run `./INNO-SETUP/test-studio-location.ps1` for executable Inno validation tests.
 
-Included: IDE, desktop projector, native effect bridge and import library,
-standard resources, import tools, matching Rust workspace sources (including
-vendored Web renderer), setup guide, and licenses. Game projects, build caches,
-debug symbols and Git data are excluded. The bundled native bridge supports
-desktop rebuilding without shipping the upstream effect editor source checkout.
+## Distribution contents
 
-The installer offers **Download and install build tools**, selected by default.
-It scans existing tools, installs missing Rust, Microsoft C++/Windows SDK/CMake,
-then the pinned Wasm target and wasm-bindgen, and saves the detected paths for
-IDE exports. Downloads use the same official-package worker as Settings.
-Internet and several GB are required; Microsoft Setup may request administrator
-access. The installer itself runs as the current user. Native Effekseer uses the
-bundled bridge/import library, so a separate Vulkan or Effekseer SDK is unnecessary.
-A native-library load check detects missing runtime dependencies; a working GPU
-and Vulkan-capable graphics driver are still required for rendering.
+The installer includes the IDE, Windows projector and packaging launcher, WebAssembly
+runtime and matching JavaScript bindings, native effects library, standard assets,
+model import tools, prebuilt multiplayer servers and browser gateways, guides,
+and license notices. It excludes Rust sources, Cargo/CMake build files, compiler
+setup scripts, development fixtures, caches, and J3O models.
 
-Failures show Retry/Cancel and keep the IDE installed, but do not claim build
-readiness. The finish page offers "Launch SceneMax Studio" even when build-tool
-setup is incomplete; it starts the launcher in the selected installation folder.
-Silent installations do not launch the IDE. If a reboot is required, setup stops before
-Web tool installation, reports exit code 3010 and asks the user to restart manually.
-Setup never restarts Windows automatically. After a failure or reboot, use
-**Set up SceneMax build tools** in the Start menu, or the individual buttons in
-**File > Settings > Build Configuration**. Installed components are skipped on retry.
-The Start-menu helper writes its outcome to the same log and can also be run in
-PowerShell for its exit code. Logs append to
-`%LOCALAPPDATA%/SceneMax/setup/dependencies.log`; detected paths are atomically saved
-to `%LOCALAPPDATA%/SceneMax/build-tools.json`.
+Ordinary Windows and Web exports need no compiler or internet connection. Launch
+Studio through its shortcut so the native launcher sets the bundled resource and
+tool paths. A Vulkan-capable GPU and current drivers are required for native
+rendering; browser games require WebGPU. Butler and its account sign-in are
+optional for itch.io publishing and are acquired separately.
 
-For unattended installs, `/TASKS="buildtools"` selects prerequisite setup;
-`/TASKS=""` skips it. A cancelled/failed dependency step returns 1; required restart
-returns 3010; success returns 0. Tool installers may require interactive UAC approval,
-so silent Studio setup does not guarantee unattended dependency installation.
-The `-CheckOnly` option on `setup-studio-dependencies.ps1` detects/saves installed
-paths and validates the native bridge without downloading or installing anything.
+Engine development requires a separate matching source checkout and toolchain.
+The installer does not offer a build-tools setup task. On the maintainer machine,
+the installer build requires the pinned Rust toolchain, Windows native build
+prerequisites, `wasm32-unknown-unknown`, `x86_64-unknown-linux-musl`, the matching
+wasm-bindgen CLI, and Inno Setup 6. `-WasmBindgen` can select the required binding
+generator. Prebuilt Zig server templates must be available for the distributed
+platforms. `-SkipBuild` skips compilation, but still needs matching compiled
+artifacts and binding generation.
 
-Rust, Microsoft build tools and Web tools are downloaded at install time rather
-than embedded; their sizes and future Cargo caches are not part of the installer
-size. The first build can still download Cargo dependencies. Optional Butler and
-its account sign-in remain separate, since they are not needed for game builds. The native
-`SceneMaxStudio.exe` launcher sets child-process paths for the bundled source,
-resources and import/effect tools without modifying the user's global environment.
-Launch via its shortcut rather than directly running `scenemax_ide.exe`.
-
-This is an unsigned preview package, not a certified clean-machine release.
-Validate installation/uninstallation and fresh tool setup in a clean Windows VM
-before public distribution. Do not present a staged startup check on a developer
-machine as proof of a fresh installation. Code signing is not configured here.
-
-Dependency orchestration regression tests (no downloads/installations):
-`powershell -NoProfile -ExecutionPolicy Bypass -File INNO-SETUP/test-studio-dependencies.ps1`.
+This installer is unsigned. Validate installation/uninstallation, compiler-free
+Windows/Web export, browser preview, and multiplayer on a clean Windows x64
+machine before distribution. A staged startup check on a developer machine is
+not proof of a fresh installation.
 
 ## Installation history and packaged assets
 
@@ -98,8 +74,7 @@ J3O conversions: recover original model sources and export to glTF/GLB to restor
 legacy-only models. Source resources in the development checkout remain intact.
 Upgrades remove only exact previously bundled fixture/model files listed in a
 build-generated cleanup manifest; other user files and history are preserved.
-The included source workspace supports game builds; running its development test
-suite requires the full repository and its fixtures.
+Running the development test suite requires a separate full repository checkout and its fixtures.
 
 Package regression checks (run against a staged payload):
 

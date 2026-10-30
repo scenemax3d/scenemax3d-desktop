@@ -49,7 +49,7 @@ Set environment variables **before starting the IDE**:
 
 The listener binds only to `127.0.0.1`. Host headers must identify its actual local port; unrelated browser Origins are rejected. It does not grant wildcard CORS access. Without a token, local processes can automate the IDE; use a token where local applications are not equally trusted. It is not a remote multi-user service.
 
-A port collision leaves the IDE operational and displays an unavailable status in its MCP monitor. It does not silently select a different port. When running Java and Bevy side by side, configure distinct ports. Restart releases the old listener before starting the replacement IDE. Bounded GPU smoke runs disable MCP unless a port is explicitly supplied.
+A port collision leaves the IDE operational and displays an unavailable status in its MCP monitor. It does not silently select a different port. When running multiple IDE instances, configure distinct ports. Restart releases the old listener before starting the replacement IDE. Bounded GPU smoke runs disable MCP unless a port is explicitly supplied.
 
 Requests are limited to 8 MiB, headers to 16 KiB, connections to four, the pending tool queue to eight, and tools execute serially through the editor bridge. Calls have a 60-second deadline. A queued expired call cannot begin a mutation. A filesystem operation already in flight may complete after a client disconnect/timeout: inspect state before retrying. Cancellation notifications are not an undo or rollback mechanism.
 
@@ -87,13 +87,13 @@ Example tool-call parameters:
 
 Scene transforms use local position/scale vectors and **quaternion XYZW rotations**, matching native designer documents. `properties` is the native entity/widget JSON object; query current documents/schema before constructing unfamiliar fields. Batch insertion accepts up to 100 entities and validates the whole resulting document before applying it.
 
-## Java workflow compatibility and native differences
+## Supported workflows and limitations
 
-61 of the Java server's 63 tool names are exposed, plus eight native additions. This is workflow compatibility, not identical parameter schemas. The catalog describes the exact Bevy parameters.
+The generated catalog describes the supported tools and their exact parameters. Use it together with live discovery instead of examples from earlier releases.
 
-- The two Sketchfab search/import tools are not advertised. Sketchfab integration was explicitly excluded from the native model-import migration. Registered local glTF/GLB resources are available through `asset.list_models` and native scene entities.
-- No J3O/J3M generation or Java plugin execution is introduced. `material.save_export` saves the native `.smmat` runtime material; no extra export is necessary.
-- Use `properties` for advanced primitive/widget values, `updates` for property changes, `count`/`step` for translated copies, and `expected_revision` for concurrency. Java `force`, `overwrite`, `discard_editor_state`, download-URL attachments and reload flags are not accepted.
+- The two Sketchfab search/import tools are not advertised. Import supported local model files through the IDE instead. Registered local glTF/GLB resources are available through `asset.list_models` and native scene entities.
+- `material.save_export` saves the native `.smmat` runtime material; no extra export is necessary.
+- Use `properties` for advanced primitive/widget values, `updates` for property changes, `count`/`step` for translated copies, and `expected_revision` for concurrency. `force`, `overwrite`, `discard_editor_state`, download-URL attachments and reload flags are not accepted.
 - Duplicate, array, mirror and group/ungroup currently operate on top-level scene entities. Ungroup accepts sections with identity transforms so placement is preserved. Grouping retains existing IDs. Duplicating/inserting generates fresh IDs and remaps internal references.
 - `ui.update_layer` uses an `updates` object. Widget selectors accept native JSON pointers or unique names (`widgetPath`) and IDs (`widgetId`). New widgets target a layer or PANEL using a JSON pointer.
 - View and capture tools target the **3D scene designer**. UI authoring/validation is supported, but UI-designer screenshot/camera control is not exposed by these view tools. Captures use the current scene render-target size, capped at 1600×1200, and include editor grid/gizmos; thumbnails are capped at 320×240. They do not write a file and fail clearly while scene/model assets are not ready.
@@ -106,6 +106,6 @@ See [the complete tool report](MCP_TOOLS.md) for every available tool and its pa
 
 Responsibilities: core owns schemas and pure authoring transactions; services owns the bounded HTTP/stdio transport and background disk work; application owns live buffer revisions and existing save/run commands; presentation owns camera, selection, overlay, GPU capture and the retained monitor. Runtime/engine modules have no dependency on MCP.
 
-## Verification recorded for this migration
+## Historical verification record
 
 The native server was exercised against a real GPU IDE instance with 68 tools / 79 calls and the stdio proxy. The restart tool was checked with isolated lifecycle and listening-port-reuse tests. Scene capture and the MCP monitor were visually inspected. The regression suite plus added focused checks passed 306 unique tests (three existing optional service tests remain skipped); scoped Clippy, architecture, menu and tool-report checks passed. Local evidence is under `target/mcp-audit`. These tests do not imply remote-network, every-agent-client or Sketchfab integration support.
