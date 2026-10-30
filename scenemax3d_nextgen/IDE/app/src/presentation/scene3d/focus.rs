@@ -8,6 +8,9 @@ pub(crate) struct Travel {
     elapsed: f32,
 }
 const DURATION: f32 = 0.5;
+// Scene units are meters. Hierarchy focus approaches the selected object
+// instead of retaining a potentially distant overview zoom.
+const SELECTION_DISTANCE: f32 = 10.;
 #[derive(Component)]
 pub(crate) struct Request(usize, bool);
 
@@ -74,7 +77,7 @@ pub(crate) fn update(
                     distance: if request.1 {
                         super::primitives::view_distance(entry).unwrap_or(orbit.distance)
                     } else {
-                        orbit.distance
+                        SELECTION_DISTANCE
                     },
                     elapsed: 0.,
                 });
@@ -227,7 +230,7 @@ mod tests {
         world.init_resource::<ButtonInput<MouseButton>>();
         let start = Orbit {
             target: Vec3::ZERO,
-            distance: 10.,
+            distance: 220.,
             yaw: 0.6,
             pitch: 0.3,
         };
@@ -251,6 +254,7 @@ mod tests {
         world.run_system_once(update).unwrap();
         // Selecting an already selected row also focuses it, without consuming the idle delta.
         assert_eq!(world.get::<Orbit>(camera).unwrap().target, Vec3::ZERO);
+        assert_eq!(world.get::<Orbit>(camera).unwrap().distance, 220.);
         assert!(world.get::<Travel>(camera).is_some());
         world
             .resource_mut::<Time>()
@@ -258,15 +262,18 @@ mod tests {
         world.run_system_once(update).unwrap();
         let midway = world.get::<Orbit>(camera).unwrap().target;
         assert!(midway.abs_diff_eq(destination * 0.5, 0.001));
+        assert_eq!(world.get::<Orbit>(camera).unwrap().distance, 115.);
         world.entity_mut(row).insert(Choose::Select(1));
         world.resource_mut::<SceneState>().selected = 1;
         world.run_system_once(selection).unwrap();
         world.run_system_once(update).unwrap();
         assert_eq!(world.get::<Orbit>(camera).unwrap().target, midway);
+        assert_eq!(world.get::<Orbit>(camera).unwrap().distance, 115.);
         world
             .resource_mut::<Time>()
             .advance_by(Duration::from_millis(250));
         world.run_system_once(update).unwrap();
+        assert_eq!(world.get::<Orbit>(camera).unwrap().distance, 62.5);
         assert!(
             world
                 .get::<Orbit>(camera)
@@ -279,7 +286,17 @@ mod tests {
         assert_eq!(orbit.target, -destination);
         assert_eq!(
             (orbit.yaw, orbit.pitch, orbit.distance),
-            (start.yaw, start.pitch, start.distance)
+            (start.yaw, start.pitch, 10.)
+        );
+        assert!(
+            (world
+                .get::<Transform>(camera)
+                .unwrap()
+                .translation
+                .distance(-destination)
+                - 10.)
+                .abs()
+                < 0.001
         );
         assert!(world.get::<Travel>(camera).is_none());
         // Expanding the hierarchy must not refocus the preview.
