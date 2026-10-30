@@ -42,6 +42,20 @@ pub fn row<S: Component, T: Component>(
     select: S,
     toggle: T,
 ) -> Entity {
+    let icon = label(item.icon, 11.);
+    row_with_icon(commands, parent, item, select, toggle, icon)
+}
+
+/// Spawn a tree row with custom artwork in its fixed-size icon slot.
+/// The artwork is decorative; clicks and drags reach the selection button.
+pub fn row_with_icon<S: Component, T: Component, B: Bundle>(
+    commands: &mut Commands,
+    parent: Entity,
+    item: TreeRow<'_>,
+    select: S,
+    toggle: T,
+    icon: B,
+) -> Entity {
     let surface = if item.selected { SELECTED } else { PANEL };
     let row = commands
         .spawn((
@@ -119,12 +133,14 @@ pub fn row<S: Component, T: Component>(
         ))
         .id();
     commands.spawn((
-        label(item.icon, 11.),
+        icon,
         Node {
             width: px(18.),
+            height: px(18.),
             flex_shrink: 0.,
             ..default()
         },
+        Pickable::IGNORE,
         ChildOf(select),
     ));
     let text = commands
