@@ -34,7 +34,7 @@ The runtime resolves the record on that model, wraps the source curves over the 
 
 Frames are indices in the longest transform track, including nonuniform timestamps. For animations without a transform track the fallback is 24 FPS. The end frame is the interval endpoint; a valid record requires `0 <= start < end <= last frame`. Multiple records can use different source animations and overlapping intervals. Unnamed glTF animations appear as `Animation N`. Legacy shared-source fields and J3O registrations with a supported `sourceModel` alias are understood; standalone J3O files are unsupported.
 
-The analyzer saves frame-range metadata without creating a second model or embedding records into GLTF. Model conversion and optimization remain in Import 3D Model. Shared installation catalogs are not opened for editing by this menu.
+The analyzer saves frame-range metadata without creating a second model or embedding records into GLTF. Model conversion and optimization remain in Import 3D Model. Selecting a shared model opens its owning shared catalog as an editable tab. Adding, editing, or deleting ranges there uses the same Save and Undo/Redo controls. The shared-catalog banner identifies changes that apply to all projects using those models; project-local registrations continue to take precedence. Save reports read-only files and external changes without overwriting them.
 
 ## Ownership and verification
 

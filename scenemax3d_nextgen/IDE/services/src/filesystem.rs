@@ -209,7 +209,15 @@ impl Filesystem {
     }
     /// Load a UTF-8 document with a bounded read, including concurrent file growth.
     pub fn open_document(project: &Project, path: &Path) -> Result<Document, ServiceError> {
-        let path = Self::resolve(project, path)?;
+        let path = match Self::resolve(project, path) {
+            Ok(path) => path,
+            Err(ServiceError::OutsideProject(path))
+                if crate::animation_analyzer::is_shared_catalog(project.root(), &path) =>
+            {
+                path
+            }
+            Err(error) => return Err(error),
+        };
         let file = io_result(&path, "Open file", fs::File::open(&path))?;
         let mut bytes = Vec::new();
         io_result(

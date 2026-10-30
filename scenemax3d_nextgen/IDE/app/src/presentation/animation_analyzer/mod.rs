@@ -75,6 +75,8 @@ pub(crate) struct State {
     inventory: Vec<scenemax_ide_services::animation_analyzer::InventoryModel>,
     visible_inventory: Vec<scenemax_ide_services::animation_analyzer::InventoryModel>,
     project_count: usize,
+    shared_catalog: bool,
+    navigating: Option<(std::path::PathBuf, usize)>,
     model: usize,
     filter: String,
     selected: Option<usize>,
@@ -209,6 +211,7 @@ pub(crate) fn update(
         }
         let opening = s.opening.take();
         let inventory = std::mem::take(&mut s.inventory);
+        let navigating = s.navigating.take();
         let same_document = target.map(|v| v.1) == s.current.map(|v| v.0);
         let (model, filter, mode) = if same_document {
             (s.model, s.filter.clone(), s.mode)
@@ -218,6 +221,7 @@ pub(crate) fn update(
         *s = State {
             opening,
             inventory,
+            navigating,
             model,
             filter,
             mode,
@@ -249,6 +253,13 @@ pub(crate) fn update(
         return;
     }
     let doc = doc.snapshot();
+    s.shared_catalog = !doc.path().starts_with(session.workspace.project().root());
+    if let Some((path, model)) = &s.navigating
+        && path == doc.path()
+    {
+        s.model = *model;
+        s.navigating = None;
+    }
     let data: Value = match serde_json::from_str(doc.text()) {
         Ok(v) => v,
         Err(e) => {
@@ -270,6 +281,9 @@ pub(crate) fn update(
     s.visible_inventory = visible;
     let count = data["models"].as_array().map_or(0, Vec::len);
     s.model = s.model.min(count.saturating_sub(1));
+    if open_shared(&mut s, &mut queue) {
+        return;
+    }
     let stamp = (id, doc.revision());
     let first = s.parts.is_none();
     if first {
@@ -424,6 +438,9 @@ pub(crate) fn update(
                     && index < count
                 {
                     s.model = index;
+                    if open_shared(&mut s, &mut queue) {
+                        return;
+                    }
                     s.render.clear(&mut c);
                     load(&mut s, doc.path());
                     s.redraw = true;
@@ -502,7 +519,7 @@ pub(crate) fn update(
             Action::Add | Action::Delete => {
                 if s.model >= s.project_count {
                     s.error =
-                        "Inventory model: import it into the project to edit saved ranges".into();
+                        "Open the shared model catalog before editing its ranges; check the status bar for loading errors".into();
                     continue;
                 }
                 let base = format!("/models/{}", s.model);
@@ -657,6 +674,24 @@ pub(crate) fn update(
     }
     scrub(&s, &mut ui.controls);
     status(&s, &mut ui.texts);
+}
+fn open_shared(s: &mut State, queue: &mut CommandQueue) -> bool {
+    let Some(entry) = s
+        .model
+        .checked_sub(s.project_count)
+        .and_then(|i| s.visible_inventory.get(i))
+    else {
+        return false;
+    };
+    if s.navigating
+        .as_ref()
+        .is_some_and(|(path, model)| path == &entry.catalog && *model == entry.index)
+    {
+        return false;
+    }
+    s.navigating = Some((entry.catalog.clone(), entry.index));
+    queue.0.push_back(Command::Open(entry.catalog.clone()));
+    true
 }
 fn scrub(s: &State, controls: &mut Controls) {
     if !s.playing {

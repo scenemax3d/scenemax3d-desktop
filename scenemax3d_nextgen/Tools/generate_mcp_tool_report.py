@@ -12,7 +12,7 @@ for tool in sorted(tools, key=lambda tool: tool["name"]):
     required = schema.get("required", [])
     params = [f"`{name}`{'*' if name in required else ''}" for name in schema["properties"] if name not in common or name in required]
     lines.append(f"| `{tool['name']}` | {tool['description']} | {', '.join(params) or '—'} |")
-lines += ["", "Java-name coverage: 61 of 63 names, adapted to native formats and documented schemas. Sketchfab search/import remains outside the native migration scope. Native additions: `asset.list_models`, `editor.check`, `editor.list_documents`, `editor.redo`, `editor.save_all`, `editor.undo`, `ide.get_status`, `run.stop`.", ""]
+lines += ["", "Sketchfab search/import is not available. Use registered local models with `asset.list_models`. Editing and runtime tools include: `asset.list_models`, `editor.check`, `editor.list_documents`, `editor.redo`, `editor.save_all`, `editor.undo`, `ide.get_status`, `run.stop`.", ""]
 content = "\n".join(lines)
 path = root / "IDE/MCP_TOOLS.md"
 if "--check" in sys.argv:

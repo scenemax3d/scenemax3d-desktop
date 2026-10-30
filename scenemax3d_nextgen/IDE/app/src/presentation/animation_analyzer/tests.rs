@@ -97,7 +97,12 @@ fn retained_records_save_same_frame_and_undo_without_losing_unknown_fields() {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(saved["models"][0]["animationFrameRanges"][0]["end"], 4);
+    assert_eq!(
+        saved["models"][0]["animationFrameRanges"][0]["end"],
+        4,
+        "{}",
+        app.world().resource::<Session>().status
+    );
     assert_eq!(
         saved["models"][0]["animationFrameRanges"][0]["custom"],
         "keep"
@@ -130,29 +135,34 @@ fn retained_records_save_same_frame_and_undo_without_losing_unknown_fields() {
 }
 
 #[test]
-fn inventory_choice_loads_shared_model_without_saving_it_into_project() {
+fn shared_model_ranges_save_globally_and_undo_without_changing_project() {
     bevy::tasks::IoTaskPool::get_or_init(bevy::tasks::TaskPool::new);
     let (mut app, dir, _) = crate::tests::app();
-    let shared = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(shared.path().join("Models")).unwrap();
+    let shared = dir.path().join("resources");
+    let project = dir.path().join("projects/game");
+    std::fs::create_dir_all(project.join("scripts")).unwrap();
+    app.insert_resource(Session::new(
+        scenemax_ide_services::Filesystem::open_project(&project).unwrap(),
+    ));
+    std::fs::create_dir_all(shared.join("Models")).unwrap();
     std::fs::write(
-        shared.path().join("Models/fixture.gltf"),
+        shared.join("Models/fixture.gltf"),
         include_bytes!(
             "../../../../../Tests/fixtures/animation_analyzer/project/resources/Models/fixture.gltf"
         ),
     )
     .unwrap();
-    let catalog = shared.path().join("Models/models.json");
-    let data = json!({"models":[{"name":"inventory_fixture","path":"Models/fixture.gltf"}]});
+    let catalog = shared.join("Models/models.json");
+    let data = json!({"models":[{"name":"inventory_fixture","path":"Models/fixture.gltf","custom":"preserve"}]});
     std::fs::write(&catalog, data.to_string()).unwrap();
-    let project_catalog = scenemax_ide_services::animation_analyzer::catalog(dir.path()).unwrap();
+    let project_catalog = scenemax_ide_services::animation_analyzer::catalog(&project).unwrap();
     let before = std::fs::read(&project_catalog).unwrap();
     app.world_mut()
         .resource_mut::<CommandQueue>()
         .0
         .push_back(Command::Open(project_catalog.clone()));
     app.world_mut().resource_mut::<State>().inventory =
-        scenemax_ide_services::animation_analyzer::inventory_at(shared.path()).unwrap();
+        scenemax_ide_services::animation_analyzer::inventory_at(&shared).unwrap();
     for _ in 0..500 {
         app.update();
         if app.world().resource::<State>().source.is_some() {
@@ -162,11 +172,17 @@ fn inventory_choice_loads_shared_model_without_saving_it_into_project() {
     }
     app.update();
     let state = app.world().resource::<State>();
-    assert_eq!(state.data["models"][0]["name"], "inventory_fixture");
-    assert_eq!(state.project_count, 0);
+    assert_eq!(
+        state.data["models"][0]["name"],
+        "inventory_fixture",
+        "{}; {}",
+        app.world().resource::<Session>().status,
+        state.error
+    );
+    assert_eq!(state.project_count, 1);
     assert_eq!(
         state.source.as_ref().unwrap().root,
-        shared.path().canonicalize().unwrap()
+        shared.canonicalize().unwrap()
     );
     assert!(!state.source.as_ref().unwrap().timelines.is_empty());
     assert_eq!(std::fs::read(&project_catalog).unwrap(), before);
@@ -185,6 +201,74 @@ fn inventory_choice_loads_shared_model_without_saving_it_into_project() {
     assert_eq!(
         serde_json::from_slice::<Value>(&std::fs::read(&catalog).unwrap()).unwrap(),
         data
+    );
+    let add = {
+        let world = app.world_mut();
+        world
+            .query::<(Entity, &Action)>()
+            .iter(world)
+            .find(|(_, action)| matches!(action, Action::Add))
+            .unwrap()
+            .0
+    };
+    *app.world_mut().get_mut::<Interaction>(save).unwrap() = Interaction::None;
+    *app.world_mut().get_mut::<Interaction>(add).unwrap() = Interaction::Pressed;
+    app.update();
+    *app.world_mut().get_mut::<Interaction>(add).unwrap() = Interaction::None;
+    app.update();
+    assert_eq!(
+        app.world().resource::<State>().data["models"][0]["animationFrameRanges"][0]["name"],
+        "record_1"
+    );
+    let field = {
+        let world = app.world_mut();
+        world
+            .query::<(Entity, &Field)>()
+            .iter(world)
+            .find(|(_, field)| field.0 == "/models/0/animationFrameRanges/0/name")
+            .unwrap()
+            .0
+    };
+    app.world_mut()
+        .get_mut::<EditableText>(field)
+        .unwrap()
+        .editor_mut()
+        .set_text("flight");
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Save);
+    for _ in 0..500 {
+        app.update();
+        let saved: Value = serde_json::from_slice(&std::fs::read(&catalog).unwrap()).unwrap();
+        if saved["models"][0]["animationFrameRanges"][0]["name"] == "flight" {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let saved: Value = serde_json::from_slice(&std::fs::read(&catalog).unwrap()).unwrap();
+    assert_eq!(
+        saved["models"][0]["animationFrameRanges"][0]["name"],
+        "flight"
+    );
+    assert_eq!(saved["models"][0]["custom"], "preserve");
+    assert_eq!(std::fs::read(&project_catalog).unwrap(), before);
+    let records = scenemax_assets::model_animation_records(
+        &project.join("resources"),
+        Some(&shared),
+        "inventory_fixture",
+    )
+    .unwrap();
+    assert_eq!(records[0].0.name, "flight");
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command::Edit(crate::application::EditCommand::Undo));
+    app.update();
+    app.update();
+    assert_eq!(
+        app.world().resource::<State>().data["models"][0]["animationFrameRanges"][0]["name"],
+        "record_1"
     );
 }
 

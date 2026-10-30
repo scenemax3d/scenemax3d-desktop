@@ -157,10 +157,10 @@ pub(super) fn table(c: &mut Commands, parent: Entity, s: &State) {
         &s.model.to_string(),
         &options,
     );
-    if s.model >= s.project_count {
+    if s.shared_catalog {
         c.spawn((
             label(
-                "Inventory model · Import into the project to edit saved ranges",
+                "Shared model catalog · Saved ranges apply to all projects using these models",
                 11.,
             ),
             ChildOf(parent),
