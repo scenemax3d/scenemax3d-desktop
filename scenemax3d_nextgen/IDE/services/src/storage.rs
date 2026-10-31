@@ -9,6 +9,15 @@ use std::{
 
 /// A single owned filesystem operation submitted without blocking the caller.
 pub enum StorageRequest {
+    /// Register an opened project and refresh the catalog on its worker.
+    RegisterProject {
+        /// Catalog discovery root.
+        root: PathBuf,
+        /// Explicit catalog override.
+        path: Option<PathBuf>,
+        /// Successfully opened project.
+        project: PathBuf,
+    },
     /// Load material editor resources.
     MaterialLibrary(PathBuf),
     /// Mutate project files on the disk worker.
@@ -246,6 +255,15 @@ fn perform(
     journal: &mut crate::recovery::RecoveryJournal,
 ) -> StorageResult {
     match request {
+        StorageRequest::RegisterProject {
+            root,
+            path,
+            project,
+        } => StorageResult::Catalog(crate::catalog::refresh_catalog(
+            &root,
+            path.as_deref(),
+            Some(&project),
+        )),
         StorageRequest::SwitchProject {
             previous,
             workspace,
@@ -301,7 +319,7 @@ fn perform(
             (if initialize_default {
                 crate::catalog::load_startup_catalog(&root, path.as_deref())
             } else {
-                crate::catalog::load_catalog(&root, path.as_deref())
+                crate::catalog::refresh_catalog(&root, path.as_deref(), None)
             })
             .map(|mut catalog| {
                 if let Some(selected) = last_project

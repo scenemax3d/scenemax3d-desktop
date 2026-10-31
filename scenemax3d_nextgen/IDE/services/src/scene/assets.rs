@@ -306,16 +306,30 @@ mod tests {
         png[16..20].copy_from_slice(&32u32.to_be_bytes());
         png[20..24].copy_from_slice(&32u32.to_be_bytes());
         fs::write(shared.join("shared.png"), &png).unwrap();
-        fs::write(shared.join("sprites.json"), r#"{"sprites":[{"name":"icon","path":"sprites/shared.png"}]}"#).unwrap();
+        fs::write(
+            shared.join("sprites.json"),
+            r#"{"sprites":[{"name":"icon","path":"sprites/shared.png"}]}"#,
+        )
+        .unwrap();
         let source = r#"{"name":"hud","layers":[{"name":"ui","widgets":[{"name":"image","type":"IMAGE","spriteName":"icon"}]}]}"#;
         let scene = load(&project, source).unwrap();
-        assert_eq!(scene.widgets[0].visual.as_ref().unwrap().path, shared.join("shared.png").canonicalize().unwrap());
+        assert_eq!(
+            scene.widgets[0].visual.as_ref().unwrap().path,
+            shared.join("shared.png").canonicalize().unwrap()
+        );
         let local = project.join("resources/sprites");
         fs::create_dir_all(&local).unwrap();
         fs::write(local.join("local.png"), &png).unwrap();
-        fs::write(local.join("sprites-ext.json"), r#"{"sprites":[{"name":"icon","path":"sprites/local.png"}]}"#).unwrap();
+        fs::write(
+            local.join("sprites-ext.json"),
+            r#"{"sprites":[{"name":"icon","path":"sprites/local.png"}]}"#,
+        )
+        .unwrap();
         let scene = load(&project, source).unwrap();
-        assert_eq!(scene.widgets[0].visual.as_ref().unwrap().path, local.join("local.png").canonicalize().unwrap());
+        assert_eq!(
+            scene.widgets[0].visual.as_ref().unwrap().path,
+            local.join("local.png").canonicalize().unwrap()
+        );
     }
     #[test]
     fn resolves_registered_sprite_frames_fonts_and_panel_semantics() {

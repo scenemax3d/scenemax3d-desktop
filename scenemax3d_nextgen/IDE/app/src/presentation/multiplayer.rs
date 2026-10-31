@@ -11,7 +11,9 @@ pub(crate) struct Status;
 #[derive(Component)]
 pub(crate) struct LocalStatus;
 #[derive(Component)]
-pub(crate) struct BuildSummary;
+pub(crate) struct ServerAction(Action);
+#[derive(Component)]
+pub(crate) struct LocalReady;
 #[derive(Component)]
 pub(crate) struct ProgressBar;
 #[derive(Component)]
@@ -48,7 +50,7 @@ pub(crate) fn smoke(
         if let Ok(tab) = std::env::var("SCENEMAX_SMOKE_MULTIPLAYER_TAB") {
             state.tab = match tab.as_str() {
                 "browser" => Tab::Browser,
-                "build" => Tab::Build,
+                "build" => Tab::Server,
                 "deployment" => Tab::Deployment,
                 _ => Tab::Server,
             };
@@ -145,7 +147,7 @@ pub(crate) fn input(
     }
 }
 
-fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) {
+fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) -> Entity {
     let row = node(
         c,
         parent,
@@ -157,9 +159,15 @@ fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) {
     );
     for &(caption, action) in items {
         let e = scenemax_ide_ui::button(c, row, caption, Name::new(caption.to_owned()));
-        c.entity(e)
-            .observe(move |_: On<PointerClick>, mut s: ResMut<State>| s.actions.push_back(action));
+        c.entity(e).insert(ServerAction(action)).observe(
+            move |_: On<PointerClick>, mut s: ResMut<State>| {
+                if s.action_enabled(action) {
+                    s.actions.push_back(action);
+                }
+            },
+        );
     }
+    row
 }
 fn fields(c: &mut Commands, parent: Entity, state: &State, items: &[(&str, &str)]) {
     if state.tab == Tab::Deployment {
@@ -236,7 +244,6 @@ fn field_control(c: &mut Commands, holder: Entity, state: &State, key: &str) {
     let value = state.fields.get(key).map(String::as_str).unwrap_or("");
     let options: &[&str] = match key {
         "gateway_enabled" => &["Disabled", "Enabled"],
-        "platform" => &["windows-x64", "linux-x64", "macos-x64"],
         "remote_method" => &["OpenSSH", "PuTTY session"],
         "remote_sudo" => &["Use sudo", "Root login"],
         _ => &[],
@@ -262,14 +269,12 @@ pub(crate) fn refresh(
             &mut Text,
             Option<&Status>,
             Option<&LocalStatus>,
-            Option<&BuildSummary>,
             Option<&ProgressLabel>,
             Option<&ConsoleLog>,
         ),
         Or<(
             With<Status>,
             With<LocalStatus>,
-            With<BuildSummary>,
             With<ProgressLabel>,
             With<ConsoleLog>,
         )>,
@@ -309,32 +314,14 @@ pub(crate) fn refresh(
                 width: px(720.),
                 max_width: percent(95.),
                 max_height: percent(95.),
-                overflow: Overflow::scroll_y(),
+                overflow: Overflow::clip(),
                 padding: px(16.).all(),
-                row_gap: px(12.),
+                row_gap: px(6.),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
         );
-        c.entity(panel)
-            .insert((BackgroundColor(PANEL), ScrollPosition::default()))
-            .observe(
-                |mut event: On<PointerScroll>,
-                 mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
-                    if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
-                        let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
-                            40.
-                        } else {
-                            1.
-                        };
-                        scroll.y = (scroll.y - event.y * scale).clamp(
-                            0.,
-                            (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor(),
-                        );
-                        event.propagate(false);
-                    }
-                },
-            );
+        c.entity(panel).insert(BackgroundColor(PANEL));
         text(&mut c, panel, "Project Settings");
         property::checkbox(
             &mut c,
@@ -351,13 +338,35 @@ pub(crate) fn refresh(
             );
         }
         let outer_panel = panel;
-        let panel = node(
-            &mut c,
-            outer_panel,
-            Node {
-                flex_direction: FlexDirection::Column,
-                row_gap: px(12.),
-                ..default()
+        // Only the tab body scrolls; Save/Back/Next/Close stay visible.
+        let panel = c
+            .spawn((
+                Node {
+                    min_height: px(0.),
+                    flex_shrink: 1.,
+                    overflow: Overflow::scroll_y(),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(6.),
+                    ..default()
+                },
+                ChildOf(outer_panel),
+            ))
+            .id();
+        c.entity(panel).insert(ScrollPosition::default()).observe(
+            |mut event: On<PointerScroll>,
+             mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
+                if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
+                    let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
+                        40.
+                    } else {
+                        1.
+                    };
+                    scroll.y = (scroll.y - event.y * scale).clamp(
+                        0.,
+                        (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor(),
+                    );
+                    event.propagate(false);
+                }
             },
         );
         let tabs = node(
@@ -371,8 +380,7 @@ pub(crate) fn refresh(
         for (title, tab) in [
             ("1  Server", Tab::Server),
             ("2  Browser", Tab::Browser),
-            ("3  Build", Tab::Build),
-            ("4  Deployment", Tab::Deployment),
+            ("3  Deployment", Tab::Deployment),
         ] {
             let e = scenemax_ide_ui::button(&mut c, tabs, title, Name::new(title));
             if tab == state.tab {
@@ -386,6 +394,7 @@ pub(crate) fn refresh(
                     s.actions.push_back(Action::SelectTab(tab))
                 });
         }
+        let mut copy_parent = panel;
         match state.tab {
             Tab::Server => {
                 text(&mut c, panel, "Connection and shared session");
@@ -421,6 +430,46 @@ pub(crate) fn refresh(
                     panel,
                     "Save applies the password to game runs. Build uses the same password. Passwords are never saved in project files.",
                 );
+                let controls = node(
+                    &mut c,
+                    panel,
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(0.),
+                        ..default()
+                    },
+                );
+                actions(
+                    &mut c,
+                    controls,
+                    &[
+                        ("Build Server", Action::Build),
+                        ("Cancel build", Action::Cancel),
+                        ("Open Folder", Action::OpenFolder),
+                    ],
+                );
+                copy_parent = actions(
+                    &mut c,
+                    controls,
+                    &[
+                        ("Run Server Locally", Action::RunLocal),
+                        ("Stop Local Server", Action::StopLocal),
+                    ],
+                );
+                text(
+                    &mut c,
+                    panel,
+                    "Build creates Windows, Linux and macOS servers. Run automatically uses this computer’s OS.",
+                );
+                let status = text(&mut c, panel, &state.local_status);
+                c.entity(status).insert(LocalStatus);
+                let check = text(&mut c, copy_parent, "✓");
+                c.entity(check).insert((
+                    LocalReady,
+                    TextColor(Color::srgb(0.2, 0.85, 0.35)),
+                    Visibility::Hidden,
+                    Name::new("Local server ready"),
+                ));
             }
             Tab::Browser => {
                 text(&mut c, panel, "Optional WebSocket access for browser games");
@@ -445,36 +494,6 @@ pub(crate) fn refresh(
                     panel,
                     "Allowed origin is where the game is hosted: scheme + host + optional port, without a path. For itch.io, use the embedded game's origin. HTTPS games require wss:// and TLS.",
                 );
-            }
-            Tab::Build => {
-                fields(&mut c, panel, &state, &[("platform", "Server platform")]);
-                text(&mut c, panel, "Build summary");
-                let summary = text(&mut c, panel, &state.build_summary());
-                c.entity(summary).insert(BuildSummary);
-                actions(
-                    &mut c,
-                    panel,
-                    &[
-                        ("Build Server", Action::Build),
-                        ("Cancel build", Action::Cancel),
-                        ("Open Folder", Action::OpenFolder),
-                    ],
-                );
-                actions(
-                    &mut c,
-                    panel,
-                    &[
-                        ("Run Server Locally", Action::RunLocal),
-                        ("Stop Local Server", Action::StopLocal),
-                    ],
-                );
-                text(
-                    &mut c,
-                    panel,
-                    "Local run builds for this computer and binds both servers to loopback. Cloud deployment requires a linux-x64 bundle.",
-                );
-                let status = text(&mut c, panel, &state.local_status);
-                c.entity(status).insert(LocalStatus);
             }
             Tab::Deployment => {
                 text(
@@ -518,7 +537,7 @@ pub(crate) fn refresh(
                         ("Cancel", Action::Cancel),
                     ],
                 );
-                actions(
+                copy_parent = actions(
                     &mut c,
                     panel,
                     &[
@@ -537,10 +556,10 @@ pub(crate) fn refresh(
                 );
             }
         }
-        if matches!(state.tab, Tab::Build | Tab::Deployment) {
+        if matches!(state.tab, Tab::Server | Tab::Deployment) {
             let copy = scenemax_ide_ui::button(
                 &mut c,
-                panel,
+                copy_parent,
                 "Copy Log",
                 Name::new("Copy multiplayer log"),
             );
@@ -549,7 +568,7 @@ pub(crate) fn refresh(
                  mut state: ResMut<State>,
                  clipboard: Option<ResMut<bevy::clipboard::Clipboard>>| {
                     state.status = if let Some(mut clipboard) = clipboard {
-                        match clipboard.set_text(state.progress.log.clone()) {
+                        match clipboard.set_text(state.console_log()) {
                             Ok(()) => "Console log copied.".into(),
                             Err(error) => format!("Could not copy console log: {error}"),
                         }
@@ -581,6 +600,7 @@ pub(crate) fn refresh(
                 },
             );
             c.entity(bar).insert((ProgressBar, BackgroundColor(ACCENT)));
+            text(&mut c, panel, "Console log");
             let console = node(
                 &mut c,
                 panel,
@@ -600,7 +620,7 @@ pub(crate) fn refresh(
                         event.propagate(false);
                     }
                 });
-            let log = text(&mut c, console, &state.progress.log);
+            let log = text(&mut c, console, &state.console_log());
             c.entity(log).insert((
                 ConsoleLog,
                 Node {
@@ -639,8 +659,7 @@ pub(crate) fn refresh(
                 "Back",
                 Action::SelectTab(match state.tab {
                     Tab::Browser => Tab::Server,
-                    Tab::Build => Tab::Browser,
-                    _ => Tab::Build,
+                    _ => Tab::Browser,
                 }),
             ));
         }
@@ -649,7 +668,6 @@ pub(crate) fn refresh(
                 "Next",
                 Action::SelectTab(match state.tab {
                     Tab::Server => Tab::Browser,
-                    Tab::Browser => Tab::Build,
                     _ => Tab::Deployment,
                 }),
             ));
@@ -664,7 +682,7 @@ pub(crate) fn refresh(
     for mut bar in &mut bars {
         bar.width = percent(state.progress.percent as f32);
     }
-    for (mut text, status, local, summary, progress, console) in &mut labels {
+    for (mut text, status, local, progress, console) in &mut labels {
         let value = if status.is_some() {
             state.status.lines().next().unwrap_or("").to_owned()
         } else if local.is_some() {
@@ -673,12 +691,10 @@ pub(crate) fn refresh(
             } else {
                 state.local_status.clone()
             }
-        } else if summary.is_some() {
-            state.build_summary()
         } else if progress.is_some() {
             state.progress_label()
         } else if console.is_some() {
-            state.progress.log.clone()
+            state.console_log()
         } else {
             continue;
         };
@@ -706,13 +722,35 @@ mod tests {
         crate::tests::ui_resources(&mut app);
         app.init_resource::<State>()
             .init_resource::<View>()
-            .add_systems(Update, refresh);
+            .add_systems(Update, (refresh, server_controls).chain());
         {
             let mut state = app.world_mut().resource_mut::<State>();
             state.open = true;
-            state.tab = Tab::Build;
+            state.tab = Tab::Server;
         }
         app.update();
+        {
+            let world = app.world_mut();
+            assert_eq!(
+                *world
+                    .query_filtered::<&Visibility, With<LocalReady>>()
+                    .single(world)
+                    .unwrap(),
+                Visibility::Hidden
+            );
+            assert!(
+                world
+                    .query::<(&ServerAction, Has<bevy::ui::InteractionDisabled>)>()
+                    .iter(world)
+                    .any(|(action, disabled)| matches!(action.0, Action::RunLocal) && disabled)
+            );
+            assert!(
+                !world
+                    .query::<&Name>()
+                    .iter(world)
+                    .any(|name| name.as_str() == "3  Build")
+            );
+        }
         {
             let mut state = app.world_mut().resource_mut::<State>();
             state.busy = true;
@@ -859,7 +897,7 @@ mod tests {
             "wss://network.example.com/play"
         );
         assert!(app.world().get::<Field>(field).is_some());
-        for tab in [Tab::Build, Tab::Deployment, Tab::Server, Tab::Browser] {
+        for tab in [Tab::Deployment, Tab::Server, Tab::Browser] {
             {
                 let mut state = app.world_mut().resource_mut::<State>();
                 state.tab = tab;
@@ -876,7 +914,7 @@ mod tests {
                 names.contains(&"gateway_url".to_owned()),
                 tab == Tab::Browser
             );
-            assert_eq!(names.contains(&"platform".to_owned()), tab == Tab::Build);
+            assert!(!names.contains(&"platform".to_owned()));
             assert_eq!(
                 names.contains(&"remote_host".to_owned()),
                 tab == Tab::Deployment
@@ -974,5 +1012,37 @@ mod project_mode_tests {
                 .iter(world)
                 .all(|disabled| !disabled)
         );
+    }
+}
+
+pub(crate) fn server_controls(
+    mut c: Commands,
+    state: Res<State>,
+    buttons: Query<(Entity, &ServerAction, &Children)>,
+    mut colors: Query<&mut TextColor, Without<LocalReady>>,
+    mut checks: Query<&mut Visibility, With<LocalReady>>,
+) {
+    for (entity, action, children) in &buttons {
+        if !matches!(action.0, Action::RunLocal | Action::Build) {
+            continue;
+        }
+        let enabled = state.action_enabled(action.0);
+        if enabled {
+            c.entity(entity).remove::<bevy::ui::InteractionDisabled>();
+        } else {
+            c.entity(entity).insert(bevy::ui::InteractionDisabled);
+        }
+        for child in children.iter() {
+            if let Ok(mut color) = colors.get_mut(child) {
+                color.0 = if enabled { INK } else { MUTED.with_alpha(0.45) };
+            }
+        }
+    }
+    for mut visibility in &mut checks {
+        *visibility = if state.local_ready() {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
 }

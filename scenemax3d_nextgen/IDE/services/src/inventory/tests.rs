@@ -33,7 +33,11 @@ fn same_named_files_in_different_folders_have_distinct_identity() {
         fs::write(path.join("albedo.png"), [1, 2]).unwrap();
     }
     let inv = scan(&a).unwrap();
-    let assets: Vec<_> = inv.assets.iter().filter(|a| a.name == "albedo" && a.origin == "Project").collect();
+    let assets: Vec<_> = inv
+        .assets
+        .iter()
+        .filter(|a| a.name == "albedo" && a.origin == "Project")
+        .collect();
     assert_eq!(assets.len(), 2);
     assert_ne!(assets[0].id, assets[1].id);
 }

@@ -60,7 +60,12 @@ pub(crate) fn apply_editor_zoom(
 pub(crate) fn project_edits(
     mut changes: MessageReader<ViewChange>,
     session: Res<Session>,
-    mut inputs: Query<(Entity, &Editor, &mut EditableText)>,
+    mut inputs: Query<(
+        Entity,
+        &Editor,
+        &mut EditableText,
+        Option<&mut super::folding::View>,
+    )>,
     mut fonts: Option<ResMut<FontCx>>,
     mut layouts: Option<ResMut<LayoutCx>>,
     mut focus: Option<ResMut<InputFocus>>,
@@ -77,16 +82,28 @@ pub(crate) fn project_edits(
         let Ok(document) = session.workspace.document(id) else {
             continue;
         };
-        for (entity, editor, mut input) in &mut inputs {
+        for (entity, editor, mut input, folding) in &mut inputs {
             if editor.0 != id {
                 continue;
             }
-            if input.value() != document.text() {
-                input.editor_mut().set_text(document.text());
+            let mut selection = document.selection();
+            let displayed = if let Some(mut folding) = folding {
+                if folding.0.source != document.text() {
+                    folding.0 = scenemax_ide_core::folding::Projection::new(document.text().into());
+                }
+                folding.0.reveal(selection.anchor);
+                folding.0.reveal(selection.focus);
+                selection.anchor = folding.0.to_visible(selection.anchor);
+                selection.focus = folding.0.to_visible(selection.focus);
+                folding.0.visible.clone()
+            } else {
+                document.text().to_owned()
+            };
+            if input.value() != displayed.as_str() {
+                input.editor_mut().set_text(&displayed);
             }
             if let (Some(fonts), Some(layouts)) = (fonts.as_mut(), layouts.as_mut()) {
                 input.pending_edits.clear();
-                let selection = document.selection();
                 input
                     .editor_mut()
                     .driver(&mut fonts.context, &mut layouts.0)
@@ -109,11 +126,17 @@ pub(crate) struct GutterState {
     scroll: Vec2,
     viewport: Vec2,
     line_height: f32,
+    folds: Vec<std::ops::Range<usize>>,
 }
 pub(crate) fn update_gutters(
     session: Res<Session>,
     zoom: Res<EditorZoom>,
-    inputs: Query<(&Editor, &EditableText, &ComputedNode)>,
+    inputs: Query<(
+        &Editor,
+        &EditableText,
+        &ComputedNode,
+        Option<&super::folding::View>,
+    )>,
     mut gutters: Query<(&Gutter, &mut Text, &mut Node), Without<CaretLabel>>,
     mut caret: Single<(&mut Text, &mut Node), With<CaretLabel>>,
     mut previous: Local<Option<GutterState>>,
@@ -170,7 +193,7 @@ pub(crate) fn update_gutters(
         }
         return;
     }
-    for (editor, scroll, node) in &inputs {
+    for (editor, scroll, node, folding) in &inputs {
         if session.workspace.active_id() != Some(editor.0) {
             continue;
         }
@@ -184,6 +207,7 @@ pub(crate) fn update_gutters(
             scroll: scroll.viewport.offset,
             viewport: node.size(),
             line_height: zoom.line_height(),
+            folds: folding.map_or_else(Vec::new, |f| f.0.collapsed.clone()),
         };
         if previous.as_ref() == Some(&state) {
             return;
@@ -198,7 +222,11 @@ pub(crate) fn update_gutters(
             if gutter.0 != editor.0 {
                 continue;
             }
-            let value = (first + 1..=(first + count).min(total))
+            let lines = folding.map_or_else(|| (1..=total).collect(), |f| f.0.lines());
+            let value = lines
+                .into_iter()
+                .skip(first)
+                .take(count)
                 .map(|line| line.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");

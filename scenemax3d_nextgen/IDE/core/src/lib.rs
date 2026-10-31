@@ -6,6 +6,7 @@ pub mod completion;
 pub mod deployment;
 mod document;
 mod editing;
+pub mod folding;
 mod history;
 pub mod multiplayer;
 mod project;

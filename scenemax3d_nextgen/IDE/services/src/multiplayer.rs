@@ -13,15 +13,17 @@ use std::{
     thread,
 };
 mod browser_test;
+mod saved_bundle;
+pub use saved_bundle::{SavedBundle, saved_bundles};
 mod build;
 pub use browser_test::{LocalTest, TestTarget};
 mod gateway;
+#[cfg(test)]
+mod installed_tests;
 pub(crate) mod launch;
 pub mod local_server;
 mod progress;
 mod remote;
-#[cfg(test)]
-mod installed_tests;
 pub use progress::Progress;
 pub use remote::RemoteAction;
 
@@ -58,6 +60,8 @@ pub enum Operation {
     Save(Snapshot),
     /// Compile source or use the prebuilt fallback, then install a unique server.
     Build(Snapshot),
+    /// Build dedicated servers for every supported platform with an optional session password.
+    BuildAll(Snapshot, Option<String>),
     /// Build using an explicit session-only password, including an empty password.
     BuildWithPassword(Snapshot, String),
     /// Test SSH, inspect services, or deploy an already-built bundle.
@@ -162,6 +166,61 @@ impl Drop for Worker {
     }
 }
 
+/// Dedicated server target for the computer running Studio.
+pub fn native_server_platform() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows-x64"
+    } else if cfg!(target_os = "macos") {
+        "macos-x64"
+    } else {
+        "linux-x64"
+    }
+}
+fn build_bundle(
+    root: &Path,
+    settings: &Settings,
+    password: Option<&str>,
+    cancel: &AtomicBool,
+) -> Result<(tempfile::TempDir, PathBuf, Option<PathBuf>), String> {
+    let s = settings;
+    let installation = crate::workspace_state::installation_root()
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
+    progress::stage(15, "Building Zig UDP server");
+    let (mut bytes, _origin) = build::prepare(&installation, &s.platform, cancel)?;
+    build::check(cancel)?;
+    patch(&mut bytes, s, &root, password)?;
+    progress::stage(45, "Packaging UDP server");
+    let directory = root.join("multiplayer_server");
+    ensure_directory(&root, &directory)?;
+    // A bundle becomes visible only after every requested executable is ready.
+    let bundle = tempfile::Builder::new()
+        .prefix("scenemax-mp-")
+        .tempdir_in(&directory)
+        .map_err(|e| e.to_string())?;
+    let path = bundle.path().join(if s.platform == "windows-x64" {
+        "scenemax-mp-server.exe"
+    } else {
+        "scenemax-mp-server"
+    });
+    fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    }
+    let gateway = if s.browser_gateway.enabled {
+        progress::stage(55, "Building browser gateway");
+        let bytes = gateway::prepare(&s.platform, cancel)?;
+        Some(gateway::install(bundle.path(), s, &bytes)?)
+    } else {
+        None
+    };
+    build::check(cancel)?;
+    progress::stage(90, "Writing bundle manifest and settings");
+    remote::record_bundle(bundle.path(), settings)?;
+    Ok((bundle, path, gateway))
+}
+
 fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report, String> {
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     build::check(cancel)?;
@@ -214,43 +273,8 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
         Operation::Build(mut snapshot) => {
             progress::stage(5, "Validating build settings");
             snapshot.settings.validate()?;
-            let s = &snapshot.settings;
-            let installation = crate::workspace_state::installation_root()
-                .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."));
-            progress::stage(15, "Building Zig UDP server");
-            let (mut bytes, origin) = build::prepare(&installation, &s.platform, cancel)?;
-            build::check(cancel)?;
-            patch(&mut bytes, s, &root, password.as_deref())?;
-            progress::stage(45, "Packaging UDP server");
-            let directory = root.join("multiplayer_server");
-            ensure_directory(&root, &directory)?;
-            // A bundle becomes visible only after every requested executable is ready.
-            let bundle = tempfile::Builder::new()
-                .prefix("scenemax-mp-")
-                .tempdir_in(&directory)
-                .map_err(|e| e.to_string())?;
-            let path = bundle.path().join(if s.platform == "windows-x64" {
-                "scenemax-mp-server.exe"
-            } else {
-                "scenemax-mp-server"
-            });
-            fs::write(&path, &bytes).map_err(|e| e.to_string())?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
-                    .map_err(|e| e.to_string())?;
-            }
-            let gateway = if s.browser_gateway.enabled {
-                progress::stage(55, "Building browser gateway");
-                let bytes = gateway::prepare(&s.platform, cancel)?;
-                Some(gateway::install(bundle.path(), s, &bytes)?)
-            } else {
-                None
-            };
-            build::check(cancel)?;
-            progress::stage(90, "Writing bundle manifest and settings");
-            remote::record_bundle(bundle.path(), &snapshot.settings)?;
+            let (bundle, path, gateway) =
+                build_bundle(&root, &snapshot.settings, password.as_deref(), cancel)?;
             save(&root, &mut snapshot)?;
             let _ = bundle.keep();
             Ok(Report {
@@ -258,7 +282,7 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
                 web_artifact: None,
                 snapshot,
                 message: format!(
-                    "{origin}. {} created: {}",
+                    "{} created: {}",
                     if gateway.is_some() {
                         "UDP server and browser gateway"
                     } else {
@@ -268,6 +292,40 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
                 ),
                 server: Some(path),
                 gateway,
+            })
+        }
+        Operation::BuildAll(mut snapshot, explicit_password) => {
+            let password = explicit_password.or(password);
+            let mut built = Vec::new();
+            for platform in ["windows-x64", "linux-x64", "macos-x64"] {
+                progress::output(&format!("Building server for {platform}"));
+                let mut settings = snapshot.settings.clone();
+                settings.platform = platform.into();
+                // Browser deployment targets Linux; local browser testing uses the host OS.
+                if settings.browser_gateway.enabled
+                    && platform != "linux-x64"
+                    && platform != native_server_platform()
+                {
+                    settings.browser_gateway.enabled = false;
+                    progress::output(&format!(
+                        "{platform}: building the UDP server; browser gateway is included for Linux and the local OS."
+                    ));
+                }
+                settings.validate()?;
+                built.push(build_bundle(&root, &settings, password.as_deref(), cancel)?);
+            }
+            build::check(cancel)?;
+            snapshot.settings.platform = "linux-x64".into();
+            save(&root, &mut snapshot)?;
+            let server = built[1].1.clone();
+            let gateway = built[1].2.clone();
+            for (bundle, _, _) in built {
+                let _ = bundle.keep();
+            }
+            Ok(Report {
+                local_test: None, web_artifact: None, snapshot,
+                message: "Built Windows, Linux and macOS servers. Local runs use this computer's OS; remote deployments use Linux.".into(),
+                server: Some(server), gateway,
             })
         }
         Operation::TestGame(mut snapshot, entry, target) => {
@@ -545,6 +603,55 @@ pub(crate) fn embed_values(s: &Settings, entry: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires prebuilt server templates for all three platforms"]
+    fn build_all_platforms_and_restart_native_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut snapshot = load(dir.path()).unwrap();
+        snapshot.settings.enabled = true;
+        snapshot.settings.project_guid = "all-platform-fixture".into();
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        snapshot.settings.port = socket.local_addr().unwrap().port();
+        drop(socket);
+        let report = run(
+            dir.path(),
+            Operation::BuildAll(snapshot, Some(String::new())),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(report.snapshot.settings.platform, "linux-x64");
+        let bundles = saved_bundles(dir.path());
+        assert_eq!(bundles.len(), 3);
+        for platform in ["windows-x64", "linux-x64", "macos-x64"] {
+            let bundle = bundles
+                .iter()
+                .find(|b| b.settings.platform == platform)
+                .unwrap();
+            let mut expected = report.snapshot.settings.clone();
+            expected.platform = platform.into();
+            bundle.validate(&expected).unwrap();
+        }
+        let native = bundles
+            .iter()
+            .find(|b| b.settings.platform == native_server_platform())
+            .unwrap();
+        let mut local = local_server::LocalServer::default();
+        for _ in 0..2 {
+            local.start(&native.server, native.settings.port).unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !local.ready() {
+                let status = local.poll();
+                assert!(
+                    local.active() && std::time::Instant::now() < deadline,
+                    "{status:?}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            local.stop();
+            assert!(!local.ready());
+        }
+    }
     #[test]
     #[ignore = "requires configured project and browser build toolchain"]
     fn build_configured_browser_test() {

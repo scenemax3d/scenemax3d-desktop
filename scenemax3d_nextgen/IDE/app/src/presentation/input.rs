@@ -304,12 +304,22 @@ pub(crate) fn collect_actions(
     }
 }
 pub(crate) fn sync_documents(
-    inputs: Query<(Entity, &Editor, &EditableText), Changed<EditableText>>,
+    mut inputs: Query<
+        (
+            Entity,
+            &Editor,
+            &mut EditableText,
+            Option<&mut super::folding::View>,
+        ),
+        Changed<EditableText>,
+    >,
     focus: Option<Res<bevy::input_focus::InputFocus>>,
     mut session: ResMut<Session>,
+    mut fonts: Option<ResMut<bevy::text::FontCx>>,
+    mut layouts: Option<ResMut<bevy::text::LayoutCx>>,
 ) {
-    for (entity, editor, input) in &inputs {
-        let text = input.value().to_string();
+    for (entity, editor, mut input, folding) in &mut inputs {
+        let mut text = input.value().to_string();
         if session.workspace.active_id() == Some(editor.0) {
             session.composing = input.is_composing();
         }
@@ -317,11 +327,31 @@ pub(crate) fn sync_documents(
             continue;
         }
         let selection = input.editor().raw_selection();
-        let selection = scenemax_ide_core::Selection {
+        let mut selection = scenemax_ide_core::Selection {
             anchor: selection.anchor().index(),
             focus: selection.focus().index(),
         };
         if let Ok(doc) = session.workspace.document_mut(editor.0) {
+            if let Some(mut folding) = folding {
+                // Commands/undo may have updated the document before view projection.
+                if folding.0.source != doc.text() {
+                    continue;
+                }
+                selection = folding.0.edit(&text, selection);
+                text = folding.0.source.clone();
+                if input.value() != folding.0.visible.as_str() {
+                    input.editor_mut().set_text(&folding.0.visible);
+                    if let (Some(fonts), Some(layouts)) = (fonts.as_mut(), layouts.as_mut()) {
+                        input
+                            .editor_mut()
+                            .driver(&mut fonts.context, &mut layouts.0)
+                            .select_byte_range(
+                                folding.0.to_visible(selection.anchor),
+                                folding.0.to_visible(selection.focus),
+                            );
+                    }
+                }
+            }
             let selection = if focus
                 .as_ref()
                 .is_none_or(|focus| focus.get() == Some(entity))

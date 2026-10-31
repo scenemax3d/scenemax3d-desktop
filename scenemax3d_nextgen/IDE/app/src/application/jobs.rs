@@ -31,6 +31,7 @@ pub(crate) struct EditorServices {
     pub(crate) last_project_file: Option<PathBuf>,
     pub(crate) catalog_path: Option<PathBuf>,
     pub(crate) catalog_startup: Option<(PathBuf, Option<PathBuf>)>,
+    catalog_registrations: std::collections::VecDeque<PathBuf>,
     pending_save: Option<SavePurpose>,
     pub(crate) navigation: Option<(PathBuf, usize)>,
     pub(crate) search_versions: Vec<(DocumentId, scenemax_ide_core::DocumentRevision)>,
@@ -51,6 +52,7 @@ impl EditorServices {
             last_project_file: None,
             catalog_path: None,
             catalog_startup: None,
+            catalog_registrations: Default::default(),
             pending_save: None,
             navigation: None,
             search_versions: vec![],
@@ -352,6 +354,9 @@ pub(crate) fn apply_storage(
             }
             // Edits may have happened while the inventory was loading.
             session.workspace.switch_project(project)?;
+            services
+                .catalog_registrations
+                .push_back(session.workspace.project().root().to_owned());
             session.closing_tab = None;
             session.search_hits.clear();
             session.search_summary = None;
@@ -496,6 +501,22 @@ pub(crate) fn poll_jobs(
             services.storage_outcome = Some(Err(error.to_string()));
         }
         Ok(None) => {}
+    }
+    if !services.catalog_storage.is_pending()
+        && let Some(project) = services.catalog_registrations.pop_front()
+    {
+        let root = services.catalog_root.clone();
+        let path = services.catalog_path.clone();
+        if let Err(error) = services
+            .catalog_storage
+            .request(StorageRequest::RegisterProject {
+                root,
+                path,
+                project,
+            })
+        {
+            session.status = format!("Could not register project: {error}");
+        }
     }
     match services.diagnostics.poll() {
         Ok(Some(report)) if report.snapshot.is_current(&session.workspace) => {
