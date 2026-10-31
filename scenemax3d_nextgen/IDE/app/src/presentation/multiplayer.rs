@@ -145,7 +145,7 @@ pub(crate) fn input(
     }
 }
 
-fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) {
+fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) -> Entity {
     let row = node(
         c,
         parent,
@@ -160,6 +160,7 @@ fn actions(c: &mut Commands, parent: Entity, items: &[(&str, Action)]) {
         c.entity(e)
             .observe(move |_: On<PointerClick>, mut s: ResMut<State>| s.actions.push_back(action));
     }
+    row
 }
 fn fields(c: &mut Commands, parent: Entity, state: &State, items: &[(&str, &str)]) {
     if state.tab == Tab::Deployment {
@@ -309,32 +310,14 @@ pub(crate) fn refresh(
                 width: px(720.),
                 max_width: percent(95.),
                 max_height: percent(95.),
-                overflow: Overflow::scroll_y(),
+                overflow: Overflow::clip(),
                 padding: px(16.).all(),
-                row_gap: px(12.),
+                row_gap: px(6.),
                 flex_direction: FlexDirection::Column,
                 ..default()
             },
         );
-        c.entity(panel)
-            .insert((BackgroundColor(PANEL), ScrollPosition::default()))
-            .observe(
-                |mut event: On<PointerScroll>,
-                 mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
-                    if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
-                        let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
-                            40.
-                        } else {
-                            1.
-                        };
-                        scroll.y = (scroll.y - event.y * scale).clamp(
-                            0.,
-                            (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor(),
-                        );
-                        event.propagate(false);
-                    }
-                },
-            );
+        c.entity(panel).insert(BackgroundColor(PANEL));
         text(&mut c, panel, "Project Settings");
         property::checkbox(
             &mut c,
@@ -351,13 +334,35 @@ pub(crate) fn refresh(
             );
         }
         let outer_panel = panel;
-        let panel = node(
-            &mut c,
-            outer_panel,
-            Node {
-                flex_direction: FlexDirection::Column,
-                row_gap: px(12.),
-                ..default()
+        // Only the tab body scrolls; Save/Back/Next/Close stay visible.
+        let panel = c
+            .spawn((
+                Node {
+                    min_height: px(0.),
+                    flex_shrink: 1.,
+                    overflow: Overflow::scroll_y(),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(6.),
+                    ..default()
+                },
+                ChildOf(outer_panel),
+            ))
+            .id();
+        c.entity(panel).insert(ScrollPosition::default()).observe(
+            |mut event: On<PointerScroll>,
+             mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
+                if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
+                    let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
+                        40.
+                    } else {
+                        1.
+                    };
+                    scroll.y = (scroll.y - event.y * scale).clamp(
+                        0.,
+                        (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor(),
+                    );
+                    event.propagate(false);
+                }
             },
         );
         let tabs = node(
@@ -386,6 +391,7 @@ pub(crate) fn refresh(
                     s.actions.push_back(Action::SelectTab(tab))
                 });
         }
+        let mut copy_parent = panel;
         match state.tab {
             Tab::Server => {
                 text(&mut c, panel, "Connection and shared session");
@@ -460,7 +466,7 @@ pub(crate) fn refresh(
                         ("Open Folder", Action::OpenFolder),
                     ],
                 );
-                actions(
+                copy_parent = actions(
                     &mut c,
                     panel,
                     &[
@@ -518,7 +524,7 @@ pub(crate) fn refresh(
                         ("Cancel", Action::Cancel),
                     ],
                 );
-                actions(
+                copy_parent = actions(
                     &mut c,
                     panel,
                     &[
@@ -540,7 +546,7 @@ pub(crate) fn refresh(
         if matches!(state.tab, Tab::Build | Tab::Deployment) {
             let copy = scenemax_ide_ui::button(
                 &mut c,
-                panel,
+                copy_parent,
                 "Copy Log",
                 Name::new("Copy multiplayer log"),
             );
