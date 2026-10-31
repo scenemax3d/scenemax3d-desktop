@@ -449,6 +449,7 @@ impl Plugin for StudioPlugin {
                             presentation::multiplayer::input,
                             application::multiplayer::update,
                             presentation::multiplayer::refresh,
+                            presentation::multiplayer::server_controls,
                         )
                             .chain(),
                         presentation::ik::update,

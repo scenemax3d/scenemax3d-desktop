@@ -56,7 +56,7 @@ pub(super) fn record_bundle(dir: &Path, s: &Settings) -> Result<(), String> {
 }
 fn validate_bundle(dir: &Path, s: &Settings) -> Result<(), String> {
     if s.platform != "linux-x64" {
-        return Err("Remote installation supports Linux x64 with systemd. Select linux-x64 on the Build tab and rebuild.".into());
+        return Err("Remote installation supports Linux x64 with systemd. Select linux-x64 on the Server tab and rebuild.".into());
     }
     let manifest: serde_json::Value =
         serde_json::from_slice(&read(&dir.join("build-manifest.json"), 1024 * 1024)?)
@@ -215,7 +215,7 @@ pub(super) fn execute(
         RemoteAction::Deploy => {
             super::progress::stage(15, "Validating Linux bundle");
             s.validate()?;
-            let bundle = bundle.ok_or("Build a Linux server bundle on the Build tab first")?;
+            let bundle = bundle.ok_or("Build a Linux server bundle on the Server tab first")?;
             validate_bundle(bundle, s)?;
             super::progress::stage(25, "Checking remote server requirements");
             ssh(d, &preflight(d), cancel)?;

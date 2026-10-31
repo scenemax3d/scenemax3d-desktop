@@ -30,7 +30,6 @@ pub(crate) enum Tab {
     #[default]
     Server,
     Browser,
-    Build,
     Deployment,
 }
 #[derive(Resource, Default)]
@@ -55,14 +54,31 @@ pub(crate) struct State {
     pub fields: BTreeMap<String, String>,
     pub actions: VecDeque<Action>,
     server: Option<PathBuf>,
+    bundles: Vec<scenemax_ide_services::multiplayer::SavedBundle>,
     snapshot: Option<Snapshot>,
     root: PathBuf,
     worker: Worker,
     local: scenemax_ide_services::multiplayer::local_server::LocalServer,
-    run_after_build: bool,
     pub local_status: String,
+    local_events: String,
 }
 impl State {
+    pub fn local_ready(&self) -> bool {
+        self.local.ready()
+    }
+    fn local_bundle(&self) -> Option<&scenemax_ide_services::multiplayer::SavedBundle> {
+        let platform = scenemax_ide_services::multiplayer::native_server_platform();
+        self.bundles
+            .iter()
+            .find(|b| b.settings.platform == platform && b.server.is_file())
+    }
+    pub fn action_enabled(&self, action: Action) -> bool {
+        match action {
+            Action::Build => self.enabled() && !self.busy,
+            Action::RunLocal => self.enabled() && !self.busy && self.local_bundle().is_some(),
+            _ => true,
+        }
+    }
     pub fn enabled(&self) -> bool {
         self.fields.get("enabled").is_some_and(|v| v == "true")
     }
@@ -99,7 +115,6 @@ impl State {
             self.status = "Saving settings before closing…".into();
             return;
         }
-        self.run_after_build = false;
         self.worker.cancel();
         self.open = false;
     }
@@ -159,33 +174,30 @@ impl State {
         self.fields
             .insert("gateway_listen".into(), format!("{listen_host}:{port}"));
     }
-    pub fn build_summary(&self) -> String {
-        let value = |key: &str| self.fields.get(key).map(String::as_str).unwrap_or("");
-        let gateway = if value("gateway_enabled") == "Enabled" {
-            format!(
-                "WebSocket gateway: {}\nBrowser URL: {}\nAllowed origin: {}\nIncludes gateway.json",
-                value("gateway_listen"),
-                value("gateway_url"),
-                value("gateway_origin")
-            )
+    pub fn console_log(&self) -> String {
+        if self.local_events.is_empty() {
+            self.progress.log.clone()
         } else {
-            "Browser gateway: disabled (UDP server only)".into()
-        };
-        format!(
-            "Target: {}\nZig UDP server: {}:{}\nSession: {} (ID {})\nProject: {}\n{}\nPassword: {}\nOutput: multiplayer_server / new bundle folder",
-            value("platform"),
-            value("server"),
-            value("port"),
-            value("session_name"),
-            value("session_id"),
-            value("project_guid"),
-            gateway,
-            match self.password.as_deref() {
-                None => "from environment",
-                Some("") => "none",
-                Some(_) => "set for this IDE session",
+            format!(
+                "{}\nLocal server activity:\n{}",
+                self.progress.log, self.local_events
+            )
+        }
+    }
+    fn set_local_status(&mut self, status: String) {
+        if status != self.local_status {
+            self.local_events.push_str(&status);
+            self.local_events.push('\n');
+            while self.local_events.len() > 16 * 1024 {
+                let end = self
+                    .local_events
+                    .find('\n')
+                    .unwrap_or(self.local_events.len() - 1)
+                    + 1;
+                self.local_events.drain(..end);
             }
-        )
+        }
+        self.local_status = status;
     }
     pub fn bundle_label(&self) -> String {
         self.server
@@ -193,7 +205,7 @@ impl State {
             .and_then(|p| p.parent())
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| {
-                "No bundle built in this settings session. Use the Build tab first.".into()
+                "No bundle built in this settings session. Use Build Server on the Server tab first.".into()
             })
     }
     fn start(&mut self, operation: Operation) {
@@ -208,7 +220,7 @@ impl State {
         };
         let building = matches!(
             &operation,
-            Operation::Build(_) | Operation::BuildWithPassword(..)
+            Operation::Build(_) | Operation::BuildWithPassword(..) | Operation::BuildAll(..)
         );
         match self.worker.start(self.root.clone(), operation) {
             Ok(()) => {
@@ -227,7 +239,6 @@ impl State {
                 .into();
             }
             Err(e) => {
-                self.run_after_build = false;
                 self.pending_password = None;
                 self.status = e;
             }
@@ -243,7 +254,7 @@ impl State {
         snapshot.settings.server = get("server");
         snapshot.settings.project_guid = get("project_guid");
         snapshot.settings.session_name = get("session_name");
-        snapshot.settings.platform = get("platform");
+        snapshot.settings.platform = "linux-x64".into();
         snapshot.settings.port = get("port")
             .parse()
             .map_err(|_| "UDP port must be a whole number from 1 to 65535")?;
@@ -292,7 +303,7 @@ pub(crate) fn update(
         state.local.stop();
         state.test_local = None;
         state.local_status.clear();
-        state.run_after_build = false;
+        state.local_events.clear();
         state.password = None;
         if !state.root.as_os_str().is_empty() {
             state.open = false;
@@ -303,11 +314,11 @@ pub(crate) fn update(
     }
     if let Some(local) = &mut state.test_local {
         if let Some(status) = local.server.poll() {
-            state.local_status = status;
+            state.set_local_status(status);
         }
     }
     if let Some(status) = state.local.poll() {
-        state.local_status = status;
+        state.set_local_status(status);
     }
     if state.test_after_save.is_some() && !services.is_saving() && !services.storage.is_pending() {
         let target = state.test_after_save.take().unwrap();
@@ -362,25 +373,8 @@ pub(crate) fn update(
                     }
                 }
                 if let Some(server) = report.server {
-                    if state.run_after_build && state.root == session.workspace.project().root() {
-                        match state.local.start_with_gateway(
-                            &server,
-                            report.snapshot.settings.port,
-                            report
-                                .gateway
-                                .as_deref()
-                                .map(|path| (path, &report.snapshot.settings.browser_gateway)),
-                        ) {
-                            Ok(()) => {
-                                state.local_status =
-                                    format!("UDP starting · port {}", report.snapshot.settings.port)
-                            }
-                            Err(error) => state.local_status = error,
-                        }
-                    }
                     state.server = Some(server);
                 }
-                state.run_after_build = false;
                 if state.snapshot.is_none() {
                     let s = &report.snapshot.settings;
                     state.fields = BTreeMap::from([
@@ -390,7 +384,6 @@ pub(crate) fn update(
                         ("project_guid".into(), s.project_guid.clone()),
                         ("session_id".into(), s.session_id.to_string()),
                         ("session_name".into(), s.session_name.clone()),
-                        ("platform".into(), s.platform.clone()),
                         (
                             "remote_method".into(),
                             if s.deployment.method == "putty" {
@@ -436,12 +429,12 @@ pub(crate) fn update(
                     ]);
                     state.revision += 1;
                 }
+                state.bundles = scenemax_ide_services::multiplayer::saved_bundles(&state.root);
                 state.snapshot = Some(report.snapshot);
                 state.status = report.message;
             }
             Err(error) => {
                 state.queued_test = None;
-                state.run_after_build = false;
                 state.pending_password = None;
                 state.status = error;
             }
@@ -539,8 +532,7 @@ pub(crate) fn update(
                                 || state.built_password.as_ref() != Some(&state.password))
                         {
                             state.status =
-                                "Build a current Linux bundle on the Build tab before deploying."
-                                    .into();
+                                "Use Build Server on the Server tab before deploying.".into();
                             continue;
                         }
                         let bundle = state
@@ -559,6 +551,7 @@ pub(crate) fn update(
                 state.snapshot = None;
                 state.fields.clear();
                 state.server = None;
+                state.bundles.clear();
                 state.built_password = None;
                 state.tab = Tab::Server;
                 state.revision += 1;
@@ -578,13 +571,11 @@ pub(crate) fn update(
             Action::Close => state.close(),
             Action::StopLocal => {
                 state.test_local = None;
-                state.run_after_build = false;
                 state.local.stop();
-                state.local_status = "Local server and gateway stopped".into();
+                state.set_local_status("Local server and gateway stopped".into());
             }
             Action::Cancel if state.busy => {
                 state.test_after_save = None;
-                state.run_after_build = false;
                 state.worker.cancel();
                 state.status = "Cancelling multiplayer operation…".into();
             }
@@ -602,24 +593,10 @@ pub(crate) fn update(
                     continue;
                 }
                 match state.edited() {
-                    Ok(snapshot) => {
+                    Ok(mut snapshot) => {
                         if matches!(action, Action::RunLocal) {
-                            if state.local.active() {
-                                state.status = "The local server is already running. Stop it before changing its settings.".into();
-                                continue;
-                            }
-                            let native = if cfg!(target_os = "windows") {
-                                "windows-x64"
-                            } else if cfg!(target_os = "macos") {
-                                "macos-x64"
-                            } else {
-                                "linux-x64"
-                            };
-                            if snapshot.settings.platform != native {
-                                state.status =
-                                    format!("Select {native} to run the server on this computer.");
-                                continue;
-                            }
+                            snapshot.settings.platform =
+                                scenemax_ide_services::multiplayer::native_server_platform().into();
                             if !matches!(snapshot.settings.server.trim(), "127.0.0.1" | "localhost")
                             {
                                 state.status = "Set Server IP / hostname to 127.0.0.1 to run and connect locally.".into();
@@ -633,15 +610,36 @@ pub(crate) fn update(
                                     continue;
                                 }
                             }
-                            state.run_after_build = true;
+                            let Some(bundle) = state.local_bundle().cloned() else {
+                                state.status = "Build a server first.".into();
+                                continue;
+                            };
+                            if let Err(error) = bundle.validate(&snapshot.settings) {
+                                state.status = error;
+                                continue;
+                            }
+                            state.test_local = None;
+                            state.local.stop();
+                            let local_status = match state.local.start_with_gateway(
+                                &bundle.server,
+                                snapshot.settings.port,
+                                bundle
+                                    .gateway
+                                    .as_deref()
+                                    .map(|p| (p, &snapshot.settings.browser_gateway)),
+                            ) {
+                                Ok(()) => format!("UDP starting · port {}", snapshot.settings.port),
+                                Err(error) => error,
+                            };
+                            state.set_local_status(local_status);
+                            state.status = state.local_status.clone();
+                            continue;
                         }
                         state.pending_password = Some(state.password.clone());
                         let operation = if matches!(action, Action::Save) {
                             Operation::Save(snapshot)
-                        } else if let Some(password) = state.password.clone() {
-                            Operation::BuildWithPassword(snapshot, password)
                         } else {
-                            Operation::Build(snapshot)
+                            Operation::BuildAll(snapshot, state.password.clone())
                         };
                         state.start(operation);
                     }
@@ -656,6 +654,54 @@ pub(crate) fn update(
 #[cfg(test)]
 mod save_close_tests {
     use super::*;
+
+    #[test]
+    fn console_keeps_local_transitions_without_repeating_health_polls() {
+        let mut state = State::default();
+        state.progress.log = "Build completed\n".into();
+        state.set_local_status("UDP starting".into());
+        state.set_local_status("UDP listening".into());
+        state.set_local_status("UDP listening".into());
+        state.set_local_status("Local server and gateway stopped".into());
+        let log = state.console_log();
+        assert!(log.contains("Build completed"));
+        assert!(log.contains("UDP starting"));
+        assert_eq!(log.matches("UDP listening").count(), 1);
+        assert!(log.contains("Local server and gateway stopped"));
+    }
+
+    #[test]
+    fn local_run_availability_tracks_builds_platform_and_busy_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let server = dir.path().join("server");
+        std::fs::write(&server, b"test").unwrap();
+        let mut state = State::default();
+        state.fields.insert("enabled".into(), "true".into());
+        state.fields.insert("platform".into(), "windows-x64".into());
+        assert!(!state.action_enabled(Action::RunLocal));
+        state
+            .bundles
+            .push(scenemax_ide_services::multiplayer::SavedBundle {
+                server: server.clone(),
+                gateway: None,
+                settings: scenemax_ide_core::multiplayer::Settings {
+                    platform: scenemax_ide_services::multiplayer::native_server_platform().into(),
+                    ..Default::default()
+                },
+            });
+        assert!(state.action_enabled(Action::RunLocal));
+        assert!(state.action_enabled(Action::Build));
+        state.busy = true;
+        assert!(!state.action_enabled(Action::RunLocal));
+        assert!(!state.action_enabled(Action::Build));
+        state.busy = false;
+        state.fields.insert("platform".into(), "linux-x64".into());
+        assert!(state.action_enabled(Action::RunLocal));
+        state.fields.insert("platform".into(), "windows-x64".into());
+        std::fs::remove_file(server).unwrap();
+        assert!(!state.action_enabled(Action::RunLocal));
+        assert!(!state.local_ready());
+    }
 
     #[test]
     fn closing_after_save_waits_for_success_and_keeps_errors_visible() {
