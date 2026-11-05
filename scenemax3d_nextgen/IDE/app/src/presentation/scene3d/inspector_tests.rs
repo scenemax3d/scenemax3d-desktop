@@ -5,6 +5,61 @@ use scenemax_ui_input::Interaction;
 use serde_json::Value;
 
 #[test]
+fn model_inspector_exposes_character_control_and_validates_gravity() {
+    let dir = tempfile::tempdir().unwrap();
+    let scene = scenemax_ide_services::scene3d::load(dir.path(),
+        r#"{"entities":[{"type":"MODEL","name":"subject","resourcePath":"sample","dynamicModel":true,"vehicleModel":true,"jointMapping":"A,B"}]}"#).unwrap();
+    let mut app = App::new();
+    crate::tests::ui_resources(&mut app);
+    app.init_resource::<bevy::picking::pointer::PointerMap>();
+    app.insert_resource(SceneState {
+        scene: Some(scene),
+        ..default()
+    });
+    app.world_mut()
+        .run_system_once(|mut commands: Commands, state: Res<SceneState>| {
+            let parent = commands.spawn(Node::default()).id();
+            inspector::build(&mut commands, parent, state.scene.as_ref().unwrap(), 0);
+        })
+        .unwrap();
+    let world = app.world_mut();
+    let fields = world
+        .query::<&inspector::Property>()
+        .iter(world)
+        .map(|p| (p.0.clone(), p.1.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        fields.get("characterControl").map(String::as_str),
+        Some("false")
+    );
+    assert_eq!(
+        fields.get("number:characterGravity").map(String::as_str),
+        Some("60")
+    );
+    for key in ["dynamicModel", "vehicleModel", "jointMapping"] {
+        assert!(!fields.contains_key(key));
+    }
+    let scene = world.resource::<SceneState>().scene.as_ref().unwrap();
+    for gravity in ["0", "24.5", "60"] {
+        let values = std::collections::BTreeMap::from([
+            ("characterControl".into(), "true".into()),
+            ("number:characterGravity".into(), gravity.into()),
+        ]);
+        let patch = properties::transaction(&scene.entities[0], &scene, &values, false).unwrap();
+        assert!(patch.contains(&("characterControl".into(), serde_json::json!(true))));
+        assert!(patch.contains(&(
+            "characterGravity".into(),
+            serde_json::json!(gravity.parse::<f32>().unwrap())
+        )));
+    }
+    for gravity in ["-1", "NaN", "inf", "bad"] {
+        let values =
+            std::collections::BTreeMap::from([("number:characterGravity".into(), gravity.into())]);
+        assert!(properties::transaction(&scene.entities[0], &scene, &values, false).is_err());
+    }
+}
+
+#[test]
 fn scene_selection_retains_viewport_camera_rows_and_repeated_selection_draft() {
     let dir = tempfile::tempdir().unwrap();
     let source = r#"{"entities":[{"type":"SECTION","children":[{"type":"BOX","name":"Box","position":[1,2,3]}]}]}"#;

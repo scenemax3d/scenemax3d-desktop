@@ -72,6 +72,7 @@ pub(crate) fn create(root: &Path, name: &str) -> Result<TreeOutcome, ServiceErro
         .persist_noclobber(&path)
         .map_err(|e| invalid(e.to_string()))?;
     Ok(TreeOutcome {
+        created: None,
         paths: vec![],
         document: Some(Filesystem::open_document(
             &Project::new(root.into(), vec![]),

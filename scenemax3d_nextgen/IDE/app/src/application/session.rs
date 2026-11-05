@@ -45,6 +45,9 @@ pub(crate) enum ViewChange {
     ProjectOpened,
     ActiveChanged,
     ProjectTreeChanged,
+    /// Generated scripts changed the navigator inventory, not scene assets.
+    GeneratedScriptsChanged,
+    RevealTreePath(std::path::PathBuf),
     ProjectIndexInvalidated,
     MaterialsChanged,
 }

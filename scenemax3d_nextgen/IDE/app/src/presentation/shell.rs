@@ -308,6 +308,20 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
         ))
         .id();
     commands.entity(browser).observe(
+        |mut event: On<PointerClick>,
+         session: Res<Session>,
+         mut menu: ResMut<super::tree_menu::State>| {
+            if event.button == PointerButton::Secondary {
+                event.propagate(false);
+                menu.open(
+                    session.workspace.project().root().join("scripts"),
+                    true,
+                    event.pointer.position,
+                );
+            }
+        },
+    );
+    commands.entity(browser).observe(
         move |mut event: On<PointerScroll>,
               mut query: Query<(&mut ScrollPosition, &ComputedNode)>| {
             // Pointer events bubble from labels/rows; scroll the viewport, not the hit child.

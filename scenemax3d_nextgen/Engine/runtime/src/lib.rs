@@ -345,6 +345,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
         .add_systems(Update, apply_startup_runs_when_ready)
+        .add_systems(PostUpdate, prepare_character_model_bounds.after(bevy::transform::TransformSystems::Propagate))
         .add_systems(
             SpawnScene,
             shader::apply_pending_surfaces.after(SceneSpawnerSystems::SceneSpawn),

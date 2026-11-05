@@ -129,7 +129,10 @@ fn entries(
     root: bool,
     main: bool,
 ) -> Vec<(&'static str, Option<Action>)> {
-    let mut items = vec![];
+    let mut items = vec![
+        ("Create Folder...", Some(Action::Prompt(Dialog::Folder))),
+        ("Create New Script...", Some(Action::Prompt(Dialog::Script))),
+    ];
     if runnable {
         items.push(("Run                         F8", Some(Action::Run)));
     }
@@ -147,7 +150,6 @@ fn entries(
     if directory {
         items.extend([
             ("Create New Weapon…", Some(Action::Prompt(Dialog::Weapon))),
-            ("Create New Script", Some(Action::Prompt(Dialog::Script))),
             (
                 "Create Designer Document",
                 Some(Action::Prompt(Dialog::Scene)),
@@ -160,7 +162,6 @@ fn entries(
             ("Create SkyBox…", None),
             ("Create Bevy Shader Document", None),
             ("Create Environment Shader Document", None),
-            ("Create Sub Folder…", Some(Action::Prompt(Dialog::Folder))),
             (
                 "Delete Folder…",
                 (!root).then_some(Action::Prompt(Dialog::Delete)),
@@ -201,8 +202,8 @@ fn operation(dialog: Dialog, target: &Target, value: &str, root: &std::path::Pat
         Dialog::Rename => Command::Tree(TreeOperation::Move { path: target.path.clone(), parent: target.path.parent().unwrap_or(root).to_owned(), name: value.into() }),
         Dialog::Move => Command::Tree(TreeOperation::Move { path: target.path.clone(), parent: root.join(value), name: target.path.file_name().unwrap_or_default().to_string_lossy().into() }),
         Dialog::Material | Dialog::Script | Dialog::Scene | Dialog::Ui | Dialog::Folder => Command::Tree(TreeOperation::Create {
-            parent: if dialog == Dialog::Material && !target.path.starts_with(root.join("scripts")) { root.join("scripts") } else { target.path.clone() },
-            name: match dialog { Dialog::Material => name(".smmat"), Dialog::Scene => name(".smdesign"), Dialog::Ui => name(".smui"), _ => value.into() },
+            parent: if dialog == Dialog::Material && !target.path.starts_with(root.join("scripts")) { root.join("scripts") } else if target.directory { target.path.clone() } else { target.path.parent().unwrap_or(root).to_owned() },
+            name: match dialog { Dialog::Script => name(".code"), Dialog::Material => name(".smmat"), Dialog::Scene => name(".smdesign"), Dialog::Ui => name(".smui"), _ => value.into() },
             source: match dialog {
                 Dialog::Material => Some(scenemax_assets::material::preset("Porcelain").to_string()),
                 Dialog::Folder => None,
@@ -276,6 +277,15 @@ pub(crate) fn update(
                         .next()
                         .map(|i| i.value().to_string())
                         .unwrap_or_default();
+                    if matches!(dialog, Dialog::Script | Dialog::Folder) {
+                        if let Err(error) = scenemax_ide_services::validate_tree_name(&value) {
+                            for mut text in &mut views.project_errors {
+                                text.0 = error.to_string();
+                            }
+                            session.status = error.to_string();
+                            return;
+                        }
+                    }
                     if dialog == Dialog::Project {
                         let error =
                             scenemax_ide_services::Filesystem::validate_project_name(&value)
@@ -505,7 +515,7 @@ fn dialog_view(
         Dialog::Script => "Create New Script",
         Dialog::Scene => "Create Designer Document",
         Dialog::Ui => "Create UI Document",
-        Dialog::Folder => "Create Sub Folder",
+        Dialog::Folder => "Create Folder",
         Dialog::Rename => "Rename",
         Dialog::Move => "Move To",
         Dialog::Delete => "Delete",
@@ -593,6 +603,9 @@ fn dialog_view(
             "No",
             &["No".into(), "Yes".into()],
         );
+        commands.spawn((label("", 12.), ProjectError, ChildOf(host)));
+    }
+    if matches!(dialog, Dialog::Script | Dialog::Folder) {
         commands.spawn((label("", 12.), ProjectError, ChildOf(host)));
     }
     if dialog == Dialog::Ik {
@@ -693,6 +706,31 @@ fn action_button(commands: &mut Commands, parent: Entity, caption: &str, action:
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn creation_targets_parent_and_adds_script_extension() {
+        let root = PathBuf::from("project");
+        for directory in [true, false] {
+            let target = Target {
+                path: if directory {
+                    root.join("scripts")
+                } else {
+                    root.join("scripts/main")
+                },
+                directory,
+                position: Vec2::ZERO,
+            };
+            for value in ["example", "example.code"] {
+                assert!(
+                    matches!(operation(Dialog::Script, &target, value, &root), Command::Tree(TreeOperation::Create { parent, name, source: Some(_) }) if parent == root.join("scripts") && name == "example.code")
+                );
+            }
+            assert!(
+                entries(directory, false, false, false)
+                    .iter()
+                    .any(|(label, _)| *label == "Create Folder...")
+            );
+        }
+    }
     #[test]
     fn dialog_name_field_accepts_native_keyboard_after_mouse_focus() {
         use bevy::{
@@ -962,7 +1000,7 @@ mod tests {
         click(&mut app, confirm);
         app.update();
         assert!(
-            matches!(app.world_mut().resource_mut::<CommandQueue>().0.pop_front(), Some(Command::Tree(TreeOperation::Create { name, parent, .. })) if name == "new_script" && parent == std::path::Path::new("project/scripts"))
+            matches!(app.world_mut().resource_mut::<CommandQueue>().0.pop_front(), Some(Command::Tree(TreeOperation::Create { name, parent, .. })) if name == "new_script.code" && parent == std::path::Path::new("project/scripts"))
         );
         assert!(!app.world().resource::<State>().is_open());
         app.world_mut()

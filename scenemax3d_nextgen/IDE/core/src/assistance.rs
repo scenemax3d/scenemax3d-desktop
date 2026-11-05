@@ -1,11 +1,11 @@
 //! Pure editing assistance for SceneMax source.
 use crate::{
     Selection,
-    syntax::{SyntaxToken, TokenKind, highlight},
+    syntax::{SyntaxToken, TokenKind},
 };
 
-/// Newline plus the leading indentation at the selection start. Scope openers
-/// add four spaces. A selected range is replaced by the native editor.
+/// Continue the preceding code line's indentation; blank lines restart at column one.
+/// A selected range is replaced by the native editor.
 pub fn indented_newline(source: &str, selection: Selection) -> String {
     let start = selection.range().start;
     let Some(prefix) = source.get(..start) else {
@@ -13,20 +13,11 @@ pub fn indented_newline(source: &str, selection: Selection) -> String {
     };
     let line = prefix.rsplit('\n').next().unwrap_or("");
     let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
-    let tokens = highlight(line);
-    let code = tokens.iter().rev().find(|t| t.kind != TokenKind::Comment);
-    let opens = code.is_some_and(|t| {
-        let word = &line[t.range.clone()];
-        // The opener must be the final non-comment text, not an earlier keyword.
-        let tail = line[t.range.end..].trim_start();
-        (tail.is_empty() || tail.starts_with("//"))
-            && ((t.kind == TokenKind::Scope
-                && ["do", "then", "else"]
-                    .iter()
-                    .any(|w| word.eq_ignore_ascii_case(w)))
-                || (t.kind == TokenKind::Separator && ["{", "[", "("].contains(&word)))
-    });
-    format!("\n{}{}", &line[..indent], if opens { "    " } else { "" })
+    if line.trim().is_empty() {
+        "\n".into()
+    } else {
+        format!("\n{}", &line[..indent])
+    }
 }
 
 /// Bidirectional bracket index, sorted by byte position. Strings and comments
@@ -74,6 +65,7 @@ pub fn bracket_at(index: &[(usize, usize)], caret: usize) -> Option<(usize, usiz
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::syntax::highlight;
     fn newline(source: &str) -> String {
         indented_newline(
             source,
@@ -84,13 +76,16 @@ mod tests {
         )
     }
     #[test]
-    fn indentation_preserves_tabs_and_understands_scope_comments() {
+    fn indentation_follows_code_and_resets_after_blank_lines() {
         assert_eq!(newline("\t  sys.print 2"), "\n\t  ");
-        assert_eq!(newline("    if ready THEN // note"), "\n        ");
+        assert_eq!(newline("    if ready THEN // note"), "\n    ");
         assert_eq!(newline("    sys.print \"do\""), "\n    ");
         assert_eq!(newline("    // then"), "\n    ");
         assert_eq!(newline("    do other"), "\n    ");
-        assert_eq!(newline("  "), "\n  ");
+        assert_eq!(newline("  "), "\n");
+        assert_eq!(newline("\t\t"), "\n");
+        assert_eq!(newline("    code\n"), "\n");
+        assert_eq!(newline("    code\n  \t"), "\n");
     }
     #[test]
     fn newline_uses_selection_start_and_respects_unicode_boundaries() {

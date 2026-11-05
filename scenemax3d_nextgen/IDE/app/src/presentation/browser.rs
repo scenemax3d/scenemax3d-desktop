@@ -129,8 +129,17 @@ pub(crate) fn update_tree(
     mut state: ResMut<TreeState>,
     mut changes: MessageReader<ViewChange>,
     folders: Query<(&Interaction, &Folder), Changed<Interaction>>,
-    host: Single<(Entity, Option<&Children>), With<Browser>>,
+    mut host: Single<
+        (
+            Entity,
+            Option<&Children>,
+            Option<&mut ScrollPosition>,
+            Option<&ComputedNode>,
+        ),
+        With<Browser>,
+    >,
     mut rows: ExistingRows,
+    mut reveal_scroll: Local<Option<PathBuf>>,
     mut disclosures: Query<(&mut Disclosure, &mut UiTransform)>,
     limits: Query<Entity, With<TreeLimit>>,
     mut focus: Option<ResMut<bevy::input_focus::InputFocus>>,
@@ -188,7 +197,28 @@ pub(crate) fn update_tree(
                     }
                 }
             }
-            ViewChange::ProjectTreeChanged => rebuild = true,
+            ViewChange::RevealTreePath(path) => {
+                *reveal_scroll = Some(path.clone());
+                for parent in path
+                    .ancestors()
+                    .skip(1)
+                    .take_while(|p| p.starts_with(session.workspace.project().root()))
+                {
+                    state.expanded.insert(parent.to_owned());
+                }
+                state.focus_path = Some(path.clone());
+                restore_focus = true;
+                rebuild = true;
+            }
+            ViewChange::ProjectTreeChanged | ViewChange::GeneratedScriptsChanged => {
+                rebuild = true;
+                restore_focus |= state.focus_path.is_some();
+                if let Some(path) = &state.focus_path
+                    && let Some(owner) = companions(session.workspace.project()).get(path)
+                {
+                    state.expanded.insert(owner.clone());
+                }
+            }
             _ => {}
         }
     }
@@ -205,7 +235,7 @@ pub(crate) fn update_tree(
     if !rebuild {
         return;
     }
-    let (host, children) = *host;
+    let (host, children, ref mut scroll, computed) = *host;
     // Keep row entities (and their text, icons, interactions and observers) alive
     // while their paths remain visible. Expansion changes only the affected rows.
     let mut existing: HashMap<_, _> = rows
@@ -280,6 +310,21 @@ pub(crate) fn update_tree(
         && let Some(focus_row) = focus_row
     {
         focus.set(focus_row, bevy::input_focus::FocusCause::Navigated);
+        if reveal_scroll.is_some()
+            && *reveal_scroll == state.focus_path
+            && let Some(scroll) = scroll.as_mut()
+            && let Some(computed) = computed
+            && let Some(index) = order.iter().position(|row| *row == focus_row)
+        {
+            *reveal_scroll = None;
+            let top = index as f32 * 27.;
+            let height = computed.size().y * computed.inverse_scale_factor();
+            if top < scroll.y {
+                scroll.y = top;
+            } else if top + 27. > scroll.y + height {
+                scroll.y = (top + 27. - height).max(0.);
+            }
+        }
     }
     if project.tree_truncated() {
         let limit = limits.iter().next().unwrap_or_else(|| {
@@ -565,6 +610,45 @@ pub(crate) fn keyboard(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn creation_reveal_survives_async_inventory_refresh() {
+        let root = PathBuf::from("project");
+        let path = root.join("scripts/folder/new.code");
+        let mut app = App::new();
+        app.insert_resource(Session::new(Project::new(root.clone(), vec![])))
+            .init_resource::<TreeState>()
+            .init_resource::<bevy::input_focus::InputFocus>()
+            .add_message::<ViewChange>()
+            .add_systems(Update, update_tree);
+        app.world_mut().spawn((Browser, Node::default()));
+        app.update();
+        app.world_mut()
+            .write_message(ViewChange::RevealTreePath(path.clone()));
+        app.update();
+        let entries = vec![
+            ProjectEntry {
+                path: root.join("scripts/folder"),
+                is_directory: true,
+            },
+            ProjectEntry {
+                path: path.clone(),
+                is_directory: false,
+            },
+        ];
+        app.world_mut()
+            .resource_mut::<Session>()
+            .workspace
+            .refresh_project(Project::new(root, vec![]).with_entries(entries, false));
+        app.world_mut()
+            .write_message(ViewChange::ProjectTreeChanged);
+        app.update();
+        let focused = app
+            .world()
+            .resource::<bevy::input_focus::InputFocus>()
+            .get()
+            .unwrap();
+        assert_eq!(app.world().get::<TreeItem>(focused).unwrap().path, path);
+    }
     #[test]
     fn expansion_reuses_unaffected_rows_and_preserves_focus_and_scroll() {
         use bevy::input_focus::{FocusCause, InputFocus};

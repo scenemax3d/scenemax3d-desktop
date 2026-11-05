@@ -1157,7 +1157,7 @@ fn native_enter_indents_after_prior_events_and_is_one_undo_step() {
         .unwrap();
     assert_eq!(
         input.value().to_string(),
-        "    if ready then\n        sys.print 1"
+        "    if ready then\n    sys.print 1"
     );
     dispatch(&mut app, Command::Edit(EditCommand::Undo));
     let world = app.world_mut();
@@ -1286,6 +1286,102 @@ fn request_completion(app: &mut App) {
     app.world_mut()
         .resource_mut::<ButtonInput<KeyCode>>()
         .reset_all();
+}
+#[test]
+fn repeated_enter_resets_caret_after_blank_line() {
+    use bevy::text::TextEdit;
+    let (mut app, _dir, entity) = completion_app("    sys.print 1");
+    for expected in ["    sys.print 1\n    ", "    sys.print 1\n    \n"] {
+        app.world_mut()
+            .get_mut::<EditableText>(entity)
+            .unwrap()
+            .queue_edit(TextEdit::Insert("\n".into()));
+        app.update();
+        let input = app.world().get::<EditableText>(entity).unwrap();
+        assert_eq!(input.value().to_string(), expected);
+        assert_eq!(
+            input.editor().raw_selection().focus().index(),
+            expected.len()
+        );
+    }
+}
+#[test]
+fn control_tab_toggles_recent_tabs_without_accepting_completion_or_indenting() {
+    use bevy::input::{
+        ButtonState,
+        keyboard::{Key, KeyboardInput},
+    };
+    let (mut app, dir, first_editor) = completion_app("pr");
+    let first = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .active_id()
+        .unwrap();
+    let path = dir.path().join("scripts/other.code");
+    std::fs::write(&path, "other").unwrap();
+    dispatch(&mut app, Command::Open(path));
+    finish_io(&mut app);
+    let second = app
+        .world()
+        .resource::<Session>()
+        .workspace
+        .active_id()
+        .unwrap();
+    assert_ne!(first, second);
+    dispatch(&mut app, Command::Select(first));
+    request_completion(&mut app);
+    let window = app.world_mut().spawn(bevy::window::PrimaryWindow).id();
+    app.add_message::<KeyboardInput>().add_systems(
+        PreUpdate,
+        bevy::input_focus::dispatch_focused_input::<KeyboardInput>,
+    );
+    for expected in [second, first] {
+        let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        keys.press(KeyCode::ControlLeft);
+        keys.press(KeyCode::Tab);
+        app.world_mut().write_message(KeyboardInput {
+            key_code: KeyCode::Tab,
+            logical_key: Key::Tab,
+            state: ButtonState::Pressed,
+            text: None,
+            repeat: false,
+            window,
+        });
+        app.update();
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .reset_all();
+        assert_eq!(
+            app.world().resource::<Session>().workspace.active_id(),
+            Some(expected)
+        );
+        assert_eq!(
+            app.world()
+                .resource::<Session>()
+                .workspace
+                .document(first)
+                .unwrap()
+                .text(),
+            "pr"
+        );
+    }
+    assert_eq!(
+        app.world()
+            .resource::<bevy::input_focus::InputFocus>()
+            .get(),
+        Some(first_editor)
+    );
+    assert_eq!(
+        app.world()
+            .get::<EditableText>(first_editor)
+            .unwrap()
+            .editor()
+            .raw_selection()
+            .focus()
+            .index(),
+        2
+    );
 }
 #[test]
 fn completion_accepts_native_enter_without_newline_and_undo_restores_prefix() {

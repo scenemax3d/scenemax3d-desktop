@@ -193,6 +193,11 @@ pub(crate) fn collect_actions(
     }
     let ctrl = keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    if ctrl && keys.just_pressed(KeyCode::Tab) && !session.composing {
+        if let Some(previous) = session.workspace.previous_id() {
+            queue.0.push_back(Command::Select(previous));
+        }
+    }
     if ctrl
         && !session.composing
         && focus

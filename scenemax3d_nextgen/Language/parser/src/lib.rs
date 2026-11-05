@@ -317,6 +317,7 @@ pub enum SceneMaxBodyKind {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SceneMaxCollisionShape {
     None,
+    Mesh,
     Box,
     Boxes,
     Sphere,
@@ -7194,8 +7195,6 @@ fn parse_body_kind(text: &str) -> Option<SceneMaxBodyKind> {
     let lower = text.to_ascii_lowercase();
     if contains_keyword(&lower, "static") {
         Some(SceneMaxBodyKind::Static)
-    } else if contains_keyword(&lower, "dynamic") {
-        Some(SceneMaxBodyKind::Kinematic)
     } else if contains_keyword(&lower, "mass") {
         Some(SceneMaxBodyKind::Dynamic)
     } else {
@@ -7225,6 +7224,7 @@ fn parse_collision_shape(text: &str) -> Option<SceneMaxCollisionShape> {
         .find(|part| !part.is_empty())
         .unwrap_or_default();
     match shape {
+        "mesh" => Some(SceneMaxCollisionShape::Mesh),
         "none" => Some(SceneMaxCollisionShape::None),
         "sphere" => Some(SceneMaxCollisionShape::Sphere),
         "capsule" => Some(SceneMaxCollisionShape::Capsule),
@@ -8333,7 +8333,7 @@ mod tests {
                     collider: false,
                     sprite: false,
                     radius: None,
-                    body_kind: Some(SceneMaxBodyKind::Kinematic),
+                    body_kind: None,
                     collision_shape: None,
                     ..Default::default()
                 },
@@ -8385,13 +8385,27 @@ mod tests {
                     name: "fx".to_owned(),
                     resource: "fighter".to_owned(),
                     options: EntityOptions {
-                        body_kind: Some(SceneMaxBodyKind::Kinematic),
+                        body_kind: None,
                         collision_shape: Some(SceneMaxCollisionShape::None),
                         ..Default::default()
                     },
                 },
             ]
         );
+    }
+
+    #[test]
+    fn explicit_mesh_collision_shape_is_not_a_bounds_box() {
+        for source in [
+            "level => static scenery : hidden, collision shape mesh async",
+            "level => scenery : collision shape mesh",
+        ] {
+            let program = parse_program(source).unwrap();
+            let Statement::ModelDecl { options, .. } = &program.statements[0] else {
+                panic!("expected model declaration");
+            };
+            assert_eq!(options.collision_shape, Some(SceneMaxCollisionShape::Mesh));
+        }
     }
 
     #[test]

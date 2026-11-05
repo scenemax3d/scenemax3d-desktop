@@ -60,14 +60,19 @@ pub enum TreeOperation {
 
 /// Successful disk mutation and the buffer path changes it requires.
 pub struct TreeOutcome {
+    /// Newly created item to reveal in the navigator.
+    pub created: Option<PathBuf>,
     /// Original paths mapped to their new location, or removed paths.
     pub paths: Vec<(PathBuf, Option<PathBuf>)>,
     /// Newly created document, if any.
     pub document: Option<Document>,
 }
 
-fn child_name(name: &str) -> Result<&str, ServiceError> {
-    let name = name.trim();
+/// Validate a portable single file or folder name.
+pub fn validate_tree_name(name: &str) -> Result<&str, ServiceError> {
+    Filesystem::validate_project_name(name).map_err(|_| ServiceError::Limit(
+        "Enter a valid file or folder name without reserved names, path separators, or trailing dots/spaces",
+    ))?;
     if name.is_empty()
         || name.starts_with('.')
         || name.ends_with(['.', ' '])
@@ -91,7 +96,7 @@ fn destination(project: &Project, parent: &Path, name: &str) -> Result<PathBuf, 
     if !parent.is_dir() {
         return Err(ServiceError::NotDirectory(parent));
     }
-    let path = parent.join(child_name(name)?);
+    let path = parent.join(validate_tree_name(name)?);
     if path.exists() {
         return Err(ServiceError::Limit("The destination already exists"));
     }
@@ -128,7 +133,7 @@ pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutco
         TreeOperation::CreateWeapon { name } => crate::weapon::create(root, &name),
         TreeOperation::AddScene { parent, name } => {
             let path = destination(&project, &parent, &name)?;
-            let name = child_name(&name)?;
+            let name = validate_tree_name(&name)?;
             let pending = io_result(
                 &path,
                 "Prepare scene",
@@ -155,6 +160,7 @@ pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutco
             }
             io_result(&path, "Create scene", fs::rename(pending.path(), &path))?;
             Ok(TreeOutcome {
+                created: None,
                 paths: vec![],
                 document: Some(Filesystem::open_document(
                     &project,
@@ -193,6 +199,7 @@ pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutco
                 None
             };
             Ok(TreeOutcome {
+                created: Some(path),
                 paths: vec![],
                 document,
             })
@@ -210,6 +217,7 @@ pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutco
             }
             io_result(&path, "Move item", fs::rename(&path, &target))?;
             Ok(TreeOutcome {
+                created: None,
                 paths: vec![(path, Some(target))],
                 document: None,
             })
@@ -254,6 +262,7 @@ pub(crate) fn perform(root: &Path, operation: TreeOperation) -> Result<TreeOutco
                 moved.push((source, target));
             }
             Ok(TreeOutcome {
+                created: None,
                 paths: moved.into_iter().map(|(p, _)| (p, None)).collect(),
                 document: None,
             })
@@ -300,7 +309,20 @@ mod tests {
     fn names_cannot_escape_or_replace_existing_items() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
-        for name in ["../escape", "a/b", "a\\b", "C:escape", "", ".", "a:stream"] {
+        for name in [
+            "../escape",
+            "a/b",
+            "a\\b",
+            "C:escape",
+            "",
+            ".",
+            "a:stream",
+            "CON",
+            "nul.code",
+            "LPT1",
+            "trailing.",
+            "trailing ",
+        ] {
             assert!(
                 perform(
                     &root,

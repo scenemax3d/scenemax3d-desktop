@@ -151,6 +151,7 @@ pub(crate) fn apply_storage(
             companions,
         } => {
             let mut newer = false;
+            let mut inventory_changed = false;
             for generated in companions {
                 let path = generated.path().to_owned();
                 if let Some(id) = session.workspace.find_document(&path) {
@@ -170,6 +171,7 @@ pub(crate) fn apply_storage(
                 let project = session.workspace.project();
                 let mut entries = project.entries().to_vec();
                 if !entries.iter().any(|e| e.path == path) {
+                    inventory_changed = true;
                     entries.push(scenemax_ide_core::ProjectEntry {
                         path: path.clone(),
                         is_directory: false,
@@ -186,7 +188,11 @@ pub(crate) fn apply_storage(
                     session.workspace.refresh_project(project);
                 }
             }
-            changes.write(ViewChange::ProjectTreeChanged);
+            // Regenerating code must not invalidate the designer's scene assets.
+            changes.write(ViewChange::ProjectIndexInvalidated);
+            if inventory_changed {
+                changes.write(ViewChange::GeneratedScriptsChanged);
+            }
             apply_storage(
                 StorageResult::Saved(results),
                 services,
