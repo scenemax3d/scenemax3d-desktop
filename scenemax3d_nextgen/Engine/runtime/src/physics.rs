@@ -4044,7 +4044,111 @@ pub(super) fn coordinate_value_from_name(
         "x" => Some(transform.translation.x),
         "y" => Some(transform.translation.y),
         "z" => Some(transform.translation.z),
+        "rx" | "ry" | "rz" => {
+            let rotation = transform.rotation;
+            if !rotation.is_finite() || rotation.length_squared() < f32::EPSILON {
+                return None;
+            }
+            // Invert rotation_from_degrees, using the same convention as rotate-to.
+            let (y, z, x) = rotation.normalize().to_euler(EulerRot::YZX);
+            Some(match axis.to_ascii_lowercase().as_str() {
+                "rx" => x.to_degrees(),
+                "ry" => y.to_degrees(),
+                _ => z.to_degrees(),
+            })
+        }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod rotation_property_tests {
+    use super::*;
+
+    #[test]
+    fn rotation_properties_read_degrees_in_authored_euler_order() {
+        let mut transforms = HashMap::new();
+        for angles in [[30., 40., 50.], [-25., -135., -35.], [0., 270., 0.]] {
+            transforms.insert(
+                "subject".into(),
+                Transform {
+                    translation: Vec3::new(2., 3., 4.),
+                    rotation: rotation_from_degrees(SceneMaxVec3 {
+                        x: angles[0],
+                        y: angles[1],
+                        z: angles[2],
+                    }),
+                    ..default()
+                },
+            );
+            for (axis, expected) in ["rx", "RY", "rz"].into_iter().zip(angles) {
+                let actual =
+                    coordinate_value_from_name(&format!("subject.{axis}"), &transforms).unwrap();
+                let delta = (actual - expected + 180.).rem_euclid(360.) - 180.;
+                assert!(delta.abs() < 0.001, "{axis}: {actual} != {expected}");
+            }
+            assert_eq!(
+                coordinate_value_from_name("subject.y", &transforms),
+                Some(3.)
+            );
+        }
+        assert_eq!(coordinate_value_from_name("missing.ry", &transforms), None);
+        assert_eq!(coordinate_value_from_name("subject.rw", &transforms), None);
+        transforms.get_mut("subject").unwrap().rotation = Quat::from_xyzw(0., 0., 0., 0.);
+        assert_eq!(coordinate_value_from_name("subject.ry", &transforms), None);
+    }
+
+    #[test]
+    fn rotation_properties_evaluate_assignment_and_print_from_current_transform() {
+        let mut vars = SceneMaxVars::default();
+        let guards = HashMap::new();
+        let mut transforms = HashMap::from([("subject".into(), Transform::IDENTITY)]);
+        for (axis, degrees) in [("rx", 25.), ("ry", -70.), ("rz", 40.)] {
+            let program = scenemax_parser::parse_program(&format!(
+                "var current = subject.{axis}\nsys.print current\nsys.print subject.{axis}"
+            ))
+            .unwrap();
+            let Statement::Assignment(assignment) = &program.statements[0] else {
+                panic!()
+            };
+            for factor in [1., 0.5] {
+                let expected: f32 = degrees * factor;
+                let direction = match axis {
+                    "rx" => Vec3::X,
+                    "ry" => Vec3::Y,
+                    _ => Vec3::Z,
+                };
+                transforms.get_mut("subject").unwrap().rotation =
+                    Quat::from_axis_angle(direction, expected.to_radians());
+                crate::actions::apply_assignment_scoped(
+                    assignment,
+                    &mut vars,
+                    None,
+                    Some(&transforms),
+                    &guards,
+                    None,
+                    false,
+                )
+                .unwrap();
+                for statement in &program.statements[1..] {
+                    let Statement::Print(print) = statement else {
+                        panic!()
+                    };
+                    let text = crate::actions::resolve_ui_property_value(
+                        &print.text,
+                        &vars,
+                        None,
+                        &guards,
+                        Some(&transforms),
+                        None,
+                    );
+                    let actual: f32 = text
+                        .parse()
+                        .expect("print must resolve the value, not the symbol name");
+                    assert!((actual - expected).abs() < 0.001);
+                }
+            }
+        }
     }
 }
 
