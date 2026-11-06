@@ -30,6 +30,7 @@ pub(super) struct Preview {
     pub(super) restart: bool,
     graph: Option<Handle<AnimationGraph>>,
     clips: Vec<bevy::animation::graph::AnimationNodeIndex>,
+    clip_names: Vec<String>,
 }
 impl Preview {
     pub(super) fn clear(&mut self, c: &mut Commands) {
@@ -43,6 +44,7 @@ impl Preview {
         self.asset = None;
         self.graph = None;
         self.clips.clear();
+        self.clip_names.clear();
     }
 }
 #[derive(bevy::ecs::system::SystemParam)]
@@ -55,6 +57,7 @@ pub(crate) struct Render<'w, 's> {
     textures: Option<ResMut<'w, scenemax_materials::TextureCache>>,
     gltfs: Option<Res<'w, Assets<bevy::gltf::Gltf>>>,
     graphs: Option<ResMut<'w, Assets<AnimationGraph>>>,
+    animation_labels: Query<'w, 's, &'static mut Text, With<view::AnimationStatus>>,
     all_thumbs: Query<'w, 's, (), With<view::Thumb>>,
     thumbs: Query<'w, 's, (Entity, &'static view::Thumb), Added<view::Thumb>>,
     parents: Query<'w, 's, &'static ChildOf>,
@@ -338,6 +341,18 @@ pub(crate) fn update(
             if let Some(graphs) = r.graphs.as_mut() {
                 let (graph, clips) = AnimationGraph::from_clips(gltf.animations.clone());
                 state.render.graph = Some(graphs.add(graph));
+                state.render.clip_names = gltf
+                    .animations
+                    .iter()
+                    .enumerate()
+                    .map(|(i, handle)| {
+                        gltf.named_animations
+                            .iter()
+                            .find(|(_, value)| *value == handle)
+                            .map(|(name, _)| name.to_string())
+                            .unwrap_or_else(|| format!("Clip {}", i + 1))
+                    })
+                    .collect();
                 state.render.clips = clips;
             }
             state.render.waiting = false;
@@ -388,6 +403,29 @@ pub(crate) fn update(
         && let Ok(mut transform) = r.objects.get_mut(object)
     {
         transform.rotate_y(r.time.delta_secs() * 0.35);
+    }
+    let animation_label = if state.render.waiting {
+        "Loading animations…".to_string()
+    } else if state.render.clip_names.is_empty() {
+        "No embedded animations".to_string()
+    } else {
+        let index = state.render.clip % state.render.clip_names.len();
+        format!(
+            "{} • {} / {} • {}",
+            state.render.clip_names[index],
+            index + 1,
+            state.render.clip_names.len(),
+            if state.render.playing {
+                "Playing"
+            } else {
+                "Paused"
+            }
+        )
+    };
+    for mut label in &mut r.animation_labels {
+        if label.0 != animation_label {
+            label.0.clone_from(&animation_label);
+        }
     }
     let mut found = false;
     if let Some(graph) = state.render.graph.clone()

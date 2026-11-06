@@ -22,6 +22,8 @@ fn toolbar_add_and_delete_use_document_history_and_select_inserted_entry() {
             ..default()
         })
         .init_resource::<tools::Tools>()
+        .init_resource::<hierarchy::State>()
+        .init_resource::<crate::presentation::inventory::State>()
         .init_resource::<navigation::Navigation>()
         .init_resource::<path::Drawing>()
         .add_message::<crate::application::ViewChange>()
@@ -80,4 +82,80 @@ fn toolbar_add_and_delete_use_document_history_and_select_inserted_entry() {
     let doc = session.workspace.document_mut(id).unwrap();
     doc.undo();
     assert_eq!(doc.text(), s);
+}
+
+#[test]
+fn toolbar_model_picker_defers_insertion_and_preserves_camera_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = r#"{"entities":[{"type":"SECTION","name":"folder","children":[]}]}"#;
+    let mut session = Session::new(Project::new(dir.path().into(), vec![]));
+    let id = session
+        .workspace
+        .open_document(
+            Document::from_bytes(dir.path().join("scene.smdesign"), source.as_bytes().into())
+                .unwrap(),
+        )
+        .unwrap();
+    let revision = session.workspace.document(id).unwrap().revision();
+    let mut app = App::new();
+    let camera = app
+        .world_mut()
+        .spawn(Orbit {
+            target: Vec3::new(3., 4., 5.),
+            yaw: 0.,
+            pitch: 0.,
+            distance: 10.,
+        })
+        .id();
+    app.insert_resource(session)
+        .insert_resource(SceneState {
+            current: Some((id, revision)),
+            camera: Some(camera),
+            scene: Some(scenemax_ide_services::scene3d::load(dir.path(), source).unwrap()),
+            ..default()
+        })
+        .init_resource::<tools::Tools>()
+        .init_resource::<hierarchy::State>()
+        .init_resource::<crate::presentation::inventory::State>()
+        .init_resource::<ButtonInput<KeyCode>>()
+        .init_resource::<navigation::Navigation>()
+        .init_resource::<path::Drawing>()
+        .add_message::<crate::application::ViewChange>()
+        .add_systems(Update, (tools::update, hierarchy::update).chain());
+    app.world_mut()
+        .spawn((tools::Action::Add("MODEL"), Interaction::Pressed));
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<Session>()
+            .workspace
+            .document(id)
+            .unwrap()
+            .text(),
+        source
+    );
+    assert!(
+        app.world()
+            .resource::<crate::presentation::inventory::State>()
+            .actions
+            .iter()
+            .any(|a| matches!(a, crate::presentation::inventory::Action::PickModel(_)))
+    );
+    app.world_mut()
+        .resource_mut::<crate::presentation::inventory::State>()
+        .picked_model = Some("fixture_model".into());
+    app.update();
+    let mut session = app.world_mut().resource_mut::<Session>();
+    let doc = session.workspace.document_mut(id).unwrap();
+    let value: serde_json::Value = serde_json::from_str(doc.text()).unwrap();
+    assert_eq!(
+        value["entities"][0]["children"][0]["resourcePath"],
+        "fixture_model"
+    );
+    assert_eq!(
+        value["entities"][0]["children"][0]["position"],
+        serde_json::json!([3., 4., 5.])
+    );
+    doc.undo();
+    assert_eq!(doc.text(), source);
 }

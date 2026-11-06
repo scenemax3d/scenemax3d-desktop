@@ -162,7 +162,7 @@
       "itchLinuxChannel": "linux",
       "itchMacChannel": "macos",
       "itchWindowsChannel": "windows",
-      "lastActiveAt": 1791833001963,
+      "lastActiveAt": 1793999395169,
       "multiplayerDeployOs": "Linux",
       "multiplayerPassword": "",
       "multiplayerServerIp": "178.128.144.17",
@@ -197,7 +197,7 @@
       "itchLinuxChannel": "linux",
       "itchMacChannel": "macos",
       "itchWindowsChannel": "windows",
-      "lastActiveAt": 1793766192354,
+      "lastActiveAt": 1793903793591,
       "multiplayerDeployOs": "Windows",
       "multiplayerPassword": "",
       "multiplayerServerIp": "127.0.0.1",
@@ -226,5 +226,5 @@
       "path": "projects/demo2"
     }
   ],
-  "selectedProject": "fighting game project - bevy"
+  "selectedProject": "GMTK 2026"
 }
