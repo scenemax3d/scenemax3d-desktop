@@ -195,24 +195,26 @@ pub fn load(project: &Path, source: &str) -> Result<ScenePreview, String> {
                                         .map(|p| (*id, p))
                                 })
                                 .collect(),
-                            glyph_pages: scenemax_runtime_ui_core::bitmap::layout_paged(
+                            glyph_pages: scenemax_runtime_ui_core::bitmap::layout_paged_aligned(
                                 font,
                                 &w.text,
                                 w.font_size,
                                 w.rect[2],
                                 w.rect[3],
                                 &w.alignment,
+                                &w.definition.text_vertical_alignment,
                             )
                             .into_iter()
                             .map(|g| g.page)
                             .collect(),
-                            quads: scenemax_runtime_ui_core::bitmap::layout(
+                            quads: scenemax_runtime_ui_core::bitmap::layout_aligned(
                                 font,
                                 &w.text,
                                 w.font_size,
                                 w.rect[2],
                                 w.rect[3],
                                 &w.alignment,
+                                &w.definition.text_vertical_alignment,
                             ),
                             text: true,
                             font: Some(std::sync::Arc::new(font.clone())),
@@ -267,24 +269,26 @@ pub fn refresh_cached(
         if let Some(visual) = &mut w.visual
             && let Some(font) = &visual.font
         {
-            visual.glyph_pages = scenemax_runtime_ui_core::bitmap::layout_paged(
+            visual.glyph_pages = scenemax_runtime_ui_core::bitmap::layout_paged_aligned(
                 font,
                 &w.text,
                 w.font_size,
                 w.rect[2],
                 w.rect[3],
                 &w.alignment,
+                &w.definition.text_vertical_alignment,
             )
             .into_iter()
             .map(|g| g.page)
             .collect();
-            visual.quads = scenemax_runtime_ui_core::bitmap::layout(
+            visual.quads = scenemax_runtime_ui_core::bitmap::layout_aligned(
                 font,
                 &w.text,
                 w.font_size,
                 w.rect[2],
                 w.rect[3],
                 &w.alignment,
+                &w.definition.text_vertical_alignment,
             );
         }
     }

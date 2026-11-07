@@ -297,6 +297,18 @@ fn widget_node(scene: &ScenePreview, w: &PreviewWidget) -> Node {
         top: percent(y / ph * 100.),
         width: percent(width / pw * 100.),
         height: percent(height / ph * 100.),
+        flex_direction: FlexDirection::Column,
+        justify_content: match (
+            w.kind == "BUTTON",
+            w.definition
+                .text_vertical_alignment
+                .to_ascii_lowercase()
+                .as_str(),
+        ) {
+            (_, "top") | (false, _) => JustifyContent::FlexStart,
+            (_, "bottom") => JustifyContent::FlexEnd,
+            _ => JustifyContent::Center,
+        },
         ..default()
     }
 }
@@ -408,7 +420,31 @@ fn draw_visual(
     } else if ["TEXT_VIEW", "EDIT_TEXT", "BUTTON", "LIST_VIEW"].contains(&w.kind.as_str())
         && !w.text.is_empty()
     {
-        commands.entity(entity).insert((
+        let label = if w.kind == "BUTTON" {
+            let label = commands
+                .spawn((
+                    Node {
+                        // NoWrap text is laid out without a width bound in Bevy.
+                        // Align its intrinsic box, rather than a full-width box.
+                        width: Val::Auto,
+                        align_self: match w.alignment.to_ascii_lowercase().as_str() {
+                            "center" => AlignSelf::Center,
+                            "right" => AlignSelf::FlexEnd,
+                            _ => AlignSelf::FlexStart,
+                        },
+                        flex_shrink: 0.,
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                    ChildOf(entity),
+                ))
+                .id();
+            glyphs.push(label);
+            label
+        } else {
+            entity
+        };
+        commands.entity(label).insert((
             Text::new(&w.text),
             TextFont {
                 font_size: FontSize::Px(w.font_size),
@@ -478,6 +514,7 @@ pub(super) fn update_preview(
             || w.text_color != old.text_color
             || w.font_size != old.font_size
             || w.alignment != old.alignment
+            || w.definition.text_vertical_alignment != old.definition.text_vertical_alignment
             || w.rect[2..] != old.rect[2..]
         {
             for glyph in rendered.glyphs.drain(..) {
@@ -540,4 +577,49 @@ pub(super) fn update_preview(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod rendered_alignment_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Tests/support/ui_layout.rs"
+    ));
+    #[test]
+    fn rendered_button_alignment_uses_measured_text_box() {
+        let mut app = layout_app();
+        let canvas = app
+            .world_mut()
+            .spawn(Node {
+                width: px(1280.),
+                height: px(720.),
+                ..default()
+            })
+            .id();
+        let scene = scenemax_ide_services::scene::preview(r#"{"name":"fixture","canvasWidth":1280,"canvasHeight":720,"layers":[{"name":"main","widgets":[{"name":"start","type":"BUTTON","buttonText":"Start","fontSize":24,"width":240,"height":56,"widthMode":"FIXED","heightMode":"FIXED"}]}]}"#).unwrap();
+        for h in ["left", "center", "right"] {
+            for v in ["top", "center", "bottom"] {
+                let source = serde_json::to_string(&serde_json::json!({"name":"fixture", "canvasWidth":1280, "canvasHeight":720, "layers":[{"name":"main", "widgets":[scene.widgets[0].definition]}]})).unwrap();
+                let mut changed = scenemax_ide_services::scene::preview(&source).unwrap();
+                let w = &mut changed.widgets[0];
+                w.alignment = h.into();
+                w.definition.text_vertical_alignment = v.into();
+                let parts = draw_widget(
+                    &mut app.world_mut().commands(),
+                    canvas,
+                    canvas,
+                    &scene,
+                    &w,
+                    None,
+                    None,
+                    None,
+                );
+                app.world_mut().flush();
+                settle_layout(&mut app);
+                assert_label_position(app.world(), parts.entity, parts.glyphs[0], h, v);
+                app.world_mut().entity_mut(parts.entity).despawn();
+            }
+        }
+    }
 }

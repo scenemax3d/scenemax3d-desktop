@@ -147,7 +147,7 @@ pub(super) fn inspector_fields(
         field("fontSize", "Font size", json!(24.), &[]);
         field(
             "textAlignment",
-            "Alignment",
+            "Horizontal alignment",
             json!("left"),
             &["left", "center", "right"],
         );
@@ -161,6 +161,13 @@ pub(super) fn inspector_fields(
         field("editTextMultiline", "Multiline", json!(false), &[]);
     }
     if w.kind == "BUTTON" {
+        field(
+            "textVerticalAlignment",
+            "Vertical alignment",
+            json!("center"),
+            &["top", "center", "bottom"],
+        );
+        field("onClickProcedure", "On click procedure", json!(""), &[]);
         field("buttonText", "Button text", json!(""), &[]);
         field("buttonColor", "Button color", json!("#404040"), &[]);
         field(

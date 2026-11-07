@@ -1,4 +1,5 @@
 use super::*;
+pub(crate) mod buttons;
 pub(crate) mod edits;
 pub(crate) mod image_shaders;
 pub(crate) mod images;
@@ -22,7 +23,10 @@ fn add_child_if_alive(commands: &mut Commands, parent: Entity, child: Entity) {
 
 pub(super) fn scenemax_ui_action_from_statement(action: &Statement) -> Option<SceneMaxUiAction> {
     match action {
-        Statement::UiLoad { name } => Some(SceneMaxUiAction::Load { name: name.clone() }),
+        Statement::UiLoad { name } => Some(SceneMaxUiAction::Load {
+            name: name.clone(),
+            scope: None,
+        }),
         Statement::UiShowHide(show_hide) => Some(SceneMaxUiAction::ShowHide {
             target: show_hide.target.clone(),
             visible: show_hide.visible,
@@ -223,7 +227,7 @@ pub(super) fn apply_scenemax_ui_actions(
                     &mut ui_runtime,
                 );
             }
-            SceneMaxUiAction::Load { name } => {
+            SceneMaxUiAction::Load { name, scope } => {
                 write_runtime_diagnostic_line(format!("UI:APPLY load {name}"));
                 if let Err(error) = load_scenemax_ui_document(
                     &name,
@@ -235,6 +239,10 @@ pub(super) fn apply_scenemax_ui_actions(
                 ) {
                     tracing::warn!(name, %error, "failed to load SceneMax UI document");
                     write_runtime_diagnostic_line(format!("failed to load UI {name}: {error}"));
+                } else if let Some(active) = ui_runtime.active_ui_name.clone()
+                    && let Some(loaded) = ui_runtime.loaded.get_mut(&active)
+                {
+                    loaded.scope = scope;
                 }
             }
             SceneMaxUiAction::ShowHide { target, visible } => {
@@ -1177,6 +1185,7 @@ pub(super) fn resolve_scenemax_ui_path(
         .ok_or_else(|| anyhow::anyhow!("UI document {file_name} was not found"))
 }
 
+#[allow(deprecated)] // Match the existing HUD input controls.
 pub(super) fn spawn_scenemax_ui_widget(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -1259,11 +1268,25 @@ pub(super) fn spawn_scenemax_ui_widget(
             (entity, Some(entity))
         }
         "BUTTON" => {
+            let bitmap = ensure_scenemax_bitmap_font(
+                widget.font_name.as_deref(),
+                ui_runtime,
+                asset_server,
+                context,
+            )
+            .is_some();
+            let node = Node {
+                flex_direction: FlexDirection::Column,
+                justify_content: buttons::vertical_justify(&widget.text_vertical_alignment),
+                ..node
+            };
             let entity = commands
                 .spawn((
                     Name::new(format!("UI.{ui_name}.{}", widget_path.join("."))),
                     node,
                     BackgroundColor(parse_ui_color(&widget.button_color)),
+                    Interaction::default(),
+                    buttons::ClickProcedure(widget.on_click_procedure.trim().to_owned()),
                     UiTransform::default(),
                     visibility,
                     ZIndex(widget.z_order),
@@ -1277,11 +1300,25 @@ pub(super) fn spawn_scenemax_ui_widget(
                 ui_runtime,
                 format!("UI.{ui_name}.{}.text", widget_path.join(".")),
                 Node {
-                    position_type: PositionType::Absolute,
+                    position_type: PositionType::Relative,
                     left: Val::ZERO,
                     top: Val::ZERO,
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
+                    width: if bitmap {
+                        Val::Percent(100.0)
+                    } else {
+                        Val::Auto
+                    },
+                    align_self: match widget.text_alignment.to_ascii_lowercase().as_str() {
+                        "center" => AlignSelf::Center,
+                        "right" => AlignSelf::FlexEnd,
+                        _ => AlignSelf::FlexStart,
+                    },
+                    height: if bitmap {
+                        Val::Percent(100.0)
+                    } else {
+                        Val::Auto
+                    },
+                    flex_shrink: 0.,
                     ..default()
                 },
                 Visibility::Inherited,
@@ -1290,12 +1327,32 @@ pub(super) fn spawn_scenemax_ui_widget(
                 widget.font_name.as_deref(),
                 widget.font_size,
                 parse_ui_color(&widget.button_text_color),
-                Justify::Center,
+                ui_text_justify(&widget.text_alignment),
                 ui_scale,
                 rect.width,
                 rect.height,
                 None,
             );
+            commands.entity(text).insert((
+                buttons::LabelAlignment(widget.text_vertical_alignment.clone()),
+                bevy::ui::FocusPolicy::Pass,
+                Pickable::IGNORE,
+            ));
+            let vertical = widget.text_vertical_alignment.clone();
+            commands.queue(move |world: &mut World| {
+                if let Some(mut bitmap) = world.get::<SceneMaxUiBitmapText>(text).cloned() {
+                    bitmap.vertical_alignment = vertical;
+                    world.resource_scope(|world, runtime: Mut<SceneMaxUiRuntime>| {
+                        render_scenemax_bitmap_text(
+                            &mut world.commands(),
+                            text,
+                            &mut bitmap,
+                            &runtime,
+                        );
+                    });
+                    world.entity_mut(text).insert(bitmap);
+                }
+            });
             add_child_if_alive(commands, entity, text);
             (entity, Some(text))
         }
@@ -1468,6 +1525,7 @@ pub(super) fn spawn_scenemax_ui_text_entity(
         ensure_scenemax_bitmap_font(font_name, ui_runtime, asset_server, context)
     {
         let mut bitmap_text = SceneMaxUiBitmapText {
+            vertical_alignment: "center".into(),
             text,
             font_name,
             font_size: scaled_font_size(font_size, ui_scale),
@@ -1543,13 +1601,14 @@ pub(super) fn render_scenemax_bitmap_text(
         Justify::Right => "right",
         _ => "left",
     };
-    for glyph in scenemax_runtime_ui_core::bitmap::layout_paged(
+    for glyph in scenemax_runtime_ui_core::bitmap::layout_paged_aligned(
         &font.metrics,
         &bitmap_text.text,
         bitmap_text.font_size,
         bitmap_text.widget_width,
         bitmap_text.widget_height,
         alignment,
+        &bitmap_text.vertical_alignment,
     ) {
         let source = glyph.source;
         let rect = glyph.rect;

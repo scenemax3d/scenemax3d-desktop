@@ -163,11 +163,7 @@ fn collect(
             } else {
                 widget.text_color.clone()
             },
-            alignment: if button {
-                "center".into()
-            } else {
-                widget.text_alignment.clone()
-            },
+            alignment: widget.text_alignment.clone(),
             font_size: widget.font_size,
             width: widget.width,
             height: widget.height,

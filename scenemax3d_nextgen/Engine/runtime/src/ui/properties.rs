@@ -202,6 +202,22 @@ fn switch_font(world: &mut World, entity: Entity, name: &str) {
             world.resource::<SceneMaxLaunchContext>(),
         )
     });
+    if world
+        .get::<super::buttons::LabelAlignment>(entity)
+        .is_some()
+        && let Some(mut node) = world.get_mut::<Node>(entity)
+    {
+        node.width = if font_name.is_some() {
+            Val::Percent(100.)
+        } else {
+            Val::Auto
+        };
+        node.height = if font_name.is_some() {
+            Val::Percent(100.)
+        } else {
+            Val::Auto
+        };
+    }
     if let Some(previous) = previous {
         for glyph in previous.glyph_entities {
             let _ = world.despawn(glyph);
@@ -209,6 +225,10 @@ fn switch_font(world: &mut World, entity: Entity, name: &str) {
     }
     if let Some(font_name) = font_name {
         let mut bitmap = SceneMaxUiBitmapText {
+            vertical_alignment: world
+                .get::<super::buttons::LabelAlignment>(entity)
+                .map(|a| a.0.clone())
+                .unwrap_or_else(|| "center".into()),
             text,
             font_name,
             font_size: size,
@@ -277,6 +297,8 @@ mod tests {
         let entity = world
             .spawn((
                 Text::new("A"),
+                Node::default(),
+                super::buttons::LabelAlignment("bottom".into()),
                 TextFont {
                     font_size: FontSize::Px(26.),
                     ..default()
@@ -297,6 +319,11 @@ mod tests {
             assert_eq!(bitmap.font_size, 26.);
             assert_eq!(bitmap.color, color);
             assert_eq!(bitmap.alignment, Justify::Right);
+            assert_eq!(bitmap.vertical_alignment, "bottom");
+            assert_eq!(
+                world.get::<Node>(entity).unwrap().height,
+                Val::Percent(100.)
+            );
             assert_eq!(bitmap.font_name, name.to_lowercase());
             assert!(world.get::<Text>(entity).is_none());
             assert_eq!(world.get::<Children>(entity).unwrap().len(), 1);
@@ -310,6 +337,7 @@ mod tests {
         assert!(world.get_entity(glyph).is_err());
         assert!(world.get::<SceneMaxUiBitmapText>(entity).is_none());
         assert_eq!(world.get::<Text>(entity).unwrap().0, "A");
+        assert_eq!(world.get::<Node>(entity).unwrap().height, Val::Auto);
         assert_eq!(
             world.get::<TextFont>(entity).unwrap().font_size,
             FontSize::Px(26.)

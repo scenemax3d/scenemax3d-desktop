@@ -224,7 +224,12 @@
     {
       "name": "demo2",
       "path": "projects/demo2"
+    },
+    {
+      "lastActiveAt": 1794048687323,
+      "name": "hud-alignment-visual",
+      "path": ".tmp/hud-alignment-visual"
     }
   ],
-  "selectedProject": "GMTK 2026"
+  "selectedProject": "hud-alignment-visual"
 }

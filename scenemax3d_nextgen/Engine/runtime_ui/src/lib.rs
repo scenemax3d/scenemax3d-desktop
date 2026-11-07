@@ -93,6 +93,10 @@ pub struct SceneMaxUiWidgetDef {
     pub font_size: f32,
     #[serde(default = "default_text_alignment")]
     pub text_alignment: String,
+    #[serde(default = "default_vertical_alignment")]
+    pub text_vertical_alignment: String,
+    #[serde(default)]
+    pub on_click_procedure: String,
     #[serde(default)]
     pub button_text: String,
     #[serde(default = "default_button_color")]
@@ -276,6 +280,10 @@ fn default_button_color() -> String {
 
 fn default_text_alignment() -> String {
     "left".to_owned()
+}
+
+fn default_vertical_alignment() -> String {
+    "center".to_owned()
 }
 
 fn default_image_scale_mode() -> String {

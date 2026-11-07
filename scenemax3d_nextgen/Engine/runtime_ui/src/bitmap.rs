@@ -146,10 +146,28 @@ pub fn layout_paged(
     height: f32,
     alignment: &str,
 ) -> Vec<PlacedGlyph> {
+    layout_paged_aligned(font, text, size, width, height, alignment, "center")
+}
+
+pub fn layout_paged_aligned(
+    font: &Font,
+    text: &str,
+    size: f32,
+    width: f32,
+    height: f32,
+    alignment: &str,
+    vertical: &str,
+) -> Vec<PlacedGlyph> {
     let scale = size / font.size.max(1.);
     let line_height = font.line_height.max(font.size) * scale;
     let lines: Vec<_> = text.split('\n').collect();
-    let top = (height - line_height * lines.len() as f32) * 0.5;
+    let remaining = height - line_height * lines.len() as f32;
+    let top = remaining
+        * match vertical.to_ascii_lowercase().as_str() {
+            "top" => 0.,
+            "bottom" => 1.,
+            _ => 0.5,
+        };
     let mut result = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let length = line_width(font, line) * scale;
@@ -228,5 +246,37 @@ mod tests {
         assert_eq!(q[0], ([8., 4., 18., 16.], [39., 22., 10., 12.]));
         assert_eq!(q[2].1, [45., 42., 10., 12.]);
         assert!(parse("info size=12").is_err());
+    }
+}
+
+pub fn layout_aligned(
+    font: &Font,
+    text: &str,
+    size: f32,
+    width: f32,
+    height: f32,
+    alignment: &str,
+    vertical: &str,
+) -> Vec<([f32; 4], [f32; 4])> {
+    layout_paged_aligned(font, text, size, width, height, alignment, vertical)
+        .into_iter()
+        .map(|g| (g.source, g.rect))
+        .collect()
+}
+
+#[cfg(test)]
+mod alignment_tests {
+    use super::*;
+    #[test]
+    fn button_text_supports_all_nine_alignments_and_multiline_metrics() {
+        let font = parse("info size=20\ncommon lineHeight=20\npage id=0 file=\"atlas.png\"\nchar id=65 width=10 height=12 xadvance=10").unwrap();
+        for (h, x) in [("left", 0.), ("center", 45.), ("right", 90.)] {
+            for (v, y) in [("top", 0.), ("center", 30.), ("bottom", 60.)] {
+                let glyphs = layout_paged_aligned(&font, "A\nA", 20., 100., 100., h, v);
+                assert_eq!(glyphs[0].rect[0], x);
+                assert_eq!(glyphs[0].rect[1], y);
+                assert_eq!(glyphs[1].rect[1], y + 20.);
+            }
+        }
     }
 }
