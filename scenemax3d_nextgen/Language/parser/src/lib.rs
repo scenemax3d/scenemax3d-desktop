@@ -5471,6 +5471,13 @@ fn split_top_level_comma(text: &str) -> Vec<&str> {
 }
 
 fn split_top_level_options(text: &str) -> Vec<&str> {
+    split_top_level_options_including_empty(text)
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
+fn split_top_level_options_including_empty(text: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
@@ -5505,7 +5512,7 @@ fn split_top_level_options(text: &str) -> Vec<&str> {
     }
 
     parts.push(text[start..].trim());
-    parts.into_iter().filter(|part| !part.is_empty()).collect()
+    parts
 }
 
 fn matching_close_bracket_index(text: &str) -> Option<usize> {

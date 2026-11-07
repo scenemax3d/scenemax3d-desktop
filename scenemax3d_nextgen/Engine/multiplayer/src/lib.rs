@@ -18,6 +18,8 @@ pub const ACTIVE_ACTION_END: u8 = 23;
 pub const NETWORK_EVENT: u8 = 24;
 pub const NETWORK_VARIABLE_UPDATE: u8 = 25;
 pub const SERVER_EVENT_REGISTER: u8 = 26;
+/// Separate registration opcode: old servers must not broadcast leader timers.
+pub const SERVER_EVENT_REGISTER_LEADER: u8 = 29;
 pub const NETWORK_ENTITY_DATA_UPDATE: u8 = 27;
 /// Additive v1 acknowledgement of an exact numbered action end.
 pub const ACTION_END_RECEIPT: u8 = 28;

@@ -215,3 +215,29 @@ fn socket_handshake_ack_retry_queue_destroy_and_drop() {
     let (n, _) = server.recv_from(&mut b).unwrap();
     assert_eq!(read_header(&b[..n]).unwrap().packet_type, DISCONNECT);
 }
+
+#[test]
+fn leader_timer_uses_distinct_opcode_and_keeps_legacy_payload() {
+    let regular = encode(
+        7,
+        &Outgoing::ServerEvent {
+            name: "fixture_tick".into(),
+            interval_ms: 5000,
+            leader_only: false,
+        },
+    )
+    .unwrap();
+    let leader = encode(
+        7,
+        &Outgoing::ServerEvent {
+            name: "fixture_tick".into(),
+            interval_ms: 5000,
+            leader_only: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(regular[5], SERVER_EVENT_REGISTER);
+    assert_eq!(leader[5], SERVER_EVENT_REGISTER_LEADER);
+    assert_eq!(&regular[8..], &leader[8..]);
+    assert_eq!(leader.len(), 76);
+}

@@ -460,3 +460,33 @@ Before shipping a multiplayer SceneMax game:
   command dispatch lines.
 - Test scene switching with at least two clients.
 - Test a late joiner while another player is moving, rotating, animating, or using attach/IK.
+
+## Leader-only server timers
+
+Use `network.leader.on` to deliver each server timer tick to only the
+earliest registered client still connected to that session and scene:
+
+```scenemax
+network.leader.on ("count", 5) = {
+    // Run shared game logic on one client.
+}
+```
+
+Register the same handler on every participating client so a replacement can run
+it. The server chooses by connection registration order, independently of client
+IDs and client-map slots. If the leader leaves the scene/session or disconnects,
+the next eligible client receives subsequent ticks. A lost connection is removed
+after the server's existing 15-second inactivity timeout. Returning to the room
+with the original connection retains that connection's registration order.
+
+The interval is in seconds and must evaluate to a positive number. The existing
+`network.on ("count", 5)` form still broadcasts to all clients in the room. All registrations
+of one event name in a room must use the same delivery mode; the server retains
+the mode of its first registration until the room becomes empty. Do not reuse a
+leader timer's name for ordinary broadcast messages.
+
+Leader-only delivery selects one recipient per tick; UDP delivery is not an
+exactly-once execution guarantee. Already-running handlers are not migrated when
+leadership changes. This feature requires the updated client/runtime and server;
+rebuild and redeploy existing multiplayer server bundles after updating Studio.
+An older server ignores the new leader-timer registration message.

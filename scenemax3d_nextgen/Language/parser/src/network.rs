@@ -30,6 +30,8 @@ pub enum NetworkStatement {
         handler_id: u64,
         event: String,
         argument: Option<String>,
+        /// Deliver server timer ticks only to the oldest connected room client.
+        leader_only: bool,
         actions: Vec<Statement>,
     },
 }
@@ -131,11 +133,20 @@ pub(super) fn block(
 ) -> Result<Option<(Statement, usize)>, ParseError> {
     let line = lines[index].trim();
     let lower = line.to_ascii_lowercase();
-    if !lower.starts_with("network.on") {
+    if !lower.starts_with("network.on") && !lower.starts_with("network.leader.on") {
         return Ok(None);
     }
     let Some(open) = line.find('(') else {
         return Err(ParseError::InvalidNetwork("missing event arguments".into()));
+    };
+    let leader_only = match lower[..open].trim() {
+        "network.on" => false,
+        "network.leader.on" => true,
+        _ => {
+            return Err(ParseError::InvalidNetwork(
+                "expected network.on or network.leader.on".into(),
+            ));
+        }
     };
     let tail = &line[open + 1..];
     let close = matching_close_paren_index(tail)
@@ -147,10 +158,15 @@ pub(super) fn block(
     ) {
         return Err(ParseError::InvalidNetwork("event requires do block".into()));
     }
-    let args = split_top_level_comma(&tail[..close]);
-    if args.is_empty() || args.len() > 2 || args[0].trim().is_empty() {
+    let args = split_top_level_options_including_empty(&tail[..close]);
+    if args.is_empty()
+        || args.len() > 2
+        || args.iter().any(|arg| arg.trim().is_empty())
+        || (leader_only && args.len() != 2)
+    {
         return Err(ParseError::InvalidNetwork(
-            "event expects name and optional interval/message argument".into(),
+            if leader_only { "network.leader.on expects an event name and interval" }
+            else { "network.on expects an event name and optional interval/message; use network.leader.on for leader timers" }.into(),
         ));
     }
     let (actions, next) = parse_action_block(lines, index + 1, false)?;
@@ -159,6 +175,7 @@ pub(super) fn block(
             handler_id: next_handler_id(),
             event: args[0].trim().into(),
             argument: args.get(1).map(|s| s.trim().into()),
+            leader_only,
             actions,
         }),
         next,
@@ -179,9 +196,56 @@ pub(super) fn guard_handler(statement: &mut Statement, condition: Condition) {
 mod tests {
     use super::*;
     #[test]
+    fn leader_timer_syntax_and_invalid_arguments() {
+        for suffix in ["= {", "= do"] {
+            let end = if suffix == "= {" { "}" } else { "end do" };
+            let program = parse_program(&format!(
+                "network.leader.on (\"count\", 5) {suffix}\nsys.print 1\n{end}"
+            ))
+            .unwrap();
+            assert!(matches!(
+                &program.statements[0],
+                Statement::Network(NetworkStatement::On {
+                    leader_only: true,
+                    ..
+                })
+            ));
+        }
+        for args in [
+            "\"count\"",
+            "\"count\",",
+            "\"count\", , 5",
+            "\"count\", 5, \"leader\"",
+        ] {
+            assert!(
+                parse_program(&format!("network.leader.on ({args}) = {{\nsys.print 1\n}}"))
+                    .is_err()
+            );
+        }
+        assert!(
+            parse_program("network.on (\"count\", 5, \"leader\") = {\nsys.print 1\n}").is_err()
+        );
+        let program = parse_program("network.on (\"count\", 5) = {\nsys.print 1\n}").unwrap();
+        assert!(matches!(
+            &program.statements[0],
+            Statement::Network(NetworkStatement::On {
+                leader_only: false,
+                ..
+            })
+        ));
+    }
+    #[test]
     fn network_guards_apply_on_delivery_and_do_not_leak_to_next_function() {
         let handler = "[enabled == 1]\nnetwork.on(\"tick\", 5) = {\n total = total + 1\n}\nnext() = {\n total = 0\n}";
-        for source in [handler.to_owned(), format!("setup() = {{\n{handler}\n}}")] {
+        for source in [
+            handler.to_owned(),
+            format!("setup() = {{\n{handler}\n}}"),
+            handler.replace("network.on", "network.leader.on"),
+            format!(
+                "setup() = {{\n{}\n}}",
+                handler.replace("network.on", "network.leader.on")
+            ),
+        ] {
             let program = parse_program(&source).unwrap();
             let actions = match &program.statements[0] {
                 Statement::FunctionDef(f) => &f.actions,
