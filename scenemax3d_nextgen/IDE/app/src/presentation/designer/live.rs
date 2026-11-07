@@ -157,11 +157,14 @@ mod tests {
     use scenemax_ide_core::{Document, DocumentId, Project};
     const SOURCE: &str = r#"{"name":"hud","canvasWidth":800,"canvasHeight":600,"layers":[{"name":"overlay","widgets":[{"name":"caption","type":"TEXT_VIEW","widthMode":"FIXED","heightMode":"FIXED","width":100,"height":40,"fontSize":20,"text":"Hello"}]}]}"#;
     fn setup() -> (App, Entity, DocumentId) {
+        setup_source(SOURCE)
+    }
+    fn setup_source(source: &str) -> (App, Entity, DocumentId) {
         let mut session = Session::new(Project::new(std::path::PathBuf::from("."), vec![]));
         let id = session
             .workspace
             .open_document(
-                Document::from_bytes("hud.smui".into(), SOURCE.as_bytes().to_vec()).unwrap(),
+                Document::from_bytes("hud.smui".into(), source.as_bytes().to_vec()).unwrap(),
             )
             .unwrap();
         let revision = session.workspace.document(id).unwrap().revision();
@@ -175,7 +178,7 @@ mod tests {
             .world_mut()
             .spawn((Node::default(), EditorHost(id), Designer::default()))
             .id();
-        let scene = scenemax_ide_services::scene::preview(SOURCE).unwrap();
+        let scene = scenemax_ide_services::scene::preview(source).unwrap();
         let parts = view::build(
             &mut app.world_mut().commands(),
             host,
@@ -193,6 +196,55 @@ mod tests {
         d.scene = Some(scene);
         d.selected = Some("/layers/0/widgets/0".into());
         (app, host, id)
+    }
+    #[test]
+    fn button_alignment_and_procedure_edit_update_preview_and_document() {
+        let source = SOURCE
+            .replace("TEXT_VIEW", "BUTTON")
+            .replace("\"text\":\"Hello\"", "\"buttonText\":\"Hello\"");
+        let (mut app, host, id) = setup_source(&source);
+        let horizontal = field(&mut app, "textAlignment");
+        let vertical = field(&mut app, "textVerticalAlignment");
+        let procedure = field(&mut app, "onClickProcedure");
+        app.world_mut().get_mut::<Choice>(horizontal).unwrap().0 = "right".into();
+        app.world_mut().get_mut::<Choice>(vertical).unwrap().0 = "bottom".into();
+        app.update();
+        edit(&mut app, procedure, "launch");
+        let widget = app
+            .world_mut()
+            .query_filtered::<(Entity, &Pick), Without<Button>>()
+            .iter(app.world())
+            .find(|(_, p)| p.host == host && p.pointer == "/layers/0/widgets/0")
+            .unwrap()
+            .0;
+        assert_eq!(
+            app.world().get::<Node>(widget).unwrap().justify_content,
+            JustifyContent::FlexEnd
+        );
+        let label = app
+            .world()
+            .get::<Children>(widget)
+            .unwrap()
+            .iter()
+            .find(|e| app.world().get::<Text>(*e).is_some())
+            .unwrap();
+        assert_eq!(
+            app.world().get::<TextLayout>(label).unwrap().justify,
+            Justify::Right
+        );
+        let saved: serde_json::Value = serde_json::from_str(
+            app.world()
+                .resource::<Session>()
+                .workspace
+                .document(id)
+                .unwrap()
+                .text(),
+        )
+        .unwrap();
+        let w = &saved["layers"][0]["widgets"][0];
+        assert_eq!(w["textAlignment"], "right");
+        assert_eq!(w["textVerticalAlignment"], "bottom");
+        assert_eq!(w["onClickProcedure"], "launch");
     }
     fn field(app: &mut App, key: &str) -> Entity {
         let world = app.world_mut();

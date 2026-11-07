@@ -211,6 +211,11 @@ pub(super) fn play_pending_animations(
         }
 
         if animation_players.is_empty() {
+            // glTFs without embedded clips have no Bevy animation bindings. Build
+            // them only on demand, after the skinned scene has been instantiated.
+            commands.queue(move |world: &mut World| {
+                binding::bind_unanimated_skin(world, root);
+            });
             tracing::debug!(
                 target = target_name,
                 clip = %animation_to_play.clip,
@@ -3273,3 +3278,6 @@ mod analyzer_tests;
 #[cfg(test)]
 #[path = "animation_ownership_tests.rs"]
 mod ownership_tests;
+
+#[path = "animation_binding.rs"]
+mod binding;

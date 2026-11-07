@@ -286,7 +286,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         )
         .add_systems(
             Update,
-            (ui::lists::select, ui::lists::render)
+            (ui::lists::select, ui::lists::render, ui::buttons::click)
                 .chain()
                 .after(ui::apply_scenemax_ui_actions),
         )
@@ -345,6 +345,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
         .add_systems(Update, apply_startup_runs_when_ready)
+        .add_systems(PostUpdate, prepare_character_model_bounds.after(bevy::transform::TransformSystems::Propagate))
         .add_systems(
             SpawnScene,
             shader::apply_pending_surfaces.after(SceneSpawnerSystems::SceneSpawn),
@@ -1140,6 +1141,7 @@ struct SceneMaxUiRuntime {
 
 #[derive(Debug, Default)]
 struct LoadedSceneMaxUi {
+    scope: Option<SceneMaxScopeFrame>,
     root_entities: Vec<Entity>,
     layer_entities: HashMap<String, Entity>,
     targets: HashMap<String, SceneMaxUiTarget>,
@@ -1177,6 +1179,7 @@ enum SceneMaxUiAction {
     },
     Load {
         name: String,
+        scope: Option<SceneMaxScopeFrame>,
     },
     ShowHide {
         target: UiTargetPath,
@@ -1295,6 +1298,7 @@ struct SceneMaxUiBitmapText {
     font_size: f32,
     color: Color,
     alignment: Justify,
+    vertical_alignment: String,
     widget_width: f32,
     widget_height: f32,
     glyph_entities: Vec<Entity>,

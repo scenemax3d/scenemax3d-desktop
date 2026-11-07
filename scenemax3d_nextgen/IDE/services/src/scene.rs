@@ -5,6 +5,8 @@ use scenemax_runtime_ui_core::{
 
 /// Bounded preview derived from the shared runtime UI schema.
 pub struct ScenePreview {
+    /// Layer pointers and captions, including empty layers.
+    pub layers: Vec<(String, String)>,
     /// Registered fonts.
     pub fonts: Vec<String>,
     /// Registered sprites.
@@ -76,10 +78,14 @@ pub fn preview(source: &str) -> Result<ScenePreview, String> {
         width: doc.canvas_width,
         height: doc.canvas_height,
         widgets: vec![],
+        layers: vec![],
     };
     let mut layers: Vec<_> = doc.layers.iter().enumerate().collect();
     layers.sort_by_key(|(_, l)| l.z_order);
     for (i, layer) in layers {
+        preview
+            .layers
+            .push((format!("/layers/{i}"), layer.name.clone()));
         let parent = UiLayoutRect {
             x: 0.,
             y: 0.,
@@ -163,11 +169,7 @@ fn collect(
             } else {
                 widget.text_color.clone()
             },
-            alignment: if button {
-                "center".into()
-            } else {
-                widget.text_alignment.clone()
-            },
+            alignment: widget.text_alignment.clone(),
             font_size: widget.font_size,
             width: widget.width,
             height: widget.height,

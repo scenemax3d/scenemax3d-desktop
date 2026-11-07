@@ -1023,9 +1023,10 @@ pub(super) fn apply_startup_leaf_action(
         }
         Statement::UiLoad { name } => {
             write_runtime_diagnostic_line(format!("UI:QUEUE load {name} source=startup"));
-            ui_queue
-                .actions
-                .push(SceneMaxUiAction::Load { name: name.clone() });
+            ui_queue.actions.push(SceneMaxUiAction::Load {
+                name: name.clone(),
+                scope: None,
+            });
             ActionSequenceResult::Completed
         }
         Statement::ChannelDraw(draw) => {
@@ -7841,13 +7842,15 @@ fn spawn_weapon_colliders(
                 transform,
                 Visibility::Hidden,
                 AvianRigidBody::Kinematic,
-                avian_collider(shape, &options, &transform),
                 weapon_collision_layers(),
                 Sensor,
                 CollisionEventsEnabled,
                 Name::new(runtime_name.clone()),
             ))
             .id();
+        if let Some(collider) = avian_collider(shape, &options, &transform) {
+            commands.entity(collider_entity).insert(collider);
+        }
         add_child_if_alive(commands, parent_entity, collider_entity);
         register_collider_bounds(collider_bounds, &runtime_name, &options, transform);
         register_collider_owner(collider_bounds, &runtime_name, weapon_runtime_name);
@@ -9089,9 +9092,15 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
-    if let Some(ui_action) = scenemax_ui_action_from_statement(action)
+    if let Some(mut ui_action) = scenemax_ui_action_from_statement(action)
         && let Some(ui_queue) = ui_queue.as_deref_mut()
     {
+        if let SceneMaxUiAction::Load {
+            scope: load_scope, ..
+        } = &mut ui_action
+        {
+            *load_scope = scope.as_deref().cloned();
+        }
         ui_queue.actions.push(ui_action);
         return ActionSequenceResult::Completed;
     }

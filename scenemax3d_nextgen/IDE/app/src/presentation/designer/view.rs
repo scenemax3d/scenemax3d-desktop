@@ -297,6 +297,18 @@ fn widget_node(scene: &ScenePreview, w: &PreviewWidget) -> Node {
         top: percent(y / ph * 100.),
         width: percent(width / pw * 100.),
         height: percent(height / ph * 100.),
+        flex_direction: FlexDirection::Column,
+        justify_content: match (
+            w.kind == "BUTTON",
+            w.definition
+                .text_vertical_alignment
+                .to_ascii_lowercase()
+                .as_str(),
+        ) {
+            (_, "top") | (false, _) => JustifyContent::FlexStart,
+            (_, "bottom") => JustifyContent::FlexEnd,
+            _ => JustifyContent::Center,
+        },
         ..default()
     }
 }
@@ -408,7 +420,31 @@ fn draw_visual(
     } else if ["TEXT_VIEW", "EDIT_TEXT", "BUTTON", "LIST_VIEW"].contains(&w.kind.as_str())
         && !w.text.is_empty()
     {
-        commands.entity(entity).insert((
+        let label = if w.kind == "BUTTON" {
+            let label = commands
+                .spawn((
+                    Node {
+                        // NoWrap text is laid out without a width bound in Bevy.
+                        // Align its intrinsic box, rather than a full-width box.
+                        width: Val::Auto,
+                        align_self: match w.alignment.to_ascii_lowercase().as_str() {
+                            "center" => AlignSelf::Center,
+                            "right" => AlignSelf::FlexEnd,
+                            _ => AlignSelf::FlexStart,
+                        },
+                        flex_shrink: 0.,
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                    ChildOf(entity),
+                ))
+                .id();
+            glyphs.push(label);
+            label
+        } else {
+            entity
+        };
+        commands.entity(label).insert((
             Text::new(&w.text),
             TextFont {
                 font_size: FontSize::Px(w.font_size),
@@ -478,6 +514,7 @@ pub(super) fn update_preview(
             || w.text_color != old.text_color
             || w.font_size != old.font_size
             || w.alignment != old.alignment
+            || w.definition.text_vertical_alignment != old.definition.text_vertical_alignment
             || w.rect[2..] != old.rect[2..]
         {
             for glyph in rendered.glyphs.drain(..) {
@@ -485,7 +522,9 @@ pub(super) fn update_preview(
             }
             commands
                 .entity(rendered.entity)
-                .remove::<(Text, ImageNode, CanvasText)>();
+                // The renderer reads cached glyphs from TextLayoutInfo even without
+                // Text. Clear that cache too when empty text has nothing to redraw.
+                .remove::<(Text, bevy::text::TextLayoutInfo, ImageNode, CanvasText)>();
             rendered.glyphs =
                 draw_visual(commands, rendered.entity, parts.canvas, w, assets, server);
         }
@@ -540,4 +579,127 @@ pub(super) fn update_preview(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod rendered_alignment_tests {
+    use super::*;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../Tests/support/ui_layout.rs"
+    ));
+    #[test]
+    fn live_text_edits_shape_glyphs_after_empty_and_nonempty_values() {
+        let mut app = layout_app();
+        for kind in ["EDIT_TEXT", "TEXT_VIEW"] {
+            let source = serde_json::json!({"name":"fixture","layers":[{"name":"main","widgets":[{"name":"field","type":kind,"text":"","width":360,"height":54,"widthMode":"FIXED","heightMode":"FIXED"}]}]}).to_string();
+            let mut previous = scenemax_ide_services::scene::preview(&source).unwrap();
+            let canvas = app
+                .world_mut()
+                .spawn(Node {
+                    width: px(previous.width),
+                    height: px(previous.height),
+                    ..default()
+                })
+                .id();
+            let rendered = draw_widget(
+                &mut app.world_mut().commands(),
+                canvas,
+                canvas,
+                &previous,
+                &previous.widgets[0],
+                None,
+                None,
+                None,
+            );
+            let entity = rendered.entity;
+            let mut parts = Parts {
+                inspector: canvas,
+                canvas,
+                footer: canvas,
+                widgets: [("/layers/0/widgets/0".into(), rendered)].into(),
+            };
+            app.world_mut().flush();
+            settle_layout(&mut app);
+            for text in ["A", "AB", "", "Again"] {
+                let next_source = scenemax_ide_core::scene::patch(
+                    &source,
+                    "/layers/0/widgets/0",
+                    vec![("text".into(), serde_json::json!(text))],
+                )
+                .unwrap();
+                let next =
+                    scenemax_ide_services::scene::assets::refresh_cached(&next_source, &previous)
+                        .unwrap()
+                        .unwrap();
+                update_preview(
+                    &mut app.world_mut().commands(),
+                    canvas,
+                    &mut parts,
+                    &next,
+                    &previous,
+                    None,
+                    None,
+                );
+                app.world_mut().flush();
+                settle_layout(&mut app);
+                if !text.is_empty() {
+                    assert_eq!(app.world().get::<Text>(entity).unwrap().0, text);
+                    assert!(
+                        !app.world()
+                            .get::<bevy::text::TextLayoutInfo>(entity)
+                            .unwrap()
+                            .glyphs
+                            .is_empty(),
+                        "{kind}: {text} should be visible"
+                    );
+                } else {
+                    assert!(
+                        app.world()
+                            .get::<bevy::text::TextLayoutInfo>(entity)
+                            .is_none_or(|info| info.glyphs.is_empty()),
+                        "{kind}: cleared text must not retain visible glyphs"
+                    );
+                }
+                previous = next;
+            }
+            app.world_mut().entity_mut(canvas).despawn();
+        }
+    }
+    #[test]
+    fn rendered_button_alignment_uses_measured_text_box() {
+        let mut app = layout_app();
+        let canvas = app
+            .world_mut()
+            .spawn(Node {
+                width: px(1280.),
+                height: px(720.),
+                ..default()
+            })
+            .id();
+        let scene = scenemax_ide_services::scene::preview(r#"{"name":"fixture","canvasWidth":1280,"canvasHeight":720,"layers":[{"name":"main","widgets":[{"name":"start","type":"BUTTON","buttonText":"Start","fontSize":24,"width":240,"height":56,"widthMode":"FIXED","heightMode":"FIXED"}]}]}"#).unwrap();
+        for h in ["left", "center", "right"] {
+            for v in ["top", "center", "bottom"] {
+                let source = serde_json::to_string(&serde_json::json!({"name":"fixture", "canvasWidth":1280, "canvasHeight":720, "layers":[{"name":"main", "widgets":[scene.widgets[0].definition]}]})).unwrap();
+                let mut changed = scenemax_ide_services::scene::preview(&source).unwrap();
+                let w = &mut changed.widgets[0];
+                w.alignment = h.into();
+                w.definition.text_vertical_alignment = v.into();
+                let parts = draw_widget(
+                    &mut app.world_mut().commands(),
+                    canvas,
+                    canvas,
+                    &scene,
+                    &w,
+                    None,
+                    None,
+                    None,
+                );
+                app.world_mut().flush();
+                settle_layout(&mut app);
+                assert_label_position(app.world(), parts.entity, parts.glyphs[0], h, v);
+                app.world_mut().entity_mut(parts.entity).despawn();
+            }
+        }
+    }
 }

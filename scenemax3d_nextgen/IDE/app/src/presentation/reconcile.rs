@@ -24,6 +24,7 @@ pub(crate) fn reconcile(
     for change in changes.read() {
         match change {
             ViewChange::MaterialsChanged
+            | ViewChange::RevealTreePath(_)
             | ViewChange::CatalogChanged
             | ViewChange::BufferChanged(_)
             | ViewChange::SearchResultsChanged => {}
@@ -55,7 +56,9 @@ pub(crate) fn reconcile(
                 commands.entity(*hosts.editors).despawn_children();
                 commands.entity(*hosts.tabs).despawn_children();
             }
-            ViewChange::ProjectTreeChanged | ViewChange::ProjectIndexInvalidated => {}
+            ViewChange::ProjectTreeChanged
+            | ViewChange::GeneratedScriptsChanged
+            | ViewChange::ProjectIndexInvalidated => {}
             ViewChange::ActiveChanged => selection_changed = true,
         }
     }

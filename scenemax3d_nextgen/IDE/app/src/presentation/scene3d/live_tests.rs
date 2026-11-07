@@ -242,7 +242,6 @@ fn native_code_node_input_and_ctrl_s_regenerate_disk_in_the_same_frame() {
     let path = dir.path().join("scripts/scene.smdesign");
     let source = r#"{"entities":[{"type":"CODE","name":"Logic","codeText":"// original\n"}]}"#;
     std::fs::write(&path, source).unwrap();
-    std::fs::write(path.with_extension("code"), "// stale output").unwrap();
     let id = {
         let mut session = app.world_mut().resource_mut::<Session>();
         let document =
@@ -276,10 +275,14 @@ fn native_code_node_input_and_ctrl_s_regenerate_disk_in_the_same_frame() {
         .document(id)
         .unwrap()
         .revision();
+    let scene_world = app.world_mut().spawn_empty().id();
+    let camera = app.world_mut().spawn(ChildOf(scene_world)).id();
     app.world_mut().insert_resource(SceneState {
         current: Some((id, revision)),
         completed: Some((id, revision)),
         scene: Some(scenemax_ide_services::scene3d::load(dir.path(), source).unwrap()),
+        world: Some(scene_world),
+        camera: Some(camera),
         ..default()
     });
     app.init_resource::<InputFocus>()
@@ -336,6 +339,18 @@ fn native_code_node_input_and_ctrl_s_regenerate_disk_in_the_same_frame() {
     );
     assert!(std::fs::read_to_string(&path).unwrap().contains("updated"));
     assert!(!session.workspace.document(id).unwrap().is_dirty());
+    assert_eq!(app.world().resource::<SceneState>().world, Some(scene_world));
+    assert_eq!(app.world().resource::<SceneState>().camera, Some(camera));
+    assert!(app.world().get_entity(camera).is_ok());
+    assert!(app.world().get_entity(editor).is_ok());
+    assert!(
+        session
+            .workspace
+            .project()
+            .entries()
+            .iter()
+            .any(|entry| entry.path == std::fs::canonicalize(path.with_extension("code")).unwrap())
+    );
     // Explicit Save also repairs stale output without requiring another edit.
     std::fs::write(path.with_extension("code"), "// stale again").unwrap();
     app.world_mut()
@@ -360,6 +375,10 @@ fn native_code_node_input_and_ctrl_s_regenerate_disk_in_the_same_frame() {
             .unwrap()
             .contains("Logger.info \"updated\"")
     );
+    assert_eq!(app.world().resource::<SceneState>().world, Some(scene_world));
+    assert_eq!(app.world().resource::<SceneState>().camera, Some(camera));
+    assert!(app.world().get_entity(camera).is_ok());
+    assert!(app.world().get_entity(editor).is_ok());
 }
 
 #[test]
@@ -508,8 +527,7 @@ fn normalized_numeric_fields_do_not_block_model_properties_or_proportional_scale
         "hidden",
         "multiplayer",
         "staticModel",
-        "dynamicModel",
-        "vehicleModel",
+        "characterControl",
     ] {
         app.world_mut().spawn((
             inspector::Property(key.into(), "false".into()),
@@ -518,7 +536,6 @@ fn normalized_numeric_fields_do_not_block_model_properties_or_proportional_scale
     }
     for (key, value) in [
         ("attachTo", "mount"),
-        ("jointMapping", "source,target"),
         ("modelCollisionShape", "box"),
         ("shadowMode", "cast"),
     ] {
@@ -535,14 +552,12 @@ fn normalized_numeric_fields_do_not_block_model_properties_or_proportional_scale
         "hidden",
         "multiplayer",
         "staticModel",
-        "dynamicModel",
-        "vehicleModel",
+        "characterControl",
     ] {
         assert_eq!(data["entities"][0][key], true);
     }
     for (key, value) in [
         ("attachTo", "mount"),
-        ("jointMapping", "source,target"),
         ("modelCollisionShape", "box"),
         ("shadowMode", "cast"),
     ] {

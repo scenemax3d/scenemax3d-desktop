@@ -60,7 +60,6 @@ pub(crate) fn interactions(
 ) {
     for (interaction, pick) in &picks {
         if *interaction == Interaction::Pressed
-            && pick.pointer.contains("/widgets/")
             && let Ok((_, mut d)) = designers.get_mut(pick.host)
             && d.selected.as_deref() != Some(pick.pointer.as_str())
         {
@@ -187,6 +186,10 @@ pub(crate) fn refresh(
                     .widgets
                     .iter()
                     .any(|w| Some(&w.pointer) == designer.selected.as_ref())
+                    && !scene
+                        .layers
+                        .iter()
+                        .any(|(p, _)| Some(p) == designer.selected.as_ref())
                 {
                     designer.selected = scene.widgets.first().map(|w| w.pointer.clone());
                 }
@@ -259,3 +262,5 @@ mod view;
 use view::build;
 
 pub(crate) mod live;
+
+pub(crate) mod clipboard;

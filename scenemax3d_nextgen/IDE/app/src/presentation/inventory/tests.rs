@@ -160,3 +160,79 @@ fn committing_asset_operation_blocks_restart() {
             .contains("asset operation")
     );
 }
+
+#[test]
+fn model_picker_filters_searches_selects_one_and_requires_explicit_add() {
+    let (mut app, dir, _) = crate::tests::app();
+    std::fs::create_dir_all(dir.path().join("resources/Models")).unwrap();
+    std::fs::write(dir.path().join("resources/Models/models-ext.json"),
+        r#"{"models":[{"name":"picker_alpha","path":"Models/a.glb"},{"name":"picker_beta","path":"Models/b.glb"}]}"#).unwrap();
+    app.world_mut()
+        .resource_mut::<State>()
+        .pick_model(vec!["picker_alpha".into(), "picker_beta".into()]);
+    wait(&mut app);
+    let assets = app.world().resource::<State>().filtered();
+    assert_eq!(assets.len(), 2);
+    assert!(assets.iter().all(|a| a.category == "Models"));
+    app.world_mut()
+        .resource_mut::<State>()
+        .actions
+        .push(Action::AddModel);
+    app.update();
+    assert!(app.world().resource::<State>().picked_model.is_none());
+    for a in &assets {
+        app.world_mut()
+            .resource_mut::<State>()
+            .actions
+            .push(Action::Select(a.id.clone(), true));
+        app.update();
+    }
+    assert_eq!(app.world().resource::<State>().selected.len(), 1);
+    assert!(app.world().resource::<State>().picked_model.is_none());
+    let world = app.world_mut();
+    let search = world
+        .query::<(Entity, &Field)>()
+        .iter(world)
+        .find(|(_, f)| **f == Field::Search)
+        .unwrap()
+        .0;
+    world
+        .get_mut::<EditableText>(search)
+        .unwrap()
+        .editor_mut()
+        .set_text("ALPHA");
+    app.update();
+    assert_eq!(app.world().resource::<State>().filtered().len(), 1);
+    app.world_mut()
+        .resource_mut::<State>()
+        .actions
+        .push(Action::Select(assets[0].id.clone(), false));
+    app.update();
+    app.world_mut()
+        .resource_mut::<State>()
+        .actions
+        .push(Action::AddModel);
+    app.update();
+    assert_eq!(
+        app.world().resource::<State>().picked_model.as_deref(),
+        Some("picker_alpha")
+    );
+    app.update();
+    assert!(!app.world().resource::<State>().open);
+    assert!(
+        !app.world()
+            .resource::<Session>()
+            .workspace
+            .has_dirty_documents()
+    );
+    app.world_mut()
+        .resource_mut::<State>()
+        .pick_model(vec!["picker_alpha".into()]);
+    wait(&mut app);
+    app.world_mut()
+        .resource_mut::<State>()
+        .actions
+        .push(Action::Close);
+    app.update();
+    assert!(app.world().resource::<State>().picked_model.is_none());
+}

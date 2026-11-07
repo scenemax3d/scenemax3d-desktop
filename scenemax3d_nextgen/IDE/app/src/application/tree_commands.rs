@@ -44,6 +44,9 @@ pub(super) fn apply(
     }
     changes.write(ViewChange::ActiveChanged);
     changes.write(ViewChange::ProjectIndexInvalidated);
+    if let Some(path) = outcome.created {
+        changes.write(ViewChange::RevealTreePath(path));
+    }
     Ok(())
 }
 

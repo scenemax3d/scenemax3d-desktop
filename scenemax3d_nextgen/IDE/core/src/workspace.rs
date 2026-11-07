@@ -10,6 +10,7 @@ pub struct EditorWorkspace {
     project: Project,
     documents: BTreeMap<DocumentId, Document>,
     active: Option<DocumentId>,
+    recent: Vec<DocumentId>,
     next_id: u64,
 }
 impl EditorWorkspace {
@@ -19,6 +20,7 @@ impl EditorWorkspace {
             project,
             documents: BTreeMap::new(),
             active: None,
+            recent: Vec::new(),
             next_id: 0,
         }
     }
@@ -29,6 +31,14 @@ impl EditorWorkspace {
     /// Active buffer, if any.
     pub fn active_id(&self) -> Option<DocumentId> {
         self.active
+    }
+    /// Most recently used surviving tab other than the active one.
+    pub fn previous_id(&self) -> Option<DocumentId> {
+        self.recent
+            .iter()
+            .rev()
+            .copied()
+            .find(|id| Some(*id) != self.active)
     }
     /// Require an active buffer for an editing command.
     pub fn require_active(&self) -> Result<DocumentId, EditorError> {
@@ -75,12 +85,16 @@ impl EditorWorkspace {
         let id = DocumentId(self.next_id);
         self.next_id = next;
         self.documents.insert(id, document);
-        self.active = Some(id);
+        self.select(id)?;
         Ok(id)
     }
     /// Select only an existing buffer.
     pub fn select(&mut self, id: DocumentId) -> Result<(), EditorError> {
         self.document(id)?;
+        if self.active != Some(id) {
+            self.recent.retain(|previous| *previous != id);
+            self.recent.push(id);
+        }
         self.active = Some(id);
         Ok(())
     }
@@ -95,8 +109,12 @@ impl EditorWorkspace {
     pub fn discard_document(&mut self, id: DocumentId) -> Result<(), EditorError> {
         self.document(id)?;
         self.documents.remove(&id);
+        self.recent.retain(|previous| *previous != id);
         if self.active == Some(id) {
-            self.active = self.documents.keys().next_back().copied();
+            self.active = None;
+            if let Some(next) = self.documents.keys().next_back().copied() {
+                self.select(next)?;
+            }
         }
         Ok(())
     }
@@ -112,6 +130,7 @@ impl EditorWorkspace {
         self.project = project;
         self.documents.clear();
         self.active = None;
+        self.recent.clear();
         Ok(())
     }
 }
@@ -123,6 +142,29 @@ mod tests {
     }
     fn document() -> Document {
         Document::from_bytes("project/test.code".into(), b"source".to_vec()).unwrap()
+    }
+    #[test]
+    fn recent_tabs_toggle_and_forget_closed_documents() {
+        let mut workspace = EditorWorkspace::new(project());
+        let first = workspace.open_document(document()).unwrap();
+        assert_eq!(workspace.previous_id(), None);
+        let second = workspace
+            .open_document(Document::from_bytes("project/second.code".into(), vec![]).unwrap())
+            .unwrap();
+        let third = workspace
+            .open_document(Document::from_bytes("project/third.code".into(), vec![]).unwrap())
+            .unwrap();
+        workspace.select(first).unwrap();
+        workspace.select(first).unwrap();
+        assert_eq!(workspace.previous_id(), Some(third));
+        workspace.select(workspace.previous_id().unwrap()).unwrap();
+        assert_eq!(workspace.previous_id(), Some(first));
+        workspace.select(workspace.previous_id().unwrap()).unwrap();
+        assert_eq!(workspace.active_id(), Some(first));
+        workspace.close_document(third).unwrap();
+        assert_eq!(workspace.previous_id(), Some(second));
+        workspace.switch_project(project()).unwrap();
+        assert_eq!(workspace.previous_id(), None);
     }
     #[test]
     fn duplicate_open_preserves_dirty_buffer_and_identity() {

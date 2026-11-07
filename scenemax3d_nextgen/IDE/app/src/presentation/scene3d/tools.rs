@@ -7,7 +7,6 @@ use serde_json::{Value, json};
 #[derive(Component, Clone)]
 pub(crate) enum Action {
     Add(&'static str),
-    Model(String),
     Delete,
     Copy,
     Paste,
@@ -277,6 +276,8 @@ pub(crate) struct Controls<'w, 's> {
     drawing: ResMut<'w, super::path::Drawing>,
     nav: ResMut<'w, super::navigation::Navigation>,
     cameras: Query<'w, 's, &'static Orbit>,
+    hierarchy: ResMut<'w, super::hierarchy::State>,
+    inventory: ResMut<'w, crate::presentation::inventory::State>,
     pickers: Query<'w, 's, Entity, With<Picker>>,
     lights: Query<'w, 's, &'static mut Visibility, With<super::render::DesignLight>>,
 }
@@ -295,6 +296,8 @@ pub(crate) fn update(
         cameras,
         pickers,
         mut lights,
+        mut hierarchy,
+        mut inventory,
     } = controls;
     for (control, interaction, action) in &actions {
         if *interaction != Interaction::Pressed {
@@ -345,62 +348,12 @@ pub(crate) fn update(
             for picker in &pickers {
                 commands.entity(picker).despawn();
             }
-            let popup = commands
-                .spawn((
-                    Picker,
-                    Node {
-                        position_type: PositionType::Absolute,
-                        top: px(32.),
-                        left: px(0.),
-                        width: px(240.),
-                        max_height: px(360.),
-                        overflow: Overflow::scroll_y(),
-                        flex_direction: FlexDirection::Column,
-                        ..default()
-                    },
-                    BackgroundColor(PANEL),
-                    GlobalZIndex(90),
-                    ChildOf(control),
-                ))
-                .id();
-            commands.entity(popup).observe(
-                |mut event: On<PointerScroll>,
-                 mut q: Query<(&mut ScrollPosition, &ComputedNode), With<Picker>>| {
-                    event.propagate(false);
-                    if let Ok((mut scroll, node)) = q.get_mut(event.entity) {
-                        let max = (node.content_size().y - node.size().y).max(0.)
-                            * node.inverse_scale_factor();
-                        scroll.y = (scroll.y - event.y * 30.).clamp(0., max);
-                    }
-                },
-            );
-            let cancel = button(
-                &mut commands,
-                popup,
-                "Cancel",
-                Name::new("Cancel model selection"),
-            );
-            commands
-                .entity(cancel)
-                .observe(move |_: On<PointerClick>, mut commands: Commands| {
-                    commands.entity(popup).try_despawn();
-                });
-            for name in scene
-                .catalog
-                .get("resourcePath")
-                .into_iter()
-                .flatten()
-                .filter(|n| !n.is_empty())
-            {
-                button(&mut commands, popup, name, Action::Model(name.clone()));
-            }
-            if scene
-                .catalog
-                .get("resourcePath")
-                .is_none_or(|names| names.iter().all(String::is_empty))
-            {
-                commands.spawn((label("No project models available", 12.), ChildOf(popup)));
-            }
+            let position = state
+                .camera
+                .and_then(|c| cameras.get(c).ok())
+                .map(|o| o.target)
+                .unwrap_or(Vec3::ZERO);
+            hierarchy.pick_toolbar_model(&state, position, &mut inventory);
             continue;
         }
         let result = (|| -> Result<Option<(String, Option<String>)>, String> {
@@ -430,11 +383,6 @@ pub(crate) fn update(
                     structure::template("CINEMATIC_TRACK")?
                 }
                 Action::Add(kind) => structure::template(kind)?,
-                Action::Model(name) => {
-                    let mut e = structure::template("MODEL")?;
-                    e["resourcePath"] = json!(name);
-                    e
-                }
                 Action::Paste => tools.clipboard.clone().ok_or("Copy a scene object first")?,
                 _ => return Ok(None),
             };

@@ -558,6 +558,7 @@ fn real_zig_server_two_clients_late_join_state_events_and_scene_isolation() {
         Outgoing::ServerEvent {
             name: "tick".into(),
             interval_ms: 100,
+            leader_only: false,
         },
     )
     .unwrap();
@@ -891,3 +892,127 @@ fn start_server() -> (tempfile::TempDir, Server, std::net::SocketAddr) {
 
 #[path = "support/loss.rs"]
 mod loss;
+
+#[test]
+#[ignore = "set SCENEMAX_TEST_MP_SERVER to the repository Zig server executable"]
+fn real_zig_leader_timers_route_one_client_and_fail_over() {
+    let (_temp, _server, address) = start_server();
+    let mut outside_login = login();
+    outside_login.scene = "other_scene".into();
+    let mut outside = Client::connect(address, outside_login).unwrap();
+    until(&mut outside, |e| matches!(e, Incoming::Ready));
+    let mut a = Client::connect(address, login()).unwrap();
+    until(&mut a, |e| matches!(e, Incoming::Ready));
+    let mut b = Client::connect(address, login()).unwrap();
+    until(&mut b, |e| matches!(e, Incoming::Ready));
+    // Registration by a later client must still choose the room's earliest client.
+    for client in [&mut b, &mut a] {
+        for (name, leader_only) in [("single_tick", true), ("all_tick", false)] {
+            client
+                .send(
+                    None,
+                    Outgoing::ServerEvent {
+                        name: name.into(),
+                        interval_ms: 100,
+                        leader_only,
+                    },
+                )
+                .unwrap();
+        }
+        client.poll().unwrap();
+    }
+    fn counts(clients: &mut [&mut Client]) -> Vec<[usize; 2]> {
+        for client in clients.iter_mut() {
+            client.poll().unwrap();
+        }
+        let mut counts = vec![[0; 2]; clients.len()];
+        let deadline = Instant::now() + Duration::from_millis(550);
+        while Instant::now() < deadline {
+            for (i, client) in clients.iter_mut().enumerate() {
+                client.send(None, Outgoing::Heartbeat).unwrap();
+                for event in client.poll().unwrap() {
+                    if let Incoming::Event { name, .. } = event.message {
+                        match name.as_str() {
+                            "single_tick" => counts[i][0] += 1,
+                            "all_tick" => counts[i][1] += 1,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        counts
+    }
+    let initial = counts(&mut [&mut a, &mut b, &mut outside]);
+    assert!(initial[0][0] > 0 && initial[0][1] > 0, "{initial:?}");
+    assert_eq!(initial[1][0], 0, "{initial:?}");
+    assert!(initial[1][1] > 0, "{initial:?}");
+    assert_eq!(initial[2], [0, 0]);
+    a.join(Outgoing::JoinScene("away".into())).unwrap();
+    until(&mut a, |e| matches!(e, Incoming::Ready));
+    let moved = counts(&mut [&mut a, &mut b, &mut outside]);
+    assert_eq!(moved[0], [0, 0]);
+    assert!(moved[1][0] > 0 && moved[1][1] > 0, "{moved:?}");
+    assert_eq!(moved[2], [0, 0]);
+    a.join(Outgoing::JoinScene("main".into())).unwrap();
+    until(&mut a, |e| matches!(e, Incoming::Ready));
+    let returned = counts(&mut [&mut a, &mut b]);
+    assert!(returned[0][0] > 0, "{returned:?}");
+    assert_eq!(returned[1][0], 0, "{returned:?}");
+    a.close();
+    let disconnected = counts(&mut [&mut b, &mut outside]);
+    assert!(disconnected[0][0] > 0, "{disconnected:?}");
+    assert_eq!(disconnected[1], [0, 0]);
+    b.join(Outgoing::JoinSession {
+        id: 2000,
+        name: "other_room".into(),
+    })
+    .unwrap();
+    until(&mut b, |e| matches!(e, Incoming::Ready));
+    let another_room = counts(&mut [&mut b, &mut outside]);
+    assert_eq!(another_room, vec![[0, 0], [0, 0]]);
+}
+
+#[test]
+#[ignore = "set SCENEMAX_TEST_MP_SERVER to the repository Zig server executable"]
+fn real_zig_leader_timer_takes_over_after_silent_client_timeout() {
+    let (_temp, _server, address) = start_server();
+    let mut silent = Client::connect(address, login()).unwrap();
+    until(&mut silent, |e| matches!(e, Incoming::Ready));
+    let mut successor = Client::connect(address, login()).unwrap();
+    until(&mut successor, |e| matches!(e, Incoming::Ready));
+    successor
+        .send(
+            None,
+            Outgoing::ServerEvent {
+                name: "timeout_tick".into(),
+                interval_ms: 100,
+                leader_only: true,
+            },
+        )
+        .unwrap();
+    let start = Instant::now();
+    loop {
+        successor.send(None, Outgoing::Heartbeat).unwrap();
+        if successor
+            .poll()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(&e.message, Incoming::Event { name, .. } if name == "timeout_tick"))
+        {
+            assert!(
+                start.elapsed() >= Duration::from_secs(14),
+                "successor received a leader tick before timeout"
+            );
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "leader did not fail over after inactivity timeout"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    // Keep the original connection alive as an object, but deliberately never poll it.
+    silent.close();
+}

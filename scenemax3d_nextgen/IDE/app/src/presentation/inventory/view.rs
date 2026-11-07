@@ -2,6 +2,8 @@ use super::*;
 use bevy::input_focus::tab_navigation::TabGroup;
 use scenemax_ide_ui::{label, property, theme::*};
 #[derive(Component)]
+pub(super) struct AnimationStatus;
+#[derive(Component)]
 pub(super) struct Thumb {
     pub path: PathBuf,
 }
@@ -76,7 +78,16 @@ pub(super) fn shell(c: &mut Commands, s: &mut State, session: &Session) -> Entit
     );
     c.entity(panel).insert(BackgroundColor(PANEL));
     let top = row(c, panel);
-    text(c, top, "PROJECT INVENTORY", 19.);
+    text(
+        c,
+        top,
+        if s.model_names.is_some() {
+            "ADD 3D MODEL"
+        } else {
+            "PROJECT INVENTORY"
+        },
+        19.,
+    );
     let spacer = node(
         c,
         top,
@@ -87,7 +98,9 @@ pub(super) fn shell(c: &mut Commands, s: &mut State, session: &Session) -> Entit
     );
     let _ = spacer;
     control(c, top, "Refresh", Action::Refresh);
-    control(c, top, "Close", Action::Close);
+    if s.model_names.is_none() {
+        control(c, top, "Close", Action::Close);
+    }
     text(
         c,
         panel,
@@ -113,7 +126,9 @@ pub(super) fn shell(c: &mut Commands, s: &mut State, session: &Session) -> Entit
         ..default()
     });
     control(c, search, "Sort: name / size", Action::Sort);
-    control(c, search, "Select page", Action::SelectVisible);
+    if s.model_names.is_none() {
+        control(c, search, "Select page", Action::SelectVisible);
+    }
     control(c, search, "Clear selection", Action::Clear);
     let body = node(
         c,
@@ -125,18 +140,21 @@ pub(super) fn shell(c: &mut Commands, s: &mut State, session: &Session) -> Entit
             ..default()
         },
     );
-    let side = node(
-        c,
-        body,
-        Node {
-            width: px(165.),
-            flex_shrink: 0.,
-            flex_direction: FlexDirection::Column,
-            ..default()
-        },
-    );
-    c.entity(side).insert(BackgroundColor(BG));
-    s.sidebar = Some(property::scroll_column(c, side));
+    s.sidebar = None;
+    if s.model_names.is_none() {
+        let side = node(
+            c,
+            body,
+            Node {
+                width: px(165.),
+                flex_shrink: 0.,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+        );
+        c.entity(side).insert(BackgroundColor(BG));
+        s.sidebar = Some(property::scroll_column(c, side));
+    }
     let center = node(
         c,
         body,
@@ -151,7 +169,16 @@ pub(super) fn shell(c: &mut Commands, s: &mut State, session: &Session) -> Entit
     let pager = row(c, center);
     control(c, pager, "‹ Previous", Action::Page(-1));
     control(c, pager, "Next ›", Action::Page(1));
-    text(c, pager, "Ctrl+click selects multiple assets", 11.);
+    text(
+        c,
+        pager,
+        if s.model_names.is_some() {
+            "Select a model to preview"
+        } else {
+            "Ctrl+click selects multiple assets"
+        },
+        11.,
+    );
     let details = node(
         c,
         body,
@@ -166,41 +193,47 @@ pub(super) fn shell(c: &mut Commands, s: &mut State, session: &Session) -> Entit
     );
     c.entity(details).insert(BackgroundColor(BG));
     s.details = Some(property::scroll_column(c, details));
-    let transfer = row(c, panel);
-    text(c, transfer, "Destination", 12.);
-    let target = node(
-        c,
-        transfer,
-        Node {
-            width: px(330.),
-            ..default()
-        },
-    );
-    let options = session
-        .catalog
-        .projects
-        .iter()
-        .filter(|p| p.root != s.root)
-        .map(|p| (p.root.to_string_lossy().into_owned(), p.name.clone()))
-        .collect::<Vec<_>>();
-    if options.is_empty() {
-        property::input(c, target, Field::Target, &s.target);
+    if s.model_names.is_some() {
+        let footer = row(c, panel);
+        control(c, footer, "Add", Action::AddModel);
+        control(c, footer, "Cancel", Action::Close);
     } else {
-        property::dropdown_labeled(c, target, Field::Target, &s.target, &options);
+        let transfer = row(c, panel);
+        text(c, transfer, "Destination", 12.);
+        let target = node(
+            c,
+            transfer,
+            Node {
+                width: px(330.),
+                ..default()
+            },
+        );
+        let options = session
+            .catalog
+            .projects
+            .iter()
+            .filter(|p| p.root != s.root)
+            .map(|p| (p.root.to_string_lossy().into_owned(), p.name.clone()))
+            .collect::<Vec<_>>();
+        if options.is_empty() {
+            property::input(c, target, Field::Target, &s.target);
+        } else {
+            property::dropdown_labeled(c, target, Field::Target, &s.target, &options);
+        }
+        control(
+            c,
+            transfer,
+            "Copy to project…",
+            Action::Review(Operation::Copy),
+        );
+        control(
+            c,
+            transfer,
+            "Move to project…",
+            Action::Review(Operation::Move),
+        );
+        control(c, transfer, "Remove…", Action::Review(Operation::Archive));
     }
-    control(
-        c,
-        transfer,
-        "Copy to project…",
-        Action::Review(Operation::Copy),
-    );
-    control(
-        c,
-        transfer,
-        "Move to project…",
-        Action::Review(Operation::Move),
-    );
-    control(c, transfer, "Remove…", Action::Review(Operation::Archive));
     let bar = node(
         c,
         panel,
@@ -384,7 +417,11 @@ pub(super) fn details(c: &mut Commands, s: &mut State) {
         text(
             c,
             host,
-            "Browse registrations, inspect metadata, and transfer complete asset bundles between projects.",
+            if s.model_names.is_some() {
+                "Search for a model, inspect it in the preview, then choose Add."
+            } else {
+                "Browse registrations, inspect metadata, and transfer complete asset bundles between projects."
+            },
             13.,
         );
         for warning in s.inventory.warnings.iter().take(30) {
@@ -399,11 +436,13 @@ pub(super) fn details(c: &mut Commands, s: &mut State) {
         format!("{} / {} • {}", a.category, a.origin, a.status),
         12.,
     );
-    let toolbar = row(c, host);
-    control(c, toolbar, "Open", Action::Inspect);
-    control(c, toolbar, "Folder", Action::Folder);
-    control(c, toolbar, "Copy name", Action::CopyName);
-    control(c, toolbar, "Metadata / source", Action::Source);
+    if s.model_names.is_none() {
+        let toolbar = row(c, host);
+        control(c, toolbar, "Open", Action::Inspect);
+        control(c, toolbar, "Folder", Action::Folder);
+        control(c, toolbar, "Copy name", Action::CopyName);
+        control(c, toolbar, "Metadata / source", Action::Source);
+    }
     let file = a.file.as_ref();
     if file.is_some_and(|p| {
         p.extension()
@@ -427,6 +466,8 @@ pub(super) fn details(c: &mut Commands, s: &mut State) {
         control(c, tools, "Turntable", Action::Turntable);
         control(c, tools, "Play / pause", Action::Animate);
         control(c, tools, "Next clip", Action::Clip);
+        let status = text(c, host, "Loading animations…", 12.);
+        c.entity(status).insert(AnimationStatus);
         text(c, host, "Right-drag to orbit • Wheel to zoom", 11.);
     } else if let Some(path) = file
         && image(path)
@@ -455,6 +496,9 @@ pub(super) fn details(c: &mut Commands, s: &mut State) {
             "Open plays this video in your default media player.",
             12.,
         );
+    }
+    if s.model_names.is_some() {
+        return;
     }
     if a.owned() && a.index.is_some() {
         let tools = row(c, host);

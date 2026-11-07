@@ -183,17 +183,16 @@ pub(super) fn build(commands: &mut Commands, parent: Entity, scene: &Scene3d, in
             );
             for (key, title) in [
                 ("staticModel", "Static"),
-                ("dynamicModel", "Dynamic"),
-                ("vehicleModel", "Vehicle"),
+                ("characterControl", "Character Control"),
             ] {
                 toggle(commands, parent, title, key, p);
             }
             field(
                 commands,
                 parent,
-                "Joint mapping",
-                "jointMapping",
-                p["jointMapping"].as_str().unwrap_or(""),
+                "Gravity",
+                "number:characterGravity",
+                &p["characterGravity"].as_f64().unwrap_or(60.).to_string(),
             );
         } else {
             toggle(commands, parent, "Static", "staticEntity", p);

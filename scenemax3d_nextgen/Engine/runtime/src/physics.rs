@@ -42,11 +42,13 @@ pub(super) fn spawn_scenemax_collider_decl(
         transform,
         Visibility::Hidden,
         body,
-        avian_collider(shape, options, &transform),
         hitbox_collision_layers(),
         Sensor,
         CollisionEventsEnabled,
     ));
+    if let Some(collider) = avian_collider(shape, options, &transform) {
+        entity.insert(collider);
+    }
     if let Some(attach) = attach {
         entity.insert(SceneMaxVirtualCollider {
             owner: attach_owner(&attach.subject),
@@ -937,18 +939,26 @@ pub(super) fn insert_physics_components(
     let Some(shape) = physics_collision_shape(name, resource, options, body_kind) else {
         return;
     };
+    if shape == SceneMaxCollisionShape::Mesh {
+        insert_pending_static_mesh_collider(commands, entity, options.hidden);
+        return;
+    }
     let body = match body_kind {
         SceneMaxBodyKind::Static => AvianRigidBody::Static,
         SceneMaxBodyKind::Kinematic => AvianRigidBody::Kinematic,
         SceneMaxBodyKind::Dynamic => AvianRigidBody::Dynamic,
     };
-    let collider = avian_collider(shape, options, transform);
+    let Some(collider) = avian_collider(shape, options, transform) else {
+        return;
+    };
     let collision_layers = solid_collision_layers(body_kind);
+    let hidden = options.hidden && body_kind != SceneMaxBodyKind::Static;
     let mut entity_commands = commands.entity(entity);
     entity_commands.insert((
         body,
-        collision_layers_for_visibility(options.hidden, collision_layers),
+        collision_layers_for_visibility(hidden, collision_layers),
         SceneMaxCollisionFollowsVisibility {
+            static_geometry: body_kind == SceneMaxBodyKind::Static,
             collision_layers,
             collider: Some(collider.clone()),
         },
@@ -957,7 +967,7 @@ pub(super) fn insert_physics_components(
         },
         CollisionEventsEnabled,
     ));
-    if !options.hidden {
+    if !hidden {
         entity_commands.insert(collider);
     }
     tracing::debug!(
@@ -980,6 +990,7 @@ pub(super) struct SceneMaxPendingModelBoundsCollider {
 
 #[derive(Component, Clone)]
 pub(super) struct SceneMaxCollisionFollowsVisibility {
+    static_geometry: bool,
     collision_layers: CollisionLayers,
     collider: Option<AvianCollider>,
 }
@@ -996,10 +1007,11 @@ pub(super) struct SceneMaxRuntimeVisibility {
 // fill a concave mesh interior and force characters through neighboring surfaces.
 // Authored collision shapes and primitive dimensions still take precedence.
 pub(super) fn should_use_static_mesh_collider(options: &EntityOptions) -> bool {
-    matches!(options.body_kind, Some(SceneMaxBodyKind::Static))
-        && options.collision_shape.is_none()
-        && options.size.is_none()
-        && options.radius.is_none()
+    options.collision_shape == Some(SceneMaxCollisionShape::Mesh)
+        || (matches!(options.body_kind, Some(SceneMaxBodyKind::Static))
+            && options.collision_shape.is_none()
+            && options.size.is_none()
+            && options.radius.is_none())
 }
 
 pub(super) fn should_fit_model_bounds_collider(
@@ -1037,8 +1049,12 @@ pub(super) fn insert_pending_model_bounds_collider(
     let collision_layers = solid_collision_layers(body_kind);
     commands.entity(entity).insert((
         body,
-        collision_layers_for_visibility(hidden, collision_layers),
+        collision_layers_for_visibility(
+            hidden && body_kind != SceneMaxBodyKind::Static,
+            collision_layers,
+        ),
         SceneMaxCollisionFollowsVisibility {
+            static_geometry: body_kind == SceneMaxBodyKind::Static,
             collision_layers,
             collider: None,
         },
@@ -1058,8 +1074,9 @@ pub(super) fn insert_pending_static_mesh_collider(
     let collision_layers = solid_collision_layers(SceneMaxBodyKind::Static);
     commands.entity(entity).insert((
         AvianRigidBody::Static,
-        collision_layers_for_visibility(hidden, collision_layers),
+        collision_layers,
         SceneMaxCollisionFollowsVisibility {
+            static_geometry: true,
             collision_layers,
             collider: None,
         },
@@ -1083,7 +1100,7 @@ pub(super) fn sync_collision_layers_for_visibility(
     >,
 ) {
     for (entity, visibility, state, collider, collision_layers) in &mut colliders {
-        let hidden = matches!(visibility, Visibility::Hidden);
+        let hidden = !state.static_geometry && matches!(visibility, Visibility::Hidden);
         let target = collision_layers_for_visibility(hidden, state.collision_layers);
         if collision_layers.copied() != Some(target) {
             commands.entity(entity).insert(target);
@@ -1203,12 +1220,16 @@ pub(super) fn sync_gltf_descendant_visibility(
 
 pub(super) fn sync_collider_hidden_state_for_visibility(
     mut collider_bounds: ResMut<SceneMaxColliderBounds>,
-    colliders: Query<(&SceneMaxEntity, &Visibility), With<SceneMaxCollisionFollowsVisibility>>,
+    colliders: Query<(
+        &SceneMaxEntity,
+        &Visibility,
+        &SceneMaxCollisionFollowsVisibility,
+    )>,
 ) {
     let mut hidden_by_reference = HashMap::new();
-    for (scene_entity, visibility) in &colliders {
+    for (scene_entity, visibility, state) in &colliders {
         let normalized = normalize_collision_reference(&scene_entity.name).to_owned();
-        let hidden = matches!(visibility, Visibility::Hidden);
+        let hidden = !state.static_geometry && matches!(visibility, Visibility::Hidden);
         hidden_by_reference
             .entry(normalized)
             .and_modify(|reference_hidden| *reference_hidden |= hidden)
@@ -1337,9 +1358,11 @@ pub(super) fn avian_collider(
     shape: SceneMaxCollisionShape,
     options: &EntityOptions,
     transform: &Transform,
-) -> AvianCollider {
+) -> Option<AvianCollider> {
     let dimensions = collider_dimensions(options, transform);
-    match shape {
+    Some(match shape {
+        // Mesh colliders must be baked from loaded geometry, never approximated by a box.
+        SceneMaxCollisionShape::Mesh => return None,
         SceneMaxCollisionShape::None => AvianCollider::cuboid(0.1, 0.1, 0.1),
         SceneMaxCollisionShape::Box | SceneMaxCollisionShape::Boxes => {
             AvianCollider::cuboid(dimensions.x, dimensions.y, dimensions.z)
@@ -1350,7 +1373,7 @@ pub(super) fn avian_collider(
             let height = dimensions.y.max(radius * 2.0);
             AvianCollider::capsule(radius, height)
         }
-    }
+    })
 }
 
 pub(super) fn collider_dimensions(options: &EntityOptions, transform: &Transform) -> Vec3 {
@@ -1379,7 +1402,7 @@ pub(super) fn bake_pending_static_mesh_colliders(
     children: Query<&Children>,
     mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
 ) {
-    for (root, root_global_transform, visibility, visibility_collision) in &roots {
+    for (root, root_global_transform, _visibility, visibility_collision) in &roots {
         match build_static_mesh_collider(
             root,
             root_global_transform,
@@ -1392,11 +1415,12 @@ pub(super) fn bake_pending_static_mesh_colliders(
                 let collision_layers = visibility_collision
                     .map(|state| state.collision_layers)
                     .unwrap_or_else(|| solid_collision_layers(SceneMaxBodyKind::Static));
-                let hidden = matches!(visibility, Visibility::Hidden);
+                let hidden = false;
                 let mut entity_commands = commands.entity(root);
                 entity_commands.insert((
                     collision_layers_for_visibility(hidden, collision_layers),
                     SceneMaxCollisionFollowsVisibility {
+                        static_geometry: true,
                         collision_layers,
                         collider: Some(collider.clone()),
                     },
@@ -1472,11 +1496,13 @@ pub(super) fn bake_pending_model_bounds_colliders(
                 let collision_layers = visibility_collision
                     .map(|state| state.collision_layers)
                     .unwrap_or_else(|| solid_collision_layers(pending_collider.body_kind));
-                let hidden = matches!(visibility, Visibility::Hidden);
+                let hidden = pending_collider.body_kind != SceneMaxBodyKind::Static
+                    && matches!(visibility, Visibility::Hidden);
                 let mut entity_commands = commands.entity(root);
                 entity_commands.insert((
                     collision_layers_for_visibility(hidden, collision_layers),
                     SceneMaxCollisionFollowsVisibility {
+                        static_geometry: pending_collider.body_kind == SceneMaxBodyKind::Static,
                         collision_layers,
                         collider: Some(collider.clone()),
                     },
@@ -1599,7 +1625,7 @@ fn build_static_mesh_collider(
     let mut stats = StaticMeshColliderStats::default();
     let root_from_world = root_global_transform.affine().inverse();
 
-    for descendant in children.iter_descendants(root) {
+    for descendant in std::iter::once(root).chain(children.iter_descendants(root)) {
         let Ok((mesh_handle, mesh_global_transform)) = mesh_entities.get(descendant) else {
             continue;
         };
@@ -2031,7 +2057,10 @@ fn collider_bound_shape_for_shape(
         SceneMaxCollisionShape::Sphere => ColliderBoundShape::Sphere {
             radius: dimensions.max_element() * 0.5,
         },
-        SceneMaxCollisionShape::Box | SceneMaxCollisionShape::Boxes => ColliderBoundShape::Box {
+        // Only a broad-phase bound; the physical Mesh collider uses actual triangles.
+        SceneMaxCollisionShape::Mesh
+        | SceneMaxCollisionShape::Box
+        | SceneMaxCollisionShape::Boxes => ColliderBoundShape::Box {
             half_extents: dimensions * 0.5,
         },
         SceneMaxCollisionShape::Capsule => {
@@ -2083,7 +2112,11 @@ pub(super) fn register_visual_collider_bounds(
         .radius_by_name
         .insert(name.to_owned(), radius);
     collider_bounds.shape_by_name.insert(name.to_owned(), shape);
-    set_collider_hidden(collider_bounds, name, options.hidden);
+    set_collider_hidden(
+        collider_bounds,
+        name,
+        options.hidden && physics_body_kind(options) != Some(SceneMaxBodyKind::Static),
+    );
 }
 
 fn model_bounds_box_world_radius(bounds: ModelSubtreeBounds, transform: Transform) -> f32 {
@@ -2104,7 +2137,11 @@ pub(super) fn register_collider_bounds(
         .radius_by_name
         .insert(name.to_owned(), radius);
     collider_bounds.shape_by_name.insert(name.to_owned(), shape);
-    set_collider_hidden(collider_bounds, name, options.hidden);
+    set_collider_hidden(
+        collider_bounds,
+        name,
+        options.hidden && physics_body_kind(options) != Some(SceneMaxBodyKind::Static),
+    );
 }
 
 pub(super) fn register_collider_owner(
@@ -2704,6 +2741,73 @@ fn character_dimensions_with_visual_offset(
     dimensions
 }
 
+/// Loaded geometry in model-local coordinates, captured before locomotion.
+/// Keep it stable through animation so the controller does not bob with each pose.
+#[derive(Component)]
+pub(super) struct CharacterModelBounds(ModelSubtreeBounds);
+
+pub(super) fn prepare_character_model_bounds(
+    mut commands: Commands,
+    meshes: Option<Res<Assets<Mesh>>>,
+    spawner: Option<Res<bevy::world_serialization::WorldInstanceSpawner>>,
+    roots: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &bevy::world_serialization::WorldInstance,
+            Option<&SceneMaxGltfVisualOffset>,
+        ),
+        (
+            With<SceneMaxGltf>,
+            With<PendingCharacterMode>,
+            Without<CharacterModelBounds>,
+        ),
+    >,
+    children: Query<&Children>,
+    mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
+) {
+    let (Some(meshes), Some(spawner)) = (meshes, spawner) else {
+        return;
+    };
+    for (root, transform, instance, offset) in &roots {
+        if !spawner.instance_is_ready(**instance) || offset.is_some_and(|o| !o.applied) {
+            continue;
+        }
+        // Wait for every mesh, rather than fitting a partially loaded model.
+        if children.iter_descendants(root).any(|e| {
+            mesh_entities
+                .get(e)
+                .is_ok_and(|(mesh, _)| meshes.get(&mesh.0).is_none())
+        }) {
+            continue;
+        }
+        if let Some(bounds) =
+            build_model_subtree_bounds(root, transform, &children, &mesh_entities, &meshes)
+        {
+            commands.entity(root).insert(CharacterModelBounds(bounds));
+        }
+    }
+}
+
+fn character_dimensions_from_model_bounds(
+    transform: &Transform,
+    bounds: ModelSubtreeBounds,
+) -> SceneMaxCharacterDimensions {
+    let min = (bounds.min * transform.scale).min(bounds.max * transform.scale);
+    let max = (bounds.min * transform.scale).max(bounds.max * transform.scale);
+    let size = (max - min).max(Vec3::splat(0.001));
+    let radius = (size.x.min(size.z) * 0.5).min(size.y * 0.25).max(0.001);
+    let height = (size.y - 2. * radius).max(0.001);
+    SceneMaxCharacterDimensions {
+        capsule_radius: radius,
+        capsule_height: height,
+        capsule_center_y: min.y + character_capsule_half_height(radius, height),
+        float_height: DEFAULT_CHARACTER_FLOAT_HEIGHT - min.y,
+        foot_contact_offset: DEFAULT_CHARACTER_FOOT_CONTACT_OFFSET,
+        visual_drop: size.y * 0.5,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct SceneMaxCharacterLocalColliderShape {
     pub(super) capsule_radius: f32,
@@ -2728,8 +2832,10 @@ pub(super) fn character_local_collider_shape_for_transform(
         capsule_radius: dimensions.capsule_radius / horizontal_scale,
         capsule_height: dimensions.capsule_height / vertical_scale,
         capsule_center_y: dimensions.capsule_center_y / vertical_scale,
-        sensor_radius: dimensions.capsule_radius * 0.98 / horizontal_scale,
-        sensor_height: DEFAULT_CHARACTER_SENSOR_HEIGHT / vertical_scale,
+        // Tnua passes this shape directly to Avian's world-space shape cast;
+        // unlike the body collider, it does not inherit the model's scale.
+        sensor_radius: dimensions.capsule_radius * 0.98,
+        sensor_height: DEFAULT_CHARACTER_SENSOR_HEIGHT,
     }
 }
 
@@ -2789,6 +2895,7 @@ pub(super) fn insert_tnua_character_controller(
         capsule_collider.clone(),
         character_collision_layers(),
         SceneMaxCollisionFollowsVisibility {
+            static_geometry: false,
             collision_layers: character_collision_layers(),
             collider: Some(capsule_collider),
         },
@@ -2852,6 +2959,8 @@ pub(super) fn apply_pending_character_modes(
             &mut Transform,
             &PendingCharacterMode,
             Option<&SceneMaxGltfVisualOffset>,
+            Option<&SceneMaxGltf>,
+            Option<&CharacterModelBounds>,
         )>,
     )>,
 ) {
@@ -2887,11 +2996,17 @@ pub(super) fn apply_pending_character_modes(
     support_surfaces.extend(explicit_surfaces.iter().copied());
     support_surfaces.extend(existing_support_surfaces.iter().copied());
     let mut support_samples = Vec::new();
-    for (_, transform, pending_mode, visual_offset) in scene_queries.p2().iter_mut() {
+    for (_, transform, pending_mode, visual_offset, gltf, bounds) in scene_queries.p2().iter_mut() {
+        if gltf.is_some() && bounds.is_none() {
+            continue;
+        }
         support_samples.push((
             pending_mode.0.target.clone(),
             *transform,
-            character_dimensions_with_visual_offset(&transform, visual_offset),
+            bounds.map_or_else(
+                || character_dimensions_with_visual_offset(&transform, visual_offset),
+                |bounds| character_dimensions_from_model_bounds(&transform, bounds.0),
+            ),
         ));
     }
     if support_samples.is_empty() {
@@ -2915,9 +3030,17 @@ pub(super) fn apply_pending_character_modes(
         spawn_character_stage_support(&mut commands, &fallback_samples);
     }
 
-    for (entity, mut transform, pending_mode, visual_offset) in scene_queries.p2().iter_mut() {
+    for (entity, mut transform, pending_mode, visual_offset, gltf, bounds) in
+        scene_queries.p2().iter_mut()
+    {
+        if gltf.is_some() && bounds.is_none() {
+            continue;
+        }
         let before_y = transform.translation.y;
-        let dimensions = character_dimensions_with_visual_offset(&transform, visual_offset);
+        let dimensions = bounds.map_or_else(
+            || character_dimensions_with_visual_offset(&transform, visual_offset),
+            |bounds| character_dimensions_from_model_bounds(&transform, bounds.0),
+        );
         let snapped = snap_character_transform_to_floor_with_dimensions(
             &mut transform,
             &support_surfaces,
@@ -3921,7 +4044,111 @@ pub(super) fn coordinate_value_from_name(
         "x" => Some(transform.translation.x),
         "y" => Some(transform.translation.y),
         "z" => Some(transform.translation.z),
+        "rx" | "ry" | "rz" => {
+            let rotation = transform.rotation;
+            if !rotation.is_finite() || rotation.length_squared() < f32::EPSILON {
+                return None;
+            }
+            // Invert rotation_from_degrees, using the same convention as rotate-to.
+            let (y, z, x) = rotation.normalize().to_euler(EulerRot::YZX);
+            Some(match axis.to_ascii_lowercase().as_str() {
+                "rx" => x.to_degrees(),
+                "ry" => y.to_degrees(),
+                _ => z.to_degrees(),
+            })
+        }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod rotation_property_tests {
+    use super::*;
+
+    #[test]
+    fn rotation_properties_read_degrees_in_authored_euler_order() {
+        let mut transforms = HashMap::new();
+        for angles in [[30., 40., 50.], [-25., -135., -35.], [0., 270., 0.]] {
+            transforms.insert(
+                "subject".into(),
+                Transform {
+                    translation: Vec3::new(2., 3., 4.),
+                    rotation: rotation_from_degrees(SceneMaxVec3 {
+                        x: angles[0],
+                        y: angles[1],
+                        z: angles[2],
+                    }),
+                    ..default()
+                },
+            );
+            for (axis, expected) in ["rx", "RY", "rz"].into_iter().zip(angles) {
+                let actual =
+                    coordinate_value_from_name(&format!("subject.{axis}"), &transforms).unwrap();
+                let delta = (actual - expected + 180.).rem_euclid(360.) - 180.;
+                assert!(delta.abs() < 0.001, "{axis}: {actual} != {expected}");
+            }
+            assert_eq!(
+                coordinate_value_from_name("subject.y", &transforms),
+                Some(3.)
+            );
+        }
+        assert_eq!(coordinate_value_from_name("missing.ry", &transforms), None);
+        assert_eq!(coordinate_value_from_name("subject.rw", &transforms), None);
+        transforms.get_mut("subject").unwrap().rotation = Quat::from_xyzw(0., 0., 0., 0.);
+        assert_eq!(coordinate_value_from_name("subject.ry", &transforms), None);
+    }
+
+    #[test]
+    fn rotation_properties_evaluate_assignment_and_print_from_current_transform() {
+        let mut vars = SceneMaxVars::default();
+        let guards = HashMap::new();
+        let mut transforms = HashMap::from([("subject".into(), Transform::IDENTITY)]);
+        for (axis, degrees) in [("rx", 25.), ("ry", -70.), ("rz", 40.)] {
+            let program = scenemax_parser::parse_program(&format!(
+                "var current = subject.{axis}\nsys.print current\nsys.print subject.{axis}"
+            ))
+            .unwrap();
+            let Statement::Assignment(assignment) = &program.statements[0] else {
+                panic!()
+            };
+            for factor in [1., 0.5] {
+                let expected: f32 = degrees * factor;
+                let direction = match axis {
+                    "rx" => Vec3::X,
+                    "ry" => Vec3::Y,
+                    _ => Vec3::Z,
+                };
+                transforms.get_mut("subject").unwrap().rotation =
+                    Quat::from_axis_angle(direction, expected.to_radians());
+                crate::actions::apply_assignment_scoped(
+                    assignment,
+                    &mut vars,
+                    None,
+                    Some(&transforms),
+                    &guards,
+                    None,
+                    false,
+                )
+                .unwrap();
+                for statement in &program.statements[1..] {
+                    let Statement::Print(print) = statement else {
+                        panic!()
+                    };
+                    let text = crate::actions::resolve_ui_property_value(
+                        &print.text,
+                        &vars,
+                        None,
+                        &guards,
+                        Some(&transforms),
+                        None,
+                    );
+                    let actual: f32 = text
+                        .parse()
+                        .expect("print must resolve the value, not the symbol name");
+                    assert!((actual - expected).abs() < 0.001);
+                }
+            }
+        }
     }
 }
 
@@ -4932,6 +5159,110 @@ pub(super) fn rotation_from_degrees(value: SceneMaxVec3) -> Quat {
 
 #[cfg(test)]
 mod static_mesh_collider_tests {
+    #[test]
+    fn character_feet_and_capsule_follow_model_bounds_at_any_scale() {
+        use super::*;
+        for scale in [
+            Vec3::splat(0.22),
+            Vec3::splat(3.),
+            Vec3::new(0.5, 2., 0.8),
+            Vec3::new(1., -2., 1.),
+        ] {
+            for minimum_y in [-5., -1., 0.] {
+                let bounds = ModelSubtreeBounds {
+                    min: Vec3::new(-1., minimum_y, -0.5),
+                    max: Vec3::new(1., minimum_y + 8., 0.5),
+                };
+                let transform = Transform::from_scale(scale);
+                let dimensions = character_dimensions_from_model_bounds(&transform, bounds);
+                let foot_y = (bounds.min.y * scale.y).min(bounds.max.y * scale.y);
+                assert!(
+                    (dimensions.float_height + foot_y - DEFAULT_CHARACTER_FLOAT_HEIGHT).abs()
+                        < 0.0001
+                );
+                let capsule_bottom = dimensions.capsule_center_y
+                    - character_capsule_half_height(
+                        dimensions.capsule_radius,
+                        dimensions.capsule_height,
+                    );
+                assert!((capsule_bottom - foot_y).abs() < 0.0001);
+                let local = character_local_collider_shape_for_transform(&transform, dimensions);
+                assert!((local.sensor_radius - dimensions.capsule_radius * 0.98).abs() < 0.0001);
+                assert_eq!(local.sensor_height, DEFAULT_CHARACTER_SENSOR_HEIGHT);
+                assert!(
+                    (local.capsule_center_y * scale.y.abs() - dimensions.capsule_center_y).abs()
+                        < 0.0001
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hidden_static_mesh_keeps_floor_collision_and_contact_events() {
+        use super::*;
+        use bevy::ecs::system::RunSystemOnce;
+        let mut world = World::new();
+        let mut meshes = Assets::<Mesh>::default();
+        let mesh = meshes.add(
+            Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            )
+            .with_inserted_attribute(
+                Mesh::ATTRIBUTE_POSITION,
+                vec![[-5., 0., -5.], [5., 0., -5.], [0., 0., 5.]],
+            )
+            .with_inserted_indices(Indices::U32(vec![0, 2, 1])),
+        );
+        world.insert_resource(meshes);
+        world.init_resource::<SceneMaxColliderBounds>();
+        let root = world
+            .spawn((
+                SceneMaxEntity {
+                    name: "floor".into(),
+                    runtime_name: "floor@1".into(),
+                },
+                Visibility::Hidden,
+                GlobalTransform::IDENTITY,
+                SceneMaxPendingStaticMeshCollider,
+            ))
+            .id();
+        world.spawn((ChildOf(root), Mesh3d(mesh), GlobalTransform::IDENTITY));
+        world
+            .run_system_once(bake_pending_static_mesh_colliders)
+            .unwrap();
+        for visibility in [
+            Visibility::Hidden,
+            Visibility::Inherited,
+            Visibility::Hidden,
+        ] {
+            *world.get_mut::<Visibility>(root).unwrap() = visibility;
+            world
+                .run_system_once(sync_collision_layers_for_visibility)
+                .unwrap();
+            world
+                .run_system_once(sync_collider_hidden_state_for_visibility)
+                .unwrap();
+            let collider = world
+                .get::<AvianCollider>(root)
+                .expect("hidden static floor must retain its collider");
+            assert!(
+                collider
+                    .cast_ray(Vec3::ZERO, Quat::IDENTITY, Vec3::Y, Vec3::NEG_Y, 2., true)
+                    .is_some()
+            );
+            assert_ne!(
+                *world.get::<CollisionLayers>(root).unwrap(),
+                CollisionLayers::NONE
+            );
+            assert!(
+                !world
+                    .resource::<SceneMaxColliderBounds>()
+                    .hidden_by_name
+                    .contains("floor")
+            );
+        }
+    }
     use super::*;
 
     #[test]
@@ -4993,6 +5324,33 @@ mod static_mesh_collider_tests {
         };
 
         assert!(should_use_static_mesh_collider(&options));
+    }
+
+    #[test]
+    fn authored_mesh_collision_uses_triangles_instead_of_enclosing_walkable_space() {
+        for source in [
+            "level => static scenery : hidden, collision shape mesh async",
+            "level => scenery : collision shape mesh",
+        ] {
+            let program = scenemax_parser::parse_program(source).unwrap();
+            let Statement::ModelDecl {
+                name,
+                resource,
+                options,
+            } = &program.statements[0]
+            else {
+                panic!("expected model declaration");
+            };
+            assert_eq!(physics_body_kind(options), Some(SceneMaxBodyKind::Static));
+            assert!(should_use_static_mesh_collider(options));
+            assert!(!should_fit_model_bounds_collider(name, resource, options));
+            assert!(
+                avian_collider(SceneMaxCollisionShape::Mesh, options, &Transform::default())
+                    .is_none()
+            );
+            assert!(has_static_imported_level_collider_candidate(&program));
+            assert!(explicit_static_support_surfaces(&program, &HashMap::new()).is_empty());
+        }
     }
 
     #[test]
@@ -5705,6 +6063,7 @@ Material wall : Common/MatDefs/Light/Lighting.j3md {
                 },
                 Visibility::Hidden,
                 SceneMaxCollisionFollowsVisibility {
+                    static_geometry: false,
                     collision_layers: world_collision_layers(),
                     collider: None,
                 },

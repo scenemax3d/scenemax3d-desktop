@@ -136,6 +136,7 @@ pub enum Outgoing {
     ServerEvent {
         name: String,
         interval_ms: u32,
+        leader_only: bool,
     },
 }
 
@@ -223,7 +224,13 @@ pub fn encode(client: u16, message: &Outgoing) -> Result<Vec<u8>, Error> {
         Outgoing::Event { .. } => NETWORK_EVENT,
         Outgoing::Variable { .. } => NETWORK_VARIABLE_UPDATE,
         Outgoing::EntityData { .. } => NETWORK_ENTITY_DATA_UPDATE,
-        Outgoing::ServerEvent { .. } => SERVER_EVENT_REGISTER,
+        Outgoing::ServerEvent { leader_only, .. } => {
+            if *leader_only {
+                SERVER_EVENT_REGISTER_LEADER
+            } else {
+                SERVER_EVENT_REGISTER
+            }
+        }
     };
     write_header(kind, client, &mut w.0);
     match message {
@@ -308,7 +315,9 @@ pub fn encode(client: u16, message: &Outgoing) -> Result<Vec<u8>, Error> {
             w.fixed(field, 64)?;
             w.fixed(&encode_value(value)?, 256)?;
         }
-        Outgoing::ServerEvent { name, interval_ms } => {
+        Outgoing::ServerEvent {
+            name, interval_ms, ..
+        } => {
             if *interval_ms == 0 {
                 return Err(Error::Invalid("zero event interval"));
             }

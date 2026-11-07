@@ -49,6 +49,7 @@ const PacketType = enum(u8) {
     network_event = 24,
     network_variable_update = 25,
     server_event_register = 26,
+    server_event_register_leader = 29,
     network_entity_data_update = 27,
     action_end_receipt = 28,
     snapshot = 30,
@@ -80,6 +81,7 @@ const Client = struct {
     address: net.IpAddress = undefined,
     last_seen_ms: i64 = 0,
     generation: u32 = 1,
+    registration_order: u64 = 0,
 };
 
 const Entity = struct {
@@ -139,6 +141,7 @@ const ServerEvent = struct {
     name: [server_event_name_size]u8 = [_]u8{0} ** server_event_name_size,
     interval_ms: u32 = 0,
     next_fire_ms: i64 = 0,
+    leader_only: bool = false,
 };
 
 export var scenemax_mp_config_block: [config_begin.len + config_payload_size + config_end.len]u8 =
@@ -174,6 +177,7 @@ pub fn main(init: std.process.Init) !void {
     var server_events = [_]ServerEvent{.{}} ** max_server_events;
     var end_deliveries = EndDeliveries{};
     var next_client_id: u16 = 1;
+    var next_registration_order: u64 = 1;
     var next_session_id: u32 = 1000;
     var next_entity_id: u32 = 1;
     var buffer: [max_packet_size]u8 = undefined;
@@ -223,12 +227,14 @@ pub fn main(init: std.process.Init) !void {
                 clients[slot] = .{
                     .active = true,
                     .id = assigned,
+                    .registration_order = next_registration_order,
                     .session_id = session.id,
                     .scene_id = login.scene_id,
                     .player_name = login.player_name,
                     .address = message.from,
                     .last_seen_ms = now,
                 };
+                next_registration_order += 1;
                 try sendLoginAccepted(sock, io, message.from, assigned, session.id, session.name);
                 try broadcastServerState(sock, io, &clients, &sessions);
                 try sendSurfaceBases(sock, io, message.from, &entities, &network_entity_data, session.id, login.scene_id);
@@ -399,12 +405,12 @@ pub fn main(init: std.process.Init) !void {
                     try dispatch(sock, io, &clients, client_id, packet_type, client_id, payload);
                 }
             },
-            .server_event_register => {
+            .server_event_register, .server_event_register_leader => {
                 const client = findClient(&clients, client_id) orelse continue;
                 if (payload.len < server_event_registration_size) continue;
                 client.last_seen_ms = now;
                 client.address = message.from;
-                storeServerEvent(&server_events, client.session_id, client.scene_id, payload, now);
+                storeServerEvent(&server_events, client.session_id, client.scene_id, payload, now, packet_type == .server_event_register_leader);
             },
             .destroy_entity => {
                 const client = findClient(&clients, client_id) orelse continue;
@@ -525,7 +531,10 @@ fn allocateSession(sessions: *[max_sessions]Session, next_session_id: *u32, requ
     // IDs are identities, not storage indices; never overwrite occupied rooms.
     var free: ?*Session = null;
     for (sessions) |*session| {
-        if (!session.active) { free = session; break; }
+        if (!session.active) {
+            free = session;
+            break;
+        }
     }
     const slot = free orelse return null;
     var id = requested_id;
@@ -880,6 +889,7 @@ fn decodePacketType(value: u8) ?PacketType {
         24 => .network_event,
         25 => .network_variable_update,
         26 => .server_event_register,
+        29 => .server_event_register_leader,
         27 => .network_entity_data_update,
         28 => .action_end_receipt,
         30 => .snapshot,
@@ -999,7 +1009,7 @@ fn clearSceneServerEvents(server_events: *[max_server_events]ServerEvent, sessio
     }
 }
 
-fn storeServerEvent(server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8, payload: []const u8, now: i64) void {
+fn storeServerEvent(server_events: *[max_server_events]ServerEvent, session_id: u32, scene_id: [128]u8, payload: []const u8, now: i64, leader_only: bool) void {
     if (payload.len < server_event_registration_size) return;
     var name = [_]u8{0} ** server_event_name_size;
     copyFixed(&name, payload, 0);
@@ -1010,6 +1020,8 @@ fn storeServerEvent(server_events: *[max_server_events]ServerEvent, session_id: 
     }
 
     if (findServerEvent(server_events, session_id, scene_id, name)) |existing| {
+        // First registration fixes delivery mode; never silently widen a leader timer.
+        if (existing.leader_only != leader_only) return;
         if (existing.interval_ms != interval_ms) {
             existing.interval_ms = interval_ms;
             existing.next_fire_ms = now + @as(i64, @intCast(interval_ms));
@@ -1025,6 +1037,7 @@ fn storeServerEvent(server_events: *[max_server_events]ServerEvent, session_id: 
         .name = name,
         .interval_ms = interval_ms,
         .next_fire_ms = now + @as(i64, @intCast(interval_ms)),
+        .leader_only = leader_only,
     };
     if (verbose_packet_logs) {
         std.debug.print("[SceneMax MP] registered server event session={d} scene=\"{s}\" name=\"{s}\" intervalMs={d}\n", .{
@@ -1684,6 +1697,16 @@ fn dispatchDueServerEvents(sock: net.Socket, io: std.Io, clients: *[max_clients]
     }
 }
 
+// Registration order is independent of client-map slots and wrapped wire IDs.
+fn sceneLeader(clients: *const [max_clients]Client, session_id: u32, scene_id: [128]u8) ?u16 {
+    var oldest: ?*const Client = null;
+    for (clients) |*client| {
+        if (!client.active or client.session_id != session_id or !sameScene(client.scene_id, scene_id)) continue;
+        if (oldest == null or client.registration_order < oldest.?.registration_order) oldest = client;
+    }
+    return if (oldest) |client| client.id else null;
+}
+
 fn broadcastServerEvent(sock: net.Socket, io: std.Io, clients: *[max_clients]Client, server_event: *const ServerEvent) !void {
     const event_payload = fixedText(&server_event.name);
     if (event_payload.len == 0) return;
@@ -1691,10 +1714,12 @@ fn broadcastServerEvent(sock: net.Socket, io: std.Io, clients: *[max_clients]Cli
     writeHeader(packet[0..], .network_event, 0);
     const payload_len = @min(event_payload.len, packet.len - 8);
     @memcpy(packet[8 .. 8 + payload_len], event_payload[0..payload_len]);
+    const leader = if (server_event.leader_only) sceneLeader(clients, server_event.session_id, server_event.scene_id) else null;
     var sent: usize = 0;
     for (clients) |client| {
         if (!client.active) continue;
         if (client.session_id != server_event.session_id or !sameScene(client.scene_id, server_event.scene_id)) continue;
+        if (server_event.leader_only and (leader == null or client.id != leader.?)) continue;
         sendUdp(sock, io, client.address, packet[0 .. 8 + payload_len]);
         sent += 1;
     }
@@ -1845,7 +1870,11 @@ const EndDeliveries = struct {
             if (client.active and client.id != entity.owner_client and client.session_id == entity.session_id and sameScene(client.scene_id, entity.scene_id)) required += 1;
         }
         var available: usize = 0;
-        for (self.entries) |entry| { if (!entry.active) { available += 1; } }
+        for (self.entries) |entry| {
+            if (!entry.active) {
+                available += 1;
+            }
+        }
         // Admission is atomic: pressure must not consume the entity watermark.
         if (available < required) return false;
         if (!clearActiveAction(entity, payload)) return false;
@@ -1853,8 +1882,7 @@ const EndDeliveries = struct {
         for (clients, 0..) |client, index| {
             if (!client.active or client.id == entity.owner_client or client.session_id != entity.session_id or !sameScene(client.scene_id, entity.scene_id)) continue;
             while (self.entries[next].active) : (next += 1) {}
-            self.entries[next] = .{ .active = true, .client_index = index, .client_id = client.id, .generation = client.generation,
-                .entity_index = entity_index, .entity_id = entity.network_id, .slot = slot, .sequence = sequence, .started = now };
+            self.entries[next] = .{ .active = true, .client_index = index, .client_id = client.id, .generation = client.generation, .entity_index = entity_index, .entity_id = entity.network_id, .slot = slot, .sequence = sequence, .started = now };
             next += 1;
         }
         return true;
@@ -1874,8 +1902,13 @@ const EndDeliveries = struct {
         while (examined < self.entries.len and sent < 128) : (examined += 1) {
             const entry = &self.entries[self.cursor];
             self.cursor = (self.cursor + 1) % self.entries.len;
-            if (!entry.valid(clients, entities, now)) { entry.active = false; continue; }
-            if (entry.sent) |last| { if (now - last < end_retry_ms) continue; }
+            if (!entry.valid(clients, entities, now)) {
+                entry.active = false;
+                continue;
+            }
+            if (entry.sent) |last| {
+                if (now - last < end_retry_ms) continue;
+            }
             var payload = [_]u8{0} ** 8;
             std.mem.writeInt(u32, payload[0..4], entry.entity_id, .little);
             payload[4] = entry.slot;
@@ -1893,7 +1926,6 @@ fn sendEndPacket(sock: net.Socket, io: std.Io, address: net.IpAddress, kind: Pac
     sendUdp(sock, io, address, &packet);
 }
 
-
 test "end outbox admits atomically and receipts are recipient generation and sequence bound" {
     const clients = try std.testing.allocator.create([max_clients]Client);
     defer std.testing.allocator.destroy(clients);
@@ -1905,7 +1937,9 @@ test "end outbox admits atomically and receipts are recipient generation and seq
     var payload = testActionPayload(3, 65535);
     std.mem.writeInt(u32, payload[0..4], 77, .little);
     var outbox = EndDeliveries{};
-    for (&outbox.entries) |*entry| { entry.active = true; }
+    for (&outbox.entries) |*entry| {
+        entry.active = true;
+    }
     outbox.entries[0].active = false; // two peers cannot fit into one free entry
     try std.testing.expect(!outbox.accept(clients, &entity, 0, payload[0..8], 0));
     try std.testing.expect(entity.action_sequences[3] == null);
@@ -1919,7 +1953,8 @@ test "end outbox admits atomically and receipts are recipient generation and seq
     std.mem.writeInt(u16, wrong[6..8], 0, .little);
     outbox.receipt(clients[1], wrong[0..8]);
     try std.testing.expect(outbox.entries[0].active);
-    var wrong_client = clients[1]; wrong_client.generation += 1;
+    var wrong_client = clients[1];
+    wrong_client.generation += 1;
     outbox.receipt(wrong_client, payload[0..8]);
     try std.testing.expect(outbox.entries[0].active);
     outbox.receipt(clients[1], payload[0..8]);
@@ -1937,24 +1972,63 @@ test "end retry ownership expires on wrap replacement destruction leave and dead
     defer std.testing.allocator.destroy(entities);
     entities.* = [_]Entity{.{}} ** max_entities;
     entities[0] = .{ .active = true, .network_id = 77, .owner_client = 1, .session_id = 1000 };
-    entities[0].action_sequences[3] = 65535; entities[0].action_ended[3] = true;
+    entities[0].action_sequences[3] = 65535;
+    entities[0].action_ended[3] = true;
     const entry = EndDelivery{ .active = true, .client_id = 2, .generation = 1, .entity_id = 77, .slot = 3, .sequence = 65535 };
     try std.testing.expect(entry.valid(clients, entities, 7999));
     try std.testing.expect(!entry.valid(clients, entities, 8000));
     clients[0].generation += 1;
     try std.testing.expect(!entry.valid(clients, entities, 1));
-    clients[0].generation = 1; clients[0].id = 3;
+    clients[0].generation = 1;
+    clients[0].id = 3;
     try std.testing.expect(!entry.valid(clients, entities, 1));
-    clients[0].id = 2; clients[0].session_id = 2000;
+    clients[0].id = 2;
+    clients[0].session_id = 2000;
     try std.testing.expect(!entry.valid(clients, entities, 1));
-    clients[0].session_id = 1000; clients[0].active = false;
+    clients[0].session_id = 1000;
+    clients[0].active = false;
     try std.testing.expect(!entry.valid(clients, entities, 1));
-    clients[0].active = true; entities[0].active = false;
+    clients[0].active = true;
+    entities[0].active = false;
     try std.testing.expect(!entry.valid(clients, entities, 1));
-    entities[0].active = true; entities[0].network_id = 78;
+    entities[0].active = true;
+    entities[0].network_id = 78;
     try std.testing.expect(!entry.valid(clients, entities, 1));
     entities[0].network_id = 77;
     const next = testActionPayload(3, 0);
     try std.testing.expect(storeActiveAction(&entities[0], &next, 1));
     try std.testing.expect(!entry.valid(clients, entities, 1));
+}
+
+test "leader follows registration order not map slots or wrapped IDs and changes on leave" {
+    var clients = [_]Client{.{}} ** max_clients;
+    var scene = [_]u8{0} ** 128;
+    copyFixed(&scene, "fixture", 0);
+    clients[200] = .{ .active = true, .id = 65000, .registration_order = 1, .session_id = 1000, .scene_id = scene };
+    clients[2] = .{ .active = true, .id = 1, .registration_order = 2, .session_id = 1000, .scene_id = scene };
+    clients[0] = .{ .active = true, .id = 99, .registration_order = 0, .session_id = 2000, .scene_id = scene };
+    try std.testing.expectEqual(@as(?u16, 65000), sceneLeader(&clients, 1000, scene));
+    clients[200].active = false;
+    try std.testing.expectEqual(@as(?u16, 1), sceneLeader(&clients, 1000, scene));
+    clients[200].active = true;
+    clients[200].scene_id = [_]u8{0} ** 128;
+    try std.testing.expectEqual(@as(?u16, 1), sceneLeader(&clients, 1000, scene));
+    clients[2].session_id = 2000;
+    try std.testing.expectEqual(@as(?u16, null), sceneLeader(&clients, 1000, scene));
+}
+
+test "leader timer registration is idempotent and cannot be downgraded to broadcast" {
+    var events = [_]ServerEvent{.{}} ** max_server_events;
+    const scene = [_]u8{0} ** 128;
+    var payload = [_]u8{0} ** server_event_registration_size;
+    @memcpy(payload[0..4], "tick");
+    std.mem.writeInt(u32, payload[64..68], 5000, .little);
+    storeServerEvent(&events, 1000, scene, &payload, 0, true);
+    var name = [_]u8{0} ** 64;
+    copyFixed(&name, "tick", 0);
+    const timer = findServerEvent(&events, 1000, scene, name).?;
+    storeServerEvent(&events, 1000, scene, &payload, 1000, true);
+    try std.testing.expectEqual(@as(i64, 5000), timer.next_fire_ms);
+    storeServerEvent(&events, 1000, scene, &payload, 2000, false);
+    try std.testing.expect(timer.leader_only);
 }

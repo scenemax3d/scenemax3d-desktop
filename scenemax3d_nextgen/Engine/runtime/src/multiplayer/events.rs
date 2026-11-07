@@ -8,7 +8,7 @@ pub(super) struct EventState {
     values: HashMap<String, Value>,
     shared_names: HashSet<String>,
     handlers: HashMap<String, Vec<RegisteredHandler>>,
-    timers: HashMap<String, u32>,
+    timers: HashMap<String, (u32, bool)>,
     operations: Vec<Operation>,
     entity_data: HashMap<(u32, String), Value>,
 }
@@ -39,6 +39,7 @@ enum Operation {
         u64,
         Operand,
         Option<HandlerArgument>,
+        bool,
         Vec<Statement>,
         Option<SceneMaxScopeFrame>,
     ),
@@ -147,12 +148,13 @@ pub(super) fn capture(
             handler_id,
             event,
             argument,
+            leader_only,
             actions,
         }) => Operation::Handler(
             *handler_id,
             arg(event),
             argument.as_ref().map(|argument| {
-                if message_parameter(argument) {
+                if !leader_only && message_parameter(argument) {
                     return HandlerArgument::Message(argument.trim().to_owned());
                 }
                 HandlerArgument::Interval(
@@ -165,6 +167,7 @@ pub(super) fn capture(
                     .filter(|n| n.is_finite()),
                 )
             }),
+            *leader_only,
             actions.clone(),
             scope.cloned(),
         ),
@@ -358,7 +361,7 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                     message,
                 })
             }
-            Operation::Handler(handler_id, event, argument, actions, scope) => {
+            Operation::Handler(handler_id, event, argument, leader_only, actions, scope) => {
                 let Some(event) = resolve(event, &net.events).map(text) else {
                     continue;
                 };
@@ -381,6 +384,19 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                         _ => None,
                     })
                     .filter(|n| *n > 0.);
+                if leader_only && interval.is_none() {
+                    tracing::warn!(%event, "leader timer requires a positive numeric interval");
+                    continue;
+                }
+                if net
+                    .events
+                    .timers
+                    .get(&event)
+                    .is_some_and(|(_, mode)| *mode != leader_only)
+                {
+                    tracing::warn!(%event, "conflicting timer delivery modes");
+                    continue;
+                }
                 if net.events.handlers.values().map(Vec::len).sum::<usize>() >= 256 {
                     continue;
                 }
@@ -404,10 +420,13 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                     });
                 interval.map(|seconds| {
                     let interval_ms = (seconds * 1000.).clamp(1., u32::MAX as f64) as u32;
-                    net.events.timers.insert(event.clone(), interval_ms);
+                    net.events
+                        .timers
+                        .insert(event.clone(), (interval_ms, leader_only));
                     Outgoing::ServerEvent {
                         name: event,
                         interval_ms,
+                        leader_only,
                     }
                 })
             }
@@ -452,12 +471,13 @@ pub(super) fn flush(world: &mut World, net: &mut Multiplayer) {
                     net.events
                         .join
                         .begin(selector, client.session_id(), Instant::now());
-                    for (name, interval_ms) in &net.events.timers {
+                    for (name, (interval_ms, leader_only)) in &net.events.timers {
                         if let Err(error) = client.send(
                             None,
                             Outgoing::ServerEvent {
                                 name: name.clone(),
                                 interval_ms: *interval_ms,
+                                leader_only: *leader_only,
                             },
                         ) {
                             tracing::warn!(%error, "multiplayer timer re-registration failed");
@@ -707,6 +727,35 @@ mod tests {
 
     use super::*;
     #[test]
+    fn leader_timer_preserves_mode_and_evaluates_named_interval() {
+        for (argument, expected) in [("period", true), ("0", false), ("missing", false)] {
+            let mut world = World::new();
+            world.init_resource::<Multiplayer>();
+            let mut vars = SceneMaxVars::default();
+            vars.0.insert("period".into(), 5.);
+            let source = format!(
+                "network.leader.on (\"fixture_tick\", {argument}) = {{\nLogger.info \"tick\"\n}}"
+            );
+            let program = scenemax_parser::parse_program(&source).unwrap();
+            capture(
+                &mut world.commands(),
+                &program.statements[0],
+                &mut vars,
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+            );
+            world.flush();
+            let mut net = world.remove_resource::<Multiplayer>().unwrap();
+            flush(&mut world, &mut net);
+            assert_eq!(
+                net.events.timers.get("fixture_tick"),
+                if expected { Some(&(5000, true)) } else { None }
+            );
+            assert_eq!(net.events.handlers.contains_key("fixture_tick"), expected);
+        }
+    }
+    #[test]
     fn handler_parameter_names_do_not_evaluate_globals_or_become_timer_expressions() {
         for (argument, parameter, timer) in [
             ("received", true, false),
@@ -791,6 +840,7 @@ mod tests {
                 value,
                 Operand::Value(serde_json::json!("event")),
                 Some(HandlerArgument::Message("message".into())),
+                false,
                 actions,
                 Some(scope.clone()),
             ));

@@ -341,6 +341,7 @@ impl Plugin for StudioPlugin {
             .init_resource::<presentation::scene3d::picking::Request>()
             .init_resource::<presentation::scene3d::tools::Tools>()
             .init_resource::<presentation::scene3d::hierarchy::State>()
+            .init_resource::<presentation::designer::clipboard::State>()
             .init_resource::<presentation::scene3d::path::Drawing>()
             .init_resource::<presentation::scene3d::navigation::Navigation>()
             .init_resource::<presentation::scene3d::playback::Playback>()
@@ -457,7 +458,7 @@ impl Plugin for StudioPlugin {
                         presentation::sprite_import::update,
                         presentation::effect_import::update,
                         presentation::designer::live::update,
-                        presentation::designer::interactions,
+                        (presentation::designer::interactions, presentation::designer::clipboard::update).chain(),
                         presentation::scene3d::live::update,
                         presentation::scene3d::inspector::apply,
                         (

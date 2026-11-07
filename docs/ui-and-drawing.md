@@ -137,3 +137,23 @@ s => sphere : material = "pond"
 wait 5 seconds
 s.material="shira1"
 ```
+
+## HUD buttons
+
+The HUD designer's **Horizontal alignment** (`textAlignment`: `left`, `center`, `right`) and **Vertical alignment** (`textVerticalAlignment`: `top`, `center`, `bottom`) position button text in both the designer and the game. Vertical alignment defaults to `center`. Both bitmap fonts and the fallback font support these settings.
+
+Enter a procedure name without parentheses in **On click procedure** (`onClickProcedure`), for example `start_game`:
+
+```scenemax
+start_game() = {
+    // Handle the button press.
+}
+```
+
+A press invokes the zero-argument procedure from the active scene, using the scope captured when the HUD was loaded. Ordinary procedure guards and delayed actions still apply. Blank names, names not found in the current scene, and procedures requiring arguments do nothing. Holding the button does not repeatedly invoke it; another press invokes it again. Hidden buttons cannot invoke procedures.
+
+## Copying HUD elements
+
+In the HUD designer's UI Hierarchy, right-click any element and choose **Copy**. Right-click a panel or a root layer such as `main` and choose **Paste** to insert the copy there. Empty layers also appear in the hierarchy. Paste is disabled for leaf elements and until an element has been copied.
+
+Copy includes the entire subtree, styles, and button procedure names. Pasted elements receive unique names when needed, and constraints between copied elements follow their new names. Each paste is one undo/redo step. The clipboard is shared between HUD documents during the current Studio session.

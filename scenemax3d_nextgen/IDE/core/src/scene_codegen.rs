@@ -279,17 +279,18 @@ fn entity(e: &Value, native_materials: &[String]) -> Result<String, String> {
         return Err(format!("Missing model resource for {name}"));
     }
     let mut prefix = String::new();
-    if flag(
-        e,
-        if kind == "MODEL" {
-            "staticModel"
-        } else {
-            "staticEntity"
-        },
-    ) {
+    let character = kind == "MODEL" && flag(e, "characterControl");
+    if !character
+        && flag(
+            e,
+            if kind == "MODEL" {
+                "staticModel"
+            } else {
+                "staticEntity"
+            },
+        )
+    {
         prefix += "static ";
-    } else if kind == "MODEL" && flag(e, "dynamicModel") {
-        prefix += "dynamic ";
     }
     if kind != "MODEL" && flag(e, "colliderEntity") {
         prefix += "collider ";
@@ -328,31 +329,29 @@ fn entity(e: &Value, native_materials: &[String]) -> Result<String, String> {
         if matches!(shape, "box" | "boxes" | "mesh" | "none") {
             attrs.push(format!("collision shape {shape}"));
         }
-        let joints = text(e, "jointMapping", "")
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(quote)
-            .collect::<Vec<_>>();
-        if !joints.is_empty() {
-            attrs.push(format!("joints ({})", joints.join(",")));
-        }
     }
     let material = text(e, "material", "");
     let native = kind == "MODEL" || native_materials.iter().any(|name| name == material);
     if !material.is_empty() && !native {
         attrs.push(format!("material {}", quote(material)));
     }
-    let vehicle = if kind == "MODEL" && flag(e, "vehicleModel") {
-        " vehicle"
-    } else {
-        ""
-    };
     let mut out = format!(
-        "{name} => {prefix}{resource}{vehicle} : {}{}\n",
+        "{name} => {prefix}{resource} : {}{}\n",
         attrs.join(", "),
         if kind == "MODEL" { " async" } else { "" }
     );
+    if character {
+        let gravity = match e.get("characterGravity") {
+            None => 60.,
+            Some(value) => value
+                .as_f64()
+                .filter(|n| n.is_finite() && *n >= 0.)
+                .ok_or_else(|| {
+                    format!("Character gravity for {name} must be a non-negative number")
+                })?,
+        };
+        out += &format!("{name}.switch to character mode : gravity {gravity}\n");
+    }
     for property in ["material", "shader"] {
         if property == "material" && !native {
             continue;

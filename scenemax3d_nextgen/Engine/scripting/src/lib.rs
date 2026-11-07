@@ -671,11 +671,13 @@ pub fn substitute_statement(
                     handler_id,
                     event,
                     argument,
+                    leader_only,
                     actions,
                 } => N::On {
                     handler_id: *handler_id,
                     event: expr(event),
                     argument: argument.as_deref().map(expr),
+                    leader_only: *leader_only,
                     actions: substitute_statements(actions, bindings),
                 },
             })

@@ -753,6 +753,7 @@ mod tests {
             .resource_mut::<SceneMaxUiActionQueue>()
             .actions
             .push(SceneMaxUiAction::Load {
+                scope: None,
                 name: "fixture".into(),
             });
         apply(world);
@@ -1122,6 +1123,7 @@ mod tests {
             .resource_mut::<SceneMaxUiActionQueue>()
             .actions
             .push(SceneMaxUiAction::Load {
+                scope: None,
                 name: "fixture".into(),
             });
         apply(world);
@@ -1863,6 +1865,7 @@ record(action) = {{
         world.entity_mut(entity).remove::<Text>();
         world.entity_mut(entity).insert((
             SceneMaxUiBitmapText {
+                vertical_alignment: "center".into(),
                 text: "bitmap".into(),
                 font_name: "fixture".into(),
                 font_size: 12.,
@@ -1938,6 +1941,7 @@ record(action) = {{
             .actions
             .extend([
                 SceneMaxUiAction::Load {
+                    scope: None,
                     name: "fixture".into(),
                 },
                 SceneMaxUiAction::SetProperty {

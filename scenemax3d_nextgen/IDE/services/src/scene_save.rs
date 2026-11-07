@@ -411,6 +411,58 @@ mod tests {
     }
 
     #[test]
+    fn character_control_generates_runtime_command_and_ignores_retired_model_flags() {
+        for (enabled, gravity, expected) in [
+            (true, None, Some(60.)),
+            (true, Some(24.5), Some(24.5)),
+            (true, Some(0.), Some(0.)),
+            (false, Some(60.), None),
+        ] {
+            let mut entity = json!({"type":"MODEL","name":"subject","resourcePath":"sample","dynamicModel":true,"vehicleModel":true,"jointMapping":"A,B","characterControl":enabled});
+            if let Some(gravity) = gravity {
+                entity["characterGravity"] = json!(gravity);
+            }
+            let code = scenemax_ide_core::scene_codegen::generate(
+                &json!({"entities":[entity]}).to_string(),
+                "scene.smdesign",
+                "",
+                "",
+                &[],
+            )
+            .unwrap();
+            assert!(
+                !code.contains("dynamic ")
+                    && !code.contains(" vehicle")
+                    && !code.contains("joints ("),
+                "{code}"
+            );
+            let program = scenemax_parser::parse_program(&code).unwrap();
+            let modes = program
+                .statements
+                .iter()
+                .filter_map(|s| match s {
+                    scenemax_parser::Statement::CharacterMode(mode) => Some(mode),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if let Some(gravity) = expected {
+                assert_eq!(modes.len(), 1);
+                assert_eq!(modes[0].target, "subject");
+                assert_eq!(modes[0].gravity, Some(gravity));
+                assert!(code.find("subject =>").unwrap() < code.find("subject.switch").unwrap());
+            } else {
+                assert!(modes.is_empty());
+            }
+        }
+        for gravity in [json!(-1), json!("bad"), serde_json::Value::Null] {
+            let source = json!({"entities":[{"type":"MODEL","name":"subject","resourcePath":"sample","characterControl":true,"characterGravity":gravity}]}).to_string();
+            assert!(
+                scenemax_ide_core::scene_codegen::generate(&source, "scene", "", "", &[]).is_err()
+            );
+        }
+    }
+
+    #[test]
     fn generator_emits_materials_models_primitives_lights_and_paths() {
         let entities = json!([
             {"type":"MODEL","name":"mesh","resourcePath":"registered_model","material":"surface","shader":"effect","staticModel":true,"attachTo":"anchor","jointMapping":"A,B","modelCollisionShape":"box","ikAsset":"rig","ikLayers":[{"layerId":"reach","enabled":true,"target":"anchor"}]},

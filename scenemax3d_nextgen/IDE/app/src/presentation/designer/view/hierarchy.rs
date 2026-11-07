@@ -86,35 +86,48 @@ pub(super) fn build(
         ChildOf(frame),
     ));
     let content = scenemax_ide_ui::property::scroll_column(commands, frame);
-    let mut layers = HashSet::new();
-    for w in &scene.widgets {
-        let layer = w.pointer.split("/widgets/").next().unwrap_or("");
-        if layers.insert(layer.to_owned()) {
-            spawn(
-                commands, content, host, layer, &w.layer, "▱", 0, true, false, None, collapsed,
-            );
-        }
+    for (layer, name) in &scene.layers {
+        let children: Vec<_> = scene
+            .widgets
+            .iter()
+            .filter(|w| w.pointer.split("/widgets/").next() == Some(layer.as_str()))
+            .collect();
         spawn(
             commands,
             content,
             host,
-            &w.pointer,
-            &w.name,
-            match w.kind.as_str() {
-                "PANEL" => "▱",
-                "TEXT_VIEW" => "T",
-                "EDIT_TEXT" => "I",
-                "IMAGE" => "I",
-                "BUTTON" => "B",
-                "LIST_VIEW" => "≡",
-                _ => "□",
-            },
-            w.depth + 1,
-            !w.definition.children.is_empty(),
-            !w.visible,
+            layer,
+            name,
+            "▱",
+            0,
+            !children.is_empty(),
+            false,
             selected,
             collapsed,
         );
+        for w in children {
+            spawn(
+                commands,
+                content,
+                host,
+                &w.pointer,
+                &w.name,
+                match w.kind.as_str() {
+                    "PANEL" => "▱",
+                    "TEXT_VIEW" => "T",
+                    "EDIT_TEXT" => "I",
+                    "IMAGE" => "I",
+                    "BUTTON" => "B",
+                    "LIST_VIEW" => "≡",
+                    _ => "□",
+                },
+                w.depth + 1,
+                !w.definition.children.is_empty(),
+                !w.visible,
+                selected,
+                collapsed,
+            );
+        }
     }
 }
 #[allow(clippy::too_many_arguments)]
@@ -168,8 +181,20 @@ fn spawn(
         key: key.into(),
         ancestors: lineage,
     });
+    super::super::clipboard::observe(commands, row, host, key.to_owned());
     let key = key.to_owned();
     commands.queue(move |world: &mut World| {
+        let controls: Vec<_> = world
+            .get::<Children>(row)
+            .into_iter()
+            .flat_map(|c| c.iter())
+            .filter(|child| {
+                world.get::<Pick>(*child).is_some() || world.get::<Toggle>(*child).is_some()
+            })
+            .collect();
+        for control in controls {
+            super::super::clipboard::observe(&mut world.commands(), control, host, key.clone());
+        }
         let captions: Vec<_> = world
             .get::<Children>(row)
             .into_iter()
@@ -260,6 +285,11 @@ mod tests {
     fn disclosure_and_inspector_toggle_preserve_retained_entities_and_drafts() {
         use bevy::ecs::system::RunSystemOnce;
         let mut world = World::new();
+        world.init_resource::<super::super::super::clipboard::State>();
+        world.insert_resource(Session::new(scenemax_ide_core::Project::new(
+            ".".into(),
+            vec![],
+        )));
         let host = world.spawn((Node::default(), Designer::default())).id();
         let scene=scenemax_ide_services::scene::preview(r#"{"name":"ui","layers":[{"name":"HUD","widgets":[{"name":"panel","type":"PANEL","children":[{"name":"caption","type":"TEXT_VIEW"}]}]}]}"#).unwrap();
         build(

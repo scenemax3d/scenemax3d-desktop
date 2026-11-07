@@ -11,6 +11,8 @@ use std::{collections::BTreeSet, path::PathBuf, sync::mpsc};
 #[derive(Clone, Debug)]
 pub(super) enum Action {
     Open,
+    PickModel(Vec<String>),
+    AddModel,
     Close,
     Refresh,
     Category(String),
@@ -57,6 +59,8 @@ type JobResult = Result<Outcome, String>;
 #[derive(Resource)]
 pub(crate) struct State {
     pub(crate) open: bool,
+    pub(super) model_names: Option<Vec<String>>,
+    pub(crate) picked_model: Option<String>,
     pub(super) actions: Vec<Action>,
     pub(super) host: Option<Entity>,
     pub(super) gallery: Option<Entity>,
@@ -93,6 +97,8 @@ impl Default for State {
     fn default() -> Self {
         Self {
             open: false,
+            model_names: None,
+            picked_model: None,
             actions: vec![],
             host: None,
             gallery: None,
@@ -128,6 +134,9 @@ impl Default for State {
     }
 }
 impl State {
+    pub(crate) fn pick_model(&mut self, names: Vec<String>) {
+        self.actions.push(Action::PickModel(names));
+    }
     fn selected_asset(&self) -> Option<&Asset> {
         self.inventory
             .assets
@@ -140,10 +149,20 @@ impl State {
             .assets
             .iter()
             .filter(|a| {
-                (self.category == "All" || a.category == self.category) && a.matches(&self.search)
+                (self.category == "All" || a.category == self.category)
+                    && self
+                        .model_names
+                        .as_ref()
+                        .is_none_or(|names| a.category == "Models" && names.contains(&a.name))
             })
             .cloned()
             .collect();
+        if self.model_names.is_some() {
+            // The runtime resolves project registrations before shared defaults.
+            v.sort_by_key(|a| (a.name.to_lowercase(), !a.owned()));
+            v.dedup_by(|a, b| a.name == b.name);
+        }
+        v.retain(|a| a.matches(&self.search));
         if self.sort_size {
             v.sort_by_key(|a| std::cmp::Reverse(a.bytes));
         }
@@ -317,7 +336,12 @@ pub(crate) fn update(
                 state.actions.push(Action::Select(a.id.clone(), false));
             }
             if inputs.keys.just_pressed(KeyCode::Enter) {
-                state.actions.push(Action::Inspect);
+                let action = if state.model_names.is_some() {
+                    Action::AddModel
+                } else {
+                    Action::Inspect
+                };
+                state.actions.push(action);
             }
         }
         if inputs.keys.just_pressed(KeyCode::Escape) {
@@ -331,7 +355,10 @@ pub(crate) fn update(
     }
     let actions = std::mem::take(&mut state.actions);
     for action in actions {
-        if state.task.is_some() && !matches!(action, Action::Stop) {
+        if state.task.is_some()
+            && !matches!(action, Action::Stop)
+            && !(state.model_names.is_some() && matches!(action, Action::Close))
+        {
             state.status = "Please wait for the current asset operation to finish".into();
             continue;
         }
@@ -348,8 +375,36 @@ pub(crate) fn update(
             continue;
         }
         match action {
-            Action::Open => {
+            Action::AddModel => {
+                if state.model_names.is_some() {
+                    if let Some(asset) = state
+                        .selected_asset()
+                        .filter(|a| state.filtered().iter().any(|v| v.id == a.id))
+                    {
+                        state.picked_model = Some(asset.name.clone());
+                        state.actions.push(Action::Close);
+                    } else {
+                        state.status = "Select a model before adding it to the scene.".into();
+                    }
+                }
+            }
+            Action::Open | Action::PickModel(_) => {
                 if !state.open {
+                    state.model_names = match action {
+                        Action::PickModel(names) => Some(names),
+                        _ => None,
+                    };
+                    state.picked_model = None;
+                    state.category = if state.model_names.is_some() {
+                        "Models"
+                    } else {
+                        "All"
+                    }
+                    .into();
+                    state.search.clear();
+                    state.selected.clear();
+                    state.active = None;
+                    state.page = 0;
                     state.open = true;
                     state.root = session.workspace.project().root().into();
                     state.host = Some(view::shell(&mut commands, &mut state, &session));
@@ -361,6 +416,7 @@ pub(crate) fn update(
             }
             Action::Close => {
                 state.stop_media();
+                state.task = None;
                 if let Some(h) = state.host.take() {
                     commands.entity(h).try_despawn();
                 }
@@ -381,6 +437,7 @@ pub(crate) fn update(
                 state.redraw = true;
             }
             Action::Select(id, multi) => {
+                let multi = multi && state.model_names.is_none();
                 state.stop_media();
                 if !multi {
                     state.selected.clear();
@@ -413,6 +470,10 @@ pub(crate) fn update(
             }
             Action::Clear => {
                 state.selected.clear();
+                if state.model_names.is_some() {
+                    state.active = None;
+                    state.detail_dirty = true;
+                }
                 state.redraw = true;
             }
             Action::Page(delta) => {
@@ -587,7 +648,17 @@ pub(crate) fn smoke(
         return;
     }
     if !*started && session.status != "Opening project…" {
-        state.actions.push(Action::Open);
+        if std::env::var_os("SCENEMAX_SMOKE_MODEL_PICKER").is_some() {
+            state.pick_model(
+                std::env::var("SCENEMAX_SMOKE_INVENTORY")
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::to_owned)
+                    .collect(),
+            );
+        } else {
+            state.actions.push(Action::Open);
+        }
         *started = true;
     }
     if *started

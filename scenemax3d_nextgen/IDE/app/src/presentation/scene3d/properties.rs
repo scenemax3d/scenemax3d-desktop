@@ -165,8 +165,7 @@ pub(super) fn transaction(
                 "hidden"
                     | "multiplayer"
                     | "staticModel"
-                    | "dynamicModel"
-                    | "vehicleModel"
+                    | "characterControl"
                     | "staticEntity"
                     | "colliderEntity"
             ) {

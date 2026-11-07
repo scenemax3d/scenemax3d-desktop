@@ -165,6 +165,10 @@ pub(crate) fn editor(
                 && !inputs.get(focused).is_ok_and(|i| i.is_composing())
             {
                 event.propagate(false);
+                // Ctrl+Tab is a workspace shortcut, never indentation/completion.
+                if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+                    return;
+                }
                 if completion.is_open(focused) {
                     if event.input.state.is_pressed() {
                         completion.accept = true;
