@@ -409,3 +409,6 @@ mod patch_tests {
         );
     }
 }
+
+/// Copy and paste complete UI hierarchy subtrees.
+pub mod clipboard;

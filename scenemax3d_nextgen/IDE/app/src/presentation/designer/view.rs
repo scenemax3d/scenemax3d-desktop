@@ -522,7 +522,9 @@ pub(super) fn update_preview(
             }
             commands
                 .entity(rendered.entity)
-                .remove::<(Text, ImageNode, CanvasText)>();
+                // The renderer reads cached glyphs from TextLayoutInfo even without
+                // Text. Clear that cache too when empty text has nothing to redraw.
+                .remove::<(Text, bevy::text::TextLayoutInfo, ImageNode, CanvasText)>();
             rendered.glyphs =
                 draw_visual(commands, rendered.entity, parts.canvas, w, assets, server);
         }
@@ -586,6 +588,84 @@ mod rendered_alignment_tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../Tests/support/ui_layout.rs"
     ));
+    #[test]
+    fn live_text_edits_shape_glyphs_after_empty_and_nonempty_values() {
+        let mut app = layout_app();
+        for kind in ["EDIT_TEXT", "TEXT_VIEW"] {
+            let source = serde_json::json!({"name":"fixture","layers":[{"name":"main","widgets":[{"name":"field","type":kind,"text":"","width":360,"height":54,"widthMode":"FIXED","heightMode":"FIXED"}]}]}).to_string();
+            let mut previous = scenemax_ide_services::scene::preview(&source).unwrap();
+            let canvas = app
+                .world_mut()
+                .spawn(Node {
+                    width: px(previous.width),
+                    height: px(previous.height),
+                    ..default()
+                })
+                .id();
+            let rendered = draw_widget(
+                &mut app.world_mut().commands(),
+                canvas,
+                canvas,
+                &previous,
+                &previous.widgets[0],
+                None,
+                None,
+                None,
+            );
+            let entity = rendered.entity;
+            let mut parts = Parts {
+                inspector: canvas,
+                canvas,
+                footer: canvas,
+                widgets: [("/layers/0/widgets/0".into(), rendered)].into(),
+            };
+            app.world_mut().flush();
+            settle_layout(&mut app);
+            for text in ["A", "AB", "", "Again"] {
+                let next_source = scenemax_ide_core::scene::patch(
+                    &source,
+                    "/layers/0/widgets/0",
+                    vec![("text".into(), serde_json::json!(text))],
+                )
+                .unwrap();
+                let next =
+                    scenemax_ide_services::scene::assets::refresh_cached(&next_source, &previous)
+                        .unwrap()
+                        .unwrap();
+                update_preview(
+                    &mut app.world_mut().commands(),
+                    canvas,
+                    &mut parts,
+                    &next,
+                    &previous,
+                    None,
+                    None,
+                );
+                app.world_mut().flush();
+                settle_layout(&mut app);
+                if !text.is_empty() {
+                    assert_eq!(app.world().get::<Text>(entity).unwrap().0, text);
+                    assert!(
+                        !app.world()
+                            .get::<bevy::text::TextLayoutInfo>(entity)
+                            .unwrap()
+                            .glyphs
+                            .is_empty(),
+                        "{kind}: {text} should be visible"
+                    );
+                } else {
+                    assert!(
+                        app.world()
+                            .get::<bevy::text::TextLayoutInfo>(entity)
+                            .is_none_or(|info| info.glyphs.is_empty()),
+                        "{kind}: cleared text must not retain visible glyphs"
+                    );
+                }
+                previous = next;
+            }
+            app.world_mut().entity_mut(canvas).despawn();
+        }
+    }
     #[test]
     fn rendered_button_alignment_uses_measured_text_box() {
         let mut app = layout_app();

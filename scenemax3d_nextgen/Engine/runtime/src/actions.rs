@@ -1023,9 +1023,10 @@ pub(super) fn apply_startup_leaf_action(
         }
         Statement::UiLoad { name } => {
             write_runtime_diagnostic_line(format!("UI:QUEUE load {name} source=startup"));
-            ui_queue
-                .actions
-                .push(SceneMaxUiAction::Load { name: name.clone() });
+            ui_queue.actions.push(SceneMaxUiAction::Load {
+                name: name.clone(),
+                scope: None,
+            });
             ActionSequenceResult::Completed
         }
         Statement::ChannelDraw(draw) => {
@@ -9091,9 +9092,15 @@ pub(super) fn apply_key_action(
         }
         return ActionSequenceResult::Completed;
     }
-    if let Some(ui_action) = scenemax_ui_action_from_statement(action)
+    if let Some(mut ui_action) = scenemax_ui_action_from_statement(action)
         && let Some(ui_queue) = ui_queue.as_deref_mut()
     {
+        if let SceneMaxUiAction::Load {
+            scope: load_scope, ..
+        } = &mut ui_action
+        {
+            *load_scope = scope.as_deref().cloned();
+        }
         ui_queue.actions.push(ui_action);
         return ActionSequenceResult::Completed;
     }
