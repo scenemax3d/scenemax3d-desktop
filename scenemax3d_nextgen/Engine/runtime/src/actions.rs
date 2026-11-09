@@ -5793,6 +5793,7 @@ fn spawn_runtime_gltf_model_decl(
         ))
         .id();
     insert_gltf_visual_offset(commands, entity_id, bevy_visual_offset_y);
+    insert_visual_collision_bounds(commands, entity_id, options);
     if should_use_static_mesh_collider(options) {
         insert_pending_static_mesh_collider(commands, entity_id, options.hidden);
     } else if should_fit_model_bounds_collider(name, resource, options) {

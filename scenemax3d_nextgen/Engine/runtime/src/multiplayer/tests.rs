@@ -1,5 +1,35 @@
 use super::*;
 #[test]
+fn character_jump_captures_evaluated_speed_and_replays_only_its_remote_entity() {
+    let mut world = world();
+    let (_server, _, client) = joins::tests::connection();
+    world.insert_resource(Multiplayer { client: Some(client), ..default() });
+    let mut vars = SceneMaxVars::default();
+    vars.0.insert("jump_speed".into(), 25.);
+    let source = scenemax_parser::parse_program("subject.character.jump at speed of jump_speed").unwrap();
+    assert!(capture(&mut world.commands(), &source.statements[0], &mut vars, None,
+        &HashMap::new(), &HashMap::new()).is_none());
+    world.flush();
+    let (target, command, lifetime) = world.resource_mut::<Multiplayer>().pending.pop().unwrap();
+    assert_eq!(target, "subject");
+    assert!(lifetime.is_none());
+    assert_eq!(command, "{network_entity}.character.jump at speed of 25 async");
+    // No persistent action slot: snapshots must not restart an old jump.
+    assert!(matches!(local_command(&mut HashMap::new(), 7, command.clone()), Outgoing::Command { .. }));
+    let mut net = Multiplayer::default();
+    net.remotes.insert(7, "remote_subject".into());
+    remote_command(&mut world, &net, 7, &command, None);
+    let queue = world.resource::<DelayedActionQueue>();
+    assert_eq!(queue.actions.len(), 1);
+    let Statement::CharacterJump(jump) = &queue.actions[0].actions[0] else { panic!("jump was not replayed") };
+    assert_eq!(jump.target, "remote_subject");
+    assert_eq!(jump.speed, 25.);
+    assert!(jump.async_run);
+    remote_command(&mut world, &net, 7, "unrelated.character.jump at speed of 25 async", None);
+    assert_eq!(world.resource::<DelayedActionQueue>().actions.len(), 1);
+}
+
+#[test]
 fn action_capture_freezes_rebound_targets_and_secondary_references() {
     let mut world = world();
     let (_server, _, client) = joins::tests::connection();
@@ -338,6 +368,83 @@ fn world() -> World {
     w.init_resource::<DelayedActionQueue>();
     w.init_resource::<SceneMaxVars>();
     w
+}
+
+#[test]
+fn looping_motion_replays_until_the_owner_ends_its_controller() {
+    for source in [
+        "subject.turn left 360 in 2 seconds loop while running == 1",
+        "subject.move(x+4) in 2 seconds loop while running == 1",
+    ] {
+        let mut world = world();
+        let (_server, _, client) = joins::tests::connection();
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..default()
+        });
+        let program = scenemax_parser::parse_program(source).unwrap();
+        let lease = capture(
+            &mut world.commands(),
+            &program.statements[0],
+            &mut SceneMaxVars::default(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        world.flush();
+        let (_, command, lifetime) = world.resource_mut::<Multiplayer>().pending.pop().unwrap();
+        assert!(!command.contains("running"));
+        let action = action_record(&command, 1).unwrap();
+        assert_eq!(action.duration_ms, u32::MAX);
+        let mut net = Multiplayer::default();
+        net.remotes.insert(1, "remote".into());
+        receive_action(&mut net, 1, action);
+        assert_eq!(
+            net.remote_pending[0].resume_at(Instant::now() + Duration::from_secs(60)),
+            Some((u32::MAX, u32::MAX))
+        );
+        let mut local = local::LocalActions::default();
+        local.started(1, 2, 1, lifetime.clone());
+        assert!(lifetime.as_ref().unwrap().upgrade().is_some());
+        drop(lease);
+        assert!(lifetime.unwrap().upgrade().is_none());
+        net.replay.end(1, 2, 1);
+        assert!(!net.replay.current(1, 2, 1));
+    }
+}
+
+#[test]
+fn remote_motion_waits_for_queued_and_pending_character_setup() {
+    let mut world = world();
+    let root = world
+        .spawn(SceneMaxEntity {
+            name: "remote".into(),
+            runtime_name: "remote".into(),
+        })
+        .id();
+    let Statement::CharacterMode(mode) =
+        scenemax_parser::parse_program("remote.switch to character mode")
+            .unwrap()
+            .statements
+            .remove(0)
+    else {
+        panic!()
+    };
+    let command = "{network_entity}.move forward 4 in 2 seconds async";
+    assert!(character_replay_ready(&world, root, command));
+    enqueue(&mut world, vec![Statement::CharacterMode(mode.clone())]);
+    assert!(!character_replay_ready(&world, root, command));
+    assert!(character_replay_ready(
+        &world,
+        root,
+        "{network_entity}.switch to character mode"
+    ));
+    world.resource_mut::<DelayedActionQueue>().actions.clear();
+    world.entity_mut(root).insert(PendingCharacterMode(mode));
+    assert!(!character_replay_ready(&world, root, command));
+    world.entity_mut(root).remove::<PendingCharacterMode>();
+    assert!(character_replay_ready(&world, root, command));
 }
 fn spawn() -> Spawn {
     Spawn {
@@ -933,7 +1040,7 @@ fn multiplayer_attach_ik_effect_and_position_emit_parseable_wire_commands() {
 }
 
 #[test]
-fn multiplayer_held_input_sends_only_this_frames_movement() {
+fn multiplayer_held_input_sends_bounded_velocity_instead_of_frame_length_action() {
     let server = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
     let client = Client::connect(
         server.local_addr().unwrap(),
@@ -972,7 +1079,7 @@ fn multiplayer_held_input_sends_only_this_frames_movement() {
         scenemax_parser::parse_program(&net.pending[0].1.replace("{network_entity}", "fixture"))
             .unwrap();
     assert!(
-        matches!(&p.statements[0],Statement::Move(a) if (a.distance-0.2).abs()<0.0001 && a.duration_seconds==0.02)
+        matches!(&p.statements[0],Statement::Move(a) if (a.distance/a.duration_seconds-10.).abs()<0.0001 && a.duration_seconds==CHARACTER_INPUT_TTL_SECONDS)
     );
 }
 
@@ -1579,6 +1686,41 @@ fn held_character_move_transmits_the_same_speed_as_local_input() {
                 remote_move.velocity
             );
         }
+    }
+}
+
+#[test]
+fn held_rotation_uses_a_bounded_velocity_window_across_render_rates() {
+    for dt in [1. / 30., 1. / 60., 1. / 144.] {
+        let mut world = world();
+        let (_server, _, client) = joins::tests::connection();
+        world.insert_resource(Multiplayer {
+            client: Some(client),
+            ..default()
+        });
+        let p = scenemax_parser::parse_program("subject.turn left 15 in 0.1 seconds").unwrap();
+        assert!(
+            capture_timed(
+                &mut world.commands(),
+                &p.statements[0],
+                &mut SceneMaxVars::default(),
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(dt)
+            )
+            .is_none()
+        );
+        world.flush();
+        let (_, command, _) = world.resource_mut::<Multiplayer>().pending.pop().unwrap();
+        let record = action_record(&command, 1).unwrap();
+        assert!(record.duration_ms >= 119);
+        let p =
+            scenemax_parser::parse_program(&command.replace("{network_entity}", "remote")).unwrap();
+        let Statement::Turn(turn) = &p.statements[0] else {
+            panic!()
+        };
+        assert!((turn.degrees / turn.duration_seconds - 150.).abs() < 0.001);
     }
 }
 

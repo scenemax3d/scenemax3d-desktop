@@ -37,4 +37,5 @@ web-time = "1.1"
 bevy = { workspace = true, features = ["webgpu"] }
 
 [dev-dependencies]
+async-channel = "2.5"
 tempfile.workspace = true

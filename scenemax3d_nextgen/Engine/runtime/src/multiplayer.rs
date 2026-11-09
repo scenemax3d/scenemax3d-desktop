@@ -503,6 +503,7 @@ pub(super) fn capture_timed(
                     let easing = if continuous.is_none() { curve.wire() } else { String::new() };
                     let (d, t) = continuous
                         .map(|dt| (d * curve.step(t.max(0.001), t.max(0.001), if a.direction.is_axis() { dt.min(t.max(0.001)) } else { dt }) / t.max(0.001), dt))
+                        .map(|(d, dt)| continuous_motion_window(d, dt))
                         .unwrap_or((d, t));
                     let direction = match a.direction {
                         MoveDirection::Forward => "forward",
@@ -529,7 +530,7 @@ pub(super) fn capture_timed(
                     } else {
                         format!("{{network_entity}}.move {direction} {d} in {t} seconds{easing} async")
                     };
-                    (a.target.clone(), command)
+                    (a.target.clone(), looping_motion_command(command, continuous.is_none() && a.loop_condition.is_some()))
                 })
         }
         Statement::Turn(a) => {
@@ -544,6 +545,7 @@ pub(super) fn capture_timed(
                     let easing = if continuous.is_none() { curve.wire() } else { String::new() };
                     let (d, t) = continuous
                         .map(|dt| (d * curve.step(t.max(0.001), t.max(0.001), if a.absolute { dt.min(t.max(0.001)) } else { dt }) / t.max(0.001), dt))
+                        .map(|(d, dt)| if a.absolute { (d, dt) } else { continuous_motion_window(d, dt) })
                         .unwrap_or((d, t));
                     let command = if let Some(axis) = a.axis {
                         let axis = match axis {
@@ -562,7 +564,7 @@ pub(super) fn capture_timed(
                     };
                     (
                         a.target.clone(),
-                        command,
+                        looping_motion_command(command, continuous.is_none() && a.loop_condition.is_some()),
                     )
                 })
         }
@@ -1021,7 +1023,10 @@ fn dispatch_remote(
             .remotes
             .get(&id)
             .and_then(|name| entities.get(name))
-            .is_some_and(|(entity, _)| surface_replay_ready(world, *entity, &pending.command))
+            .is_some_and(|(entity, _)| {
+                surface_replay_ready(world, *entity, &pending.command)
+                    && character_replay_ready(world, *entity, &pending.command)
+            })
         {
             let resolved =
                 replication::references(&pending.command, "{network_entity_id:", |reference| {
@@ -1066,6 +1071,37 @@ fn dispatch_remote(
             net.remote_pending.push(pending);
         }
     }
+}
+
+fn character_replay_ready(world: &World, entity: Entity, command: &str) -> bool {
+    let Some(scene) = world.get::<SceneMaxEntity>(entity) else {
+        return true;
+    };
+    let source = command.replace("{network_entity}", &scene.name);
+    let Ok(program) = scenemax_parser::parse_program(&source) else {
+        return true;
+    };
+    if !program.statements.iter().any(|action| {
+        matches!(
+            action,
+            Statement::Move(_) | Statement::MoveTo(_) | Statement::CharacterJump(_)
+        )
+    }) {
+        return true;
+    }
+    // A glTF character's capsule is fitted asynchronously. Enabling character
+    // mode replaces transform movement with a motor; do not lose motion in that
+    // handoff, including a mode and movement arriving in the same packet batch.
+    world.get::<PendingCharacterMode>(entity).is_none()
+        && !world
+            .get_resource::<DelayedActionQueue>()
+            .is_some_and(|queue| {
+                queue.actions.iter().any(|queued| {
+                    queued.actions.iter().any(|action| {
+                matches!(action, Statement::CharacterMode(mode) if mode.target == scene.name)
+            })
+                })
+            })
 }
 
 fn is_ik_command(command: &str) -> bool {
@@ -1189,6 +1225,23 @@ fn receive_snapshot(
     }
 }
 
+fn continuous_motion_window(distance: f32, delta: f32) -> (f32, f32) {
+    // A one-render-frame action can end before the receiving client's next
+    // update. Publish a bounded velocity intent, refreshed by subsequent input.
+    let seconds = CHARACTER_INPUT_TTL_SECONDS.max(delta);
+    (distance * seconds / delta.max(0.001), seconds)
+}
+
+fn looping_motion_command(command: String, looping: bool) -> String {
+    // The owner evaluates the authored guard. Peers continue until the owner's
+    // controller releases its lease and sends ActionEnd, even for local guards.
+    if looping {
+        format!("{command} loop while 1==1")
+    } else {
+        command
+    }
+}
+
 fn action_record(source: &str, sequence: u16) -> Option<scenemax_multiplayer::protocol::Action> {
     let p = scenemax_parser::parse_program(&replication::references(
         source,
@@ -1197,8 +1250,8 @@ fn action_record(source: &str, sequence: u16) -> Option<scenemax_multiplayer::pr
     )?)
     .ok()?;
     let (slot, seconds) = match p.statements.first()? {
-        Statement::Move(a) => (1, Some(a.duration_seconds)),
-        Statement::Turn(a) => (2, Some(a.duration_seconds)),
+        Statement::Move(a) => (1, a.loop_condition.is_none().then_some(a.duration_seconds)),
+        Statement::Turn(a) => (2, a.loop_condition.is_none().then_some(a.duration_seconds)),
         Statement::MoveTo(a) => (1, Some(a.duration_seconds)),
         Statement::Animate(_) => (3, None),
         Statement::EffekseerPlay(_) => (4, None),
@@ -1375,6 +1428,7 @@ fn replay_remote_command_owned(
             Statement::Animate(a) => a.target == *name,
             Statement::EffekseerPlay(a) => a.target == *name,
             Statement::CharacterMode(a) => a.target == *name,
+            Statement::CharacterJump(a) => a.target == *name,
             Statement::ClearCharacterMode { target } => target == name,
             Statement::SetShader(a) => a.target == *name,
             Statement::SetMaterial(a) => a.target == *name,
