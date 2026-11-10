@@ -1,5 +1,7 @@
 mod animation_range;
 mod animation_rewind;
+#[cfg(not(target_arch = "wasm32"))]
+mod background_render;
 mod entity_stop;
 #[cfg(test)]
 mod input_gameplay_tests;
@@ -245,7 +247,9 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         ..default()
     });
 
-    app.insert_resource(WinitSettings::continuous())
+    // A timed background tick keeps simulation/networking alive even when
+    // Windows withholds redraw events for a covered or minimized client.
+    app.insert_resource(WinitSettings::game())
         .insert_resource(bevy::ecs::error::FallbackErrorHandler(
             handle_runtime_ecs_error,
         ))
@@ -345,7 +349,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             feed_tnua_character_controllers.in_set(TnuaUserControlsSystems),
         )
         .add_systems(Update, apply_startup_runs_when_ready)
-        .add_systems(PostUpdate, prepare_character_model_bounds.after(bevy::transform::TransformSystems::Propagate))
+        .add_systems(PostUpdate, (prepare_character_model_bounds, prepare_visual_collision_bounds).after(bevy::transform::TransformSystems::Propagate))
         .add_systems(
             SpawnScene,
             shader::apply_pending_surfaces.after(SceneSpawnerSystems::SceneSpawn),
@@ -447,6 +451,11 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
     if exit_on_escape {
         app.add_systems(Update, exit_on_escape_in_undecorated_window);
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    app.add_plugins(background_render::BackgroundRenderPlugin);
+    #[cfg(not(target_arch = "wasm32"))]
+    background_render::configure_frame_limit(&mut app, project_root.as_deref(), launch.script.as_deref());
 
     app.run();
 }
@@ -582,7 +591,7 @@ static PERF_TRANSFORM_BUILDS: AtomicU64 = AtomicU64::new(0);
 static PERF_BONE_TARGET_RESOLVES: AtomicU64 = AtomicU64::new(0);
 static PERF_BONE_ALIASES_INSERTED: AtomicU64 = AtomicU64::new(0);
 
-fn update_scenemax_perf_debug(time: Res<Time>, mut perf: ResMut<SceneMaxPerfDebug>) {
+fn update_scenemax_perf_debug(time: Res<Time<Real>>, windows: Query<&Window>, mut perf: ResMut<SceneMaxPerfDebug>) {
     if !runtime_logging_enabled() {
         return;
     }
@@ -598,10 +607,11 @@ fn update_scenemax_perf_debug(time: Res<Time>, mut perf: ResMut<SceneMaxPerfDebu
     let targets = PERF_BONE_TARGET_RESOLVES.swap(0, Ordering::Relaxed);
     let aliases = PERF_BONE_ALIASES_INSERTED.swap(0, Ordering::Relaxed);
     write_runtime_diagnostic_line(format!(
-        "PERF fps={fps:.1} bone_ms/build={:.3} bone_targets/build={:.1} bone_aliases/build={:.1} transform_builds={builds}",
+        "PERF fps={fps:.1} bone_ms/build={:.3} bone_targets/build={:.1} bone_aliases/build={:.1} transform_builds={builds} focused={}",
         bone_ns as f64 / 1_000_000.0 / builds as f64,
         targets as f64 / builds as f64,
         aliases as f64 / builds as f64,
+        windows.iter().any(|window| window.focused),
     ));
     *perf = SceneMaxPerfDebug::default();
 }

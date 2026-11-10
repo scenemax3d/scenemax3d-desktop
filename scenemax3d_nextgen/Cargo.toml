@@ -27,6 +27,7 @@ resolver = "3"
 default-members = ["IDE/app", "Projector/app"]
 
 [patch.crates-io]
+bevy_winit = { path = "third_party/bevy_winit" }
 wgpu = { path = "third_party/wgpu" }
 
 [workspace.package]

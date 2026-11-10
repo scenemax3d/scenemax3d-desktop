@@ -18,6 +18,15 @@ pub(super) fn encode(
         crate::ik::reference(&format!("{{network_entity:{name}}}"), joint.as_deref())
     };
     Some(match action {
+        // A jump is a one-shot impulse, not persistent state to restore in a
+        // late-join snapshot. Send the evaluated speed through Command.
+        Statement::CharacterJump(jump) => (
+            jump.target.clone(),
+            format!(
+                "{{network_entity}}.character.jump at speed of {} async",
+                number(&jump.speed_value)?
+            ),
+        ),
         Statement::LabelText { target, value } => (
             target.clone(),
             format!(

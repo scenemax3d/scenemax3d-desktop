@@ -162,7 +162,7 @@
       "itchLinuxChannel": "linux",
       "itchMacChannel": "macos",
       "itchWindowsChannel": "windows",
-      "lastActiveAt": 1793999395169,
+      "lastActiveAt": 1794174576213,
       "multiplayerDeployOs": "Linux",
       "multiplayerPassword": "",
       "multiplayerServerIp": "178.128.144.17",
@@ -197,7 +197,7 @@
       "itchLinuxChannel": "linux",
       "itchMacChannel": "macos",
       "itchWindowsChannel": "windows",
-      "lastActiveAt": 1793903793591,
+      "lastActiveAt": 1794076286876,
       "multiplayerDeployOs": "Windows",
       "multiplayerPassword": "",
       "multiplayerServerIp": "127.0.0.1",
@@ -231,5 +231,5 @@
       "path": ".tmp/hud-alignment-visual"
     }
   ],
-  "selectedProject": "hud-alignment-visual"
+  "selectedProject": "GMTK 2026"
 }

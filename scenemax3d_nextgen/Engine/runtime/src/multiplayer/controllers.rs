@@ -10,6 +10,19 @@ pub(super) fn prune(world: &mut World, replay: &replay::ReplayHistory) {
         }) => !replay.current(*entity, *slot, *sequence),
         _ => false,
     };
+    let motion_cancelled = |owner: Option<&SceneMaxControllerKey>,
+                            installed: &HashSet<(u32, u8)>| {
+        let successor = match owner {
+            Some(SceneMaxControllerKey::NetworkAction {
+                entity,
+                slot,
+                sequence,
+            }) => replay.active_successor(*entity, *slot, *sequence),
+            _ => false,
+        };
+        cancelled(owner)
+            && (!successor || motion_channel(owner).is_some_and(|key| installed.contains(&key)))
+    };
     crate::attachments::prune(world, cancelled);
     if let Some(mut queue) = world.get_resource_mut::<DelayedActionQueue>() {
         queue
@@ -42,9 +55,15 @@ pub(super) fn prune(world: &mut World, replay: &replay::ReplayHistory) {
     let mut empty = Vec::new();
     for (entity, mut movements) in world.query::<(Entity, &mut TimedMoves)>().iter_mut(world) {
         let previous = movements.moves.len();
+        let installed = movements
+            .moves
+            .iter()
+            .filter(|m| !cancelled(m.controller_owner.as_ref()))
+            .filter_map(|m| motion_channel(m.controller_owner.as_ref()))
+            .collect();
         movements
             .moves
-            .retain(|movement| !cancelled(movement.controller_owner.as_ref()));
+            .retain(|movement| !motion_cancelled(movement.controller_owner.as_ref(), &installed));
         if movements.moves.len() != previous {
             tracing::debug!(?entity, "cancelled numbered remote movement");
             if movements.moves.is_empty() {
@@ -58,9 +77,15 @@ pub(super) fn prune(world: &mut World, replay: &replay::ReplayHistory) {
     let mut empty = Vec::new();
     for (entity, mut turns) in world.query::<(Entity, &mut TimedTurns)>().iter_mut(world) {
         let previous = turns.turns.len();
+        let installed = turns
+            .turns
+            .iter()
+            .filter(|t| !cancelled(t.controller_owner.as_ref()))
+            .filter_map(|t| motion_channel(t.controller_owner.as_ref()))
+            .collect();
         turns
             .turns
-            .retain(|turn| !cancelled(turn.controller_owner.as_ref()));
+            .retain(|turn| !motion_cancelled(turn.controller_owner.as_ref(), &installed));
         if turns.turns.len() != previous {
             tracing::debug!(?entity, "cancelled numbered remote turn");
         }
@@ -141,6 +166,13 @@ pub(super) fn prune(world: &mut World, replay: &replay::ReplayHistory) {
         }
         world.entity_mut(root).remove::<CurrentAnimation>();
         tracing::debug!(?root, "cancelled numbered remote animation");
+    }
+}
+
+fn motion_channel(owner: Option<&SceneMaxControllerKey>) -> Option<(u32, u8)> {
+    match owner {
+        Some(SceneMaxControllerKey::NetworkAction { entity, slot, .. }) => Some((*entity, *slot)),
+        _ => None,
     }
 }
 
@@ -411,11 +443,7 @@ mod tests {
             .spawn((
                 Transform::from_xyz(3., 4., 5.),
                 TimedMoves {
-                    moves: vec![
-                        movement(None),
-                        movement(Some(owner(10, 1, 1))),
-                        movement(Some(owner(10, 1, 2))),
-                    ],
+                    moves: vec![movement(None), movement(Some(owner(10, 1, 1)))],
                 },
                 SceneMaxCharacterMotor {
                     timed_motion_owner: Some(owner(10, 1, 2)),
@@ -428,6 +456,13 @@ mod tests {
             ))
             .id();
         prune(&mut world, &replay);
+        assert_eq!(world.get::<TimedMoves>(entity).unwrap().moves.len(), 2);
+        append_timed_move(
+            &mut world.commands(),
+            entity,
+            movement(Some(owner(10, 1, 2))),
+        );
+        world.flush();
         assert_eq!(world.get::<TimedMoves>(entity).unwrap().moves.len(), 2);
         replay.end(10, 1, 1);
         prune(&mut world, &replay);

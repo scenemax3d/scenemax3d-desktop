@@ -2110,8 +2110,6 @@ dependencies = [
 [[package]]
 name = "bevy_winit"
 version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ef0a5a55524e793ab13536ef244229fa66a4839fae6564df2aa4b3c13956a82"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -4953,7 +4951,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -5907,6 +5905,7 @@ name = "scenemax_runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel",
  "avian3d",
  "bevy",
  "bevy-tnua",

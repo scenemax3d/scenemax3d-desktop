@@ -2746,6 +2746,71 @@ fn character_dimensions_with_visual_offset(
 #[derive(Component)]
 pub(super) struct CharacterModelBounds(ModelSubtreeBounds);
 
+/// Event-only bounds for imported visuals; these do not create a solid physics body.
+#[derive(Component)]
+pub(super) struct PendingVisualCollisionBounds;
+
+pub(super) fn insert_visual_collision_bounds(
+    commands: &mut Commands,
+    entity: Entity,
+    options: &EntityOptions,
+) {
+    if physics_body_kind(options).is_none()
+        && options.collision_shape.is_none()
+        && !options.collider
+    {
+        commands.entity(entity).insert(PendingVisualCollisionBounds);
+    }
+}
+
+pub(super) fn prepare_visual_collision_bounds(
+    mut commands: Commands,
+    meshes: Res<Assets<Mesh>>,
+    spawner: Res<bevy::world_serialization::WorldInstanceSpawner>,
+    mut bounds: ResMut<SceneMaxColliderBounds>,
+    roots: Query<
+        (
+            Entity,
+            &SceneMaxEntity,
+            &GlobalTransform,
+            &bevy::world_serialization::WorldInstance,
+            Option<&SceneMaxGltfVisualOffset>,
+            Option<&SceneMaxRuntimeVisibility>,
+            &Visibility,
+        ),
+        With<PendingVisualCollisionBounds>,
+    >,
+    children: Query<&Children>,
+    mesh_entities: Query<(&Mesh3d, &GlobalTransform)>,
+) {
+    for (root, name, transform, instance, offset, runtime_visibility, visibility) in &roots {
+        if !spawner.instance_is_ready(**instance) || offset.is_some_and(|o| !o.applied) {
+            continue;
+        }
+        if children.iter_descendants(root).any(|e| {
+            mesh_entities
+                .get(e)
+                .is_ok_and(|(mesh, _)| meshes.get(&mesh.0).is_none())
+        }) {
+            continue;
+        }
+        if let Some(local) =
+            build_model_subtree_bounds(root, transform, &children, &mesh_entities, &meshes)
+        {
+            register_model_bounds_box_collider_bounds(
+                &mut bounds,
+                &name.name,
+                transform.compute_transform(),
+                local,
+                runtime_visibility.map_or(*visibility == Visibility::Hidden, |v| !v.visible),
+            );
+            commands
+                .entity(root)
+                .remove::<PendingVisualCollisionBounds>();
+        }
+    }
+}
+
 pub(super) fn prepare_character_model_bounds(
     mut commands: Commands,
     meshes: Option<Res<Assets<Mesh>>>,
@@ -4352,11 +4417,26 @@ pub(super) fn append_timed_turn(commands: &mut Commands, entity: Entity, turn: T
             return;
         };
         if let Some(mut turns) = entity.get_mut::<TimedTurns>() {
+            turns.turns.retain(|old| {
+                !replaces_network_motion(
+                    turn.controller_owner.as_ref(),
+                    old.controller_owner.as_ref(),
+                )
+            });
             turns.turns.push(turn);
         } else {
             entity.insert(TimedTurns { turns: vec![turn] });
         }
     });
+}
+
+fn replaces_network_motion(
+    next: Option<&SceneMaxControllerKey>,
+    previous: Option<&SceneMaxControllerKey>,
+) -> bool {
+    matches!((next, previous),
+        (Some(SceneMaxControllerKey::NetworkAction { entity: a, slot: sa, .. }),
+         Some(SceneMaxControllerKey::NetworkAction { entity: b, slot: sb, .. })) if a == b && sa == sb)
 }
 
 pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_move: TimedMove) {
@@ -4397,6 +4477,7 @@ pub(super) fn append_timed_move(commands: &mut Commands, entity: Entity, timed_m
         }
         let mut timed_move = Some(timed_move);
         if let Some(mut moves) = entity_mut.get_mut::<TimedMoves>() {
+            moves.moves.retain(|old| !replaces_network_motion(timed_move.as_ref().unwrap().controller_owner.as_ref(), old.controller_owner.as_ref()));
             moves.moves.push(timed_move.take().unwrap());
         } else {
             entity_mut.insert(TimedMoves {
@@ -5486,6 +5567,71 @@ mod static_mesh_collider_tests {
         assert!(
             (collider_bounds.radius_by_name["probe"] - Vec3::splat(0.5).length()).abs() < 0.001
         );
+    }
+
+    #[test]
+    fn visual_model_event_bounds_follow_offset_scale_and_do_not_add_solid_physics() {
+        let mut world = World::new();
+        let root = world.spawn_empty().id();
+        insert_visual_collision_bounds(&mut world.commands(), root, &EntityOptions::default());
+        world.flush();
+        assert!(world.get::<PendingVisualCollisionBounds>(root).is_some());
+        assert!(world.get::<AvianCollider>(root).is_none());
+        let mut bounds = SceneMaxColliderBounds::default();
+        let transform = Transform::from_scale(Vec3::splat(4.));
+        register_model_bounds_box_collider_bounds(
+            &mut bounds,
+            "model",
+            transform,
+            ModelSubtreeBounds {
+                min: Vec3::new(-0.3, 0., -0.3),
+                max: Vec3::new(0.3, 1.6, 0.3),
+            },
+            false,
+        );
+        bounds
+            .shape_by_name
+            .insert("pickup".into(), ColliderBoundShape::Sphere { radius: 0.2 });
+        let mut transforms = HashMap::from([
+            ("model".into(), transform),
+            ("pickup".into(), Transform::from_xyz(0., 4., 0.)),
+        ]);
+        assert!(collision_condition_matches(
+            &["model".into()],
+            "pickup",
+            Some(&transforms),
+            Some(&bounds)
+        ));
+        transforms.insert("pickup".into(), Transform::from_xyz(3., 4., 0.));
+        assert!(!collision_condition_matches(
+            &["model".into()],
+            "pickup",
+            Some(&transforms),
+            Some(&bounds)
+        ));
+        for options in [
+            EntityOptions {
+                body_kind: Some(SceneMaxBodyKind::Static),
+                ..Default::default()
+            },
+            EntityOptions {
+                collision_shape: Some(SceneMaxCollisionShape::None),
+                ..Default::default()
+            },
+            EntityOptions {
+                collider: true,
+                ..Default::default()
+            },
+        ] {
+            let explicit = world.spawn_empty().id();
+            insert_visual_collision_bounds(&mut world.commands(), explicit, &options);
+            world.flush();
+            assert!(
+                world
+                    .get::<PendingVisualCollisionBounds>(explicit)
+                    .is_none()
+            );
+        }
     }
 
     #[test]
