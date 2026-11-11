@@ -5928,6 +5928,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "tracing",
+ "wasm-bindgen",
  "web-time",
 ]
 

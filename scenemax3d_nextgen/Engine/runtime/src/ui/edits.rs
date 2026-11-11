@@ -2,6 +2,8 @@
 use super::*;
 use scenemax_ui_input::Interaction;
 pub(crate) mod geometry;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod web;
 use bevy::input::{
     ButtonState,
     keyboard::{Key, KeyboardInput},
@@ -305,6 +307,32 @@ pub(crate) fn input(
     mut queue: ResMut<SceneMaxUiActionQueue>,
     mut commands: Commands,
 ) {
+    #[cfg(target_arch = "wasm32")]
+    for event in web::take_events() {
+        let Some(entity) = Entity::try_from_bits(event.entity) else { continue };
+        let Ok((_, _, mut edit, _)) = edits.get_mut(entity) else { continue };
+        let mut state = edit.state.clone();
+        if !state.change("text", &event.text) { continue; }
+        let changed = state.text != edit.state.text;
+        edit.state = state;
+        edit.focus = event.focus;
+        let len = edit.state.text.chars().count();
+        edit.caret = event.caret.min(len);
+        edit.anchor = event.anchor.min(len);
+        edit.dirty = true;
+        if changed {
+            for loaded in runtime.loaded.values() {
+                for (path, target) in &loaded.targets {
+                    if target.entity == entity && target.multiplayer {
+                        let path = path.clone();
+                        commands.queue(move |world: &mut World| {
+                            multiplayer::widgets::capture_edit(world, entity, &path)
+                        });
+                    }
+                }
+            }
+        }
+    }
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     let control = keys.pressed(KeyCode::ControlLeft)
         || keys.pressed(KeyCode::ControlRight)
@@ -467,6 +495,8 @@ pub(crate) fn render(
             s.text.clone()
         };
         let color = parse_ui_color(&s.color).with_alpha(if placeholder { 0.5 } else { 1. });
+        #[cfg(target_arch = "wasm32")]
+        let color = if edit.focus { color.with_alpha(0.) } else { color };
         let text = spawn_scenemax_ui_text_entity(
             &mut commands,
             &server,

@@ -303,6 +303,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
             )
                 .chain()
                 .after(ui::apply_scenemax_ui_actions)
+                .before(ui::buttons::click)
                 .before(actions::apply_key_events),
         )
         .add_systems(
@@ -456,6 +457,12 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
     app.add_plugins(background_render::BackgroundRenderPlugin);
     #[cfg(not(target_arch = "wasm32"))]
     background_render::configure_frame_limit(&mut app, project_root.as_deref(), launch.script.as_deref());
+
+    #[cfg(target_arch = "wasm32")]
+    app.add_systems(PostUpdate, ui::edits::web::sync
+        .after(bevy::ui::UiSystems::PostLayout)
+        .after(bevy::ui::UiSystems::Stack)
+        .after(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate));
 
     app.run();
 }

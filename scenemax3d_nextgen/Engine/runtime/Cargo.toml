@@ -35,6 +35,7 @@ web-time = "1.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 bevy = { workspace = true, features = ["webgpu"] }
+wasm-bindgen = "=0.2.129"
 
 [dev-dependencies]
 async-channel = "2.5"
