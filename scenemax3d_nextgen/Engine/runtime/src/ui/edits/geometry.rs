@@ -177,7 +177,7 @@ pub(crate) fn refresh(world: &mut World) {
         for entity in old {
             let _ = world.despawn(entity);
         }
-        if !focus {
+        if !focus || cfg!(target_arch = "wasm32") {
             continue;
         }
         let mut visuals = Vec::new();
