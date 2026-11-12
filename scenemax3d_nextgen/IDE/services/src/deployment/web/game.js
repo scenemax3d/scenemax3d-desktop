@@ -41,8 +41,9 @@ try {
     gateway = config.websocket_url;
     if (typeof gateway !== "string" || !/^wss?:\/\//.test(gateway))
       throw Error("Set websocket_url in network.json to your SceneMax browser gateway. See README.txt in this export.");
-    if (config.allowed_origin && location.origin !== config.allowed_origin)
-      throw Error(`Multiplayer gateway allows ${config.allowed_origin}, but this game is running at ${location.origin}. Open the game at the allowed address, or update Allowed game origin in Project Settings > Multiplayer > Browser, redeploy the gateway, and rebuild the game.`);
+    const allowedOrigins = (config.allowed_origin || '').split(',').map(origin => origin.trim()).filter(Boolean);
+    if (config.allowed_origin && !allowedOrigins.includes(location.origin))
+      throw Error(`Multiplayer gateway allows ${config.allowed_origin}, but this game is running at ${location.origin}. Open the game at an allowed address, or update Allowed game origins in Project Settings > Multiplayer > Browser, redeploy the gateway, and rebuild the game.`);
   }
   await mountFiles(manifest, {
     fetchFile: url => fetch(url), mountFile: mount_file, mountAlias: mount_alias,

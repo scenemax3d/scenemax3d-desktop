@@ -146,14 +146,14 @@ mod tests {
         settings.port = 19001;
         settings.server = "public.example.com".into();
         settings.browser_gateway.websocket_url = "wss://network.example.com/play".into();
-        settings.browser_gateway.allowed_origin = "https://games.example.com".into();
+        settings.browser_gateway.allowed_origin = "https://games.example.com, http://localhost:8080".into();
         let path = install(root.path(), &settings, b"fixture").unwrap();
         assert!(path.is_file());
         let value: serde_json::Value =
             serde_json::from_slice(&fs::read(root.path().join("gateway.json")).unwrap()).unwrap();
         assert_eq!(value["upstream"], "127.0.0.1:19001");
         assert_eq!(value["listen"], "127.0.0.1:9002");
-        assert_eq!(value["allowed_origin"], "https://games.example.com");
+        assert_eq!(value["allowed_origin"], "https://games.example.com, http://localhost:8080");
         assert!(!value.to_string().contains("password"));
     }
 }

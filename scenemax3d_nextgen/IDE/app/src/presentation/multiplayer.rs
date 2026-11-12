@@ -481,7 +481,7 @@ pub(crate) fn refresh(
                         ("gateway_enabled", "Browser gateway"),
                         ("gateway_url", "Browser WebSocket URL"),
                         ("gateway_listen", "Gateway listen IP:port"),
-                        ("gateway_origin", "Allowed game origin"),
+                        ("gateway_origin", "Allowed game origins"),
                     ],
                 );
                 text(
@@ -492,7 +492,7 @@ pub(crate) fn refresh(
                 text(
                     &mut c,
                     panel,
-                    "Allowed origin is where the game is hosted: scheme + host + optional port, without a path. For itch.io, use the embedded game's origin. HTTPS games require wss:// and TLS.",
+                    "Separate origins with commas, for example https://html-classic.itch.zone, http://localhost:8080. Each must be scheme + host + optional port, without a path or trailing slash. HTTPS games require wss:// and TLS. Save, redeploy the gateway, and rebuild your web game after changes.",
                 );
             }
             Tab::Deployment => {
