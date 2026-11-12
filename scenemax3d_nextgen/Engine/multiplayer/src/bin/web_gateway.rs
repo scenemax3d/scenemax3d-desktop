@@ -29,11 +29,16 @@ fn serve(
     let mut socket = tungstenite::accept_hdr_with_config(
         stream,
         move |request: &Request, response: Response| {
-            if request
+            if !request
                 .headers()
                 .get("origin")
                 .and_then(|v| v.to_str().ok())
-                != Some(origin.as_str())
+                .is_some_and(|requested| {
+                    origin
+                        .split(',')
+                        .map(str::trim)
+                        .any(|allowed| !allowed.is_empty() && allowed == requested)
+                })
             {
                 let mut error = ErrorResponse::new(Some("Origin not allowed".into()));
                 *error.status_mut() = tungstenite::http::StatusCode::FORBIDDEN;
@@ -139,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.len() != 3 {
         eprintln!(
-            "Usage: scenemax_web_gateway LISTEN_ADDRESS UDP_SERVER_ADDRESS ALLOWED_ORIGIN\nExample: scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080\nUse a TLS reverse proxy for public wss:// access. Each browser connection owns a distinct UDP socket."
+            "Usage: scenemax_web_gateway LISTEN_ADDRESS UDP_SERVER_ADDRESS ALLOWED_ORIGINS\nExample: scenemax_web_gateway 127.0.0.1:9002 127.0.0.1:9001 http://localhost:8080,https://game.example\nSeparate exact origins with commas (quote the argument if it contains spaces). Use a TLS reverse proxy for public wss:// access. Each browser connection owns a distinct UDP socket."
         );
         std::process::exit(2);
     }
@@ -172,6 +177,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use tungstenite::client::IntoClientRequest;
+    #[test]
+    fn multiple_origins_accept_each_exact_member_only() {
+        for (origin, accepted) in [
+            (Some("http://localhost:8080"), true),
+            (Some("https://game.example"), true),
+            (Some("https://game.example.evil.test"), false),
+            (Some("http://localhost:8081"), false),
+            (Some("https://game.example/"), false),
+            (Some("null"), false),
+            (None, false),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let (stream, _) = listener.accept().unwrap();
+                let _ = serve(
+                    stream,
+                    "127.0.0.1:9001".parse().unwrap(),
+                    "http://localhost:8080, https://game.example".into(),
+                );
+            });
+            let mut request = format!("ws://{address}").into_client_request().unwrap();
+            if let Some(origin) = origin {
+                request
+                    .headers_mut()
+                    .insert("origin", origin.parse().unwrap());
+            }
+            match tungstenite::connect(request) {
+                Ok((mut socket, _)) => {
+                    assert!(accepted, "{origin:?}");
+                    socket.close(None).unwrap();
+                }
+                Err(Error::Http(response)) => {
+                    assert!(!accepted, "{origin:?}");
+                    assert_eq!(response.status(), 403);
+                }
+                other => panic!("Unexpected handshake result: {other:?}"),
+            }
+            server.join().unwrap();
+        }
+    }
     #[test]
     fn rejects_unconfigured_browser_origins() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

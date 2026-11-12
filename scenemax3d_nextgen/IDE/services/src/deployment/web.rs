@@ -258,14 +258,14 @@ mod network_config_tests {
         write_network_config(
             dir.path(),
             "wss://gateway.example.com/network?version=1",
-            "http://localhost:8080",
+            "https://game.example.com, http://localhost:8080",
         )
         .unwrap();
         let actual: serde_json::Value =
             serde_json::from_slice(&fs::read(dir.path().join("network.json")).unwrap()).unwrap();
         assert_eq!(
             actual,
-            serde_json::json!({"websocket_url":"wss://gateway.example.com/network?version=1", "allowed_origin":"http://localhost:8080"})
+            serde_json::json!({"websocket_url":"wss://gateway.example.com/network?version=1", "allowed_origin":"https://game.example.com, http://localhost:8080"})
         );
         write_network_config(dir.path(), "", "").unwrap();
         assert_eq!(

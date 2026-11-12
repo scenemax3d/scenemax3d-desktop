@@ -53,6 +53,7 @@ impl Preview {
     }
     /// Serve at the exact local Origin accepted by the multiplayer gateway.
     pub fn start_at_origin(&mut self, artifact: PathBuf, origin: &str) -> io::Result<()> {
+        let origin = local_allowed_origin(origin)?;
         let address = local_origin_address(origin)?;
         self.stop();
         self.start_server(artifact, true, Some((address, format!("{origin}/"))))
@@ -207,6 +208,13 @@ fn serve_archive(
 ) -> io::Result<()> {
     serve_archive_at(artifact, cancel, state, open, None)
 }
+/// Select the first configured origin that can be served locally.
+pub fn local_allowed_origin(origins: &str) -> io::Result<&str> {
+    origins.split(',').map(str::trim)
+        .find(|origin| local_origin_address(origin).is_ok())
+        .ok_or_else(|| io::Error::other("Add a local HTTP origin such as http://localhost:8080 to Allowed game origins, redeploy the gateway, and rebuild the game to use browser testing."))
+}
+
 /// Validate a local HTTP origin without binding to an external network interface.
 pub fn local_origin_address(origin: &str) -> io::Result<std::net::SocketAddr> {
     let authority = origin.strip_prefix("http://").ok_or_else(|| io::Error::other("Browser testing requires an allowed game origin such as http://localhost:8080. The deployed gateway must allow this same origin."))?;
@@ -311,6 +319,7 @@ fn exported_endpoint(root: &Path) -> io::Result<Option<(std::net::SocketAddr, St
     }
     let origin = network["allowed_origin"].as_str().filter(|s| !s.is_empty())
         .ok_or_else(|| io::Error::other("This multiplayer export has no allowed game origin. Rebuild it, or use Project Settings > Multiplayer > Deployment > Test With Remote Server."))?;
+    let origin = local_allowed_origin(origin)?;
     let address = local_origin_address(origin)?;
     Ok(Some((address, format!("{origin}/"))))
 }

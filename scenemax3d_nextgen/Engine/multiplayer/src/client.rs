@@ -10,6 +10,8 @@ use std::{
 use web_time::Instant;
 mod ends;
 mod health;
+#[cfg(any(target_arch = "wasm32", test))]
+mod poll_clock;
 #[cfg(not(target_arch = "wasm32"))]
 use std::net::UdpSocket;
 #[cfg(target_arch = "wasm32")]
@@ -135,6 +137,8 @@ pub struct Client {
     pending_session: Option<(u32, String)>,
     ready_received: bool,
     health: health::Health,
+    #[cfg(target_arch = "wasm32")]
+    poll_clock: poll_clock::PollClock,
     ends: ends::Ends,
     closed: bool,
 }
@@ -177,6 +181,8 @@ impl Client {
             pending_session: None,
             ready_received: false,
             health: health::Health::new(now),
+            #[cfg(target_arch = "wasm32")]
+            poll_clock: poll_clock::PollClock::new(now),
             ends: ends::Ends::default(),
             closed: false,
         })
@@ -342,6 +348,10 @@ impl Client {
         if self.closed {
             return Ok(Vec::new());
         }
+        #[cfg(target_arch = "wasm32")]
+        let can_expire = self.poll_clock.can_expire(Instant::now());
+        #[cfg(not(target_arch = "wasm32"))]
+        let can_expire = true;
         let mut events = Vec::new();
         // Extra byte distinguishes oversized datagrams even on truncating OSes.
         let mut buffer = [0u8; crate::MAX_PACKET_SIZE + 1];
@@ -486,13 +496,14 @@ impl Client {
             return Ok(events);
         }
         let now = Instant::now();
-        if self.state == State::Ready && self.health.expired(now) {
+        if can_expire && self.state == State::Ready && self.health.expired(now) {
             self.close();
             return Err(
                 io::Error::new(io::ErrorKind::TimedOut, "multiplayer connection lost").into(),
             );
         }
-        if matches!(self.state, State::Connecting | State::Synchronizing)
+        if can_expire
+            && matches!(self.state, State::Connecting | State::Synchronizing)
             && now.duration_since(self.started) > Duration::from_secs(10)
         {
             let message = if self.state == State::Connecting {

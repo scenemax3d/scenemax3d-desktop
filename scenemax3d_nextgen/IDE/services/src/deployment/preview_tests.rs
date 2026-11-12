@@ -1,5 +1,19 @@
 use super::*;
 #[test]
+fn multiple_origins_select_local_preview_without_changing_allowlist() {
+    let root = tempfile::tempdir().unwrap();
+    let config = r#"{"websocket_url":"wss://gateway.example","allowed_origin":"https://game.example, http://localhost:8080, http://127.0.0.1:9090"}"#;
+    fs::write(root.path().join("network.json"), config).unwrap();
+    let (address, url) = exported_endpoint(root.path()).unwrap().unwrap();
+    assert_eq!(address.port(), 8080);
+    assert_eq!(url, "http://localhost:8080/");
+    assert_eq!(
+        fs::read_to_string(root.path().join("network.json")).unwrap(),
+        config
+    );
+    assert!(local_allowed_origin("https://game.example, https://other.example").is_err());
+}
+#[test]
 fn multiplayer_preview_preserves_exact_local_origin() {
     for invalid in [
         "https://localhost:8080",

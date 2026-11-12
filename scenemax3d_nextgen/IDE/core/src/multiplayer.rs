@@ -84,7 +84,7 @@ pub struct BrowserGateway {
     pub websocket_url: String,
     /// Deployment TCP bind address. Local runs always bind to loopback.
     pub listen: String,
-    /// Exact browser Origin accepted by the adapter.
+    /// Comma-separated exact browser origins accepted by the adapter (single values remain valid).
     pub allowed_origin: String,
 }
 impl Default for BrowserGateway {
@@ -104,13 +104,18 @@ impl BrowserGateway {
         let endpoint = checked_url(&self.websocket_url, &["ws", "wss"]).map_err(
             |_| "Enter a ws:// or wss:// browser gateway URL without credentials or a fragment",
         )?;
-        let origin = checked_url(&self.allowed_origin, &["http", "https"])
-            .map_err(|_| "Enter the game's http:// or https:// origin")?;
-        if origin.origin().ascii_serialization() != self.allowed_origin {
-            return Err("Allowed origin must be an exact origin, for example http://localhost:8080 (no path or trailing slash)".into());
+        if self.allowed_origin.trim().is_empty() {
+            return Err("Enter at least one allowed game origin".into());
         }
-        if origin.scheme() == "https" && endpoint.scheme() != "wss" {
-            return Err("HTTPS games require a wss:// gateway URL and TLS termination".into());
+        for value in self.allowed_origin.split(',').map(str::trim) {
+            let origin = checked_url(value, &["http", "https"])
+                .map_err(|_| "Enter the game's http:// or https:// origin")?;
+            if origin.origin().ascii_serialization() != value {
+                return Err("Allowed origin must be an exact origin, for example http://localhost:8080 (no path or trailing slash)".into());
+            }
+            if origin.scheme() == "https" && endpoint.scheme() != "wss" {
+                return Err("HTTPS games require a wss:// gateway URL and TLS termination".into());
+            }
         }
         Ok(())
     }
@@ -181,6 +186,29 @@ mod gateway_tests {
         gateway.allowed_origin.push('/');
         assert!(gateway.validate().is_err());
         gateway.allowed_origin = "https://game.example.com".into();
+        gateway.websocket_url = "ws://localhost:9002".into();
+        assert!(gateway.validate().is_err());
+    }
+    #[test]
+    fn multiple_origins_round_trip_and_validate_each_entry() {
+        let mut gateway = BrowserGateway::default();
+        gateway.websocket_url = "wss://gateway.example".into();
+        gateway.allowed_origin = "http://localhost:8080, https://game.example".into();
+        gateway.validate().unwrap();
+        let restored: BrowserGateway =
+            serde_json::from_str(&serde_json::to_string(&gateway).unwrap()).unwrap();
+        assert_eq!(restored, gateway);
+        for invalid in [
+            "",
+            "http://localhost:8080,",
+            "http://localhost:8080, *",
+            "http://localhost:8080, https://game.example/path",
+            "http://localhost:8080, https://game.example/",
+        ] {
+            gateway.allowed_origin = invalid.into();
+            assert!(gateway.validate().is_err(), "{invalid}");
+        }
+        gateway.allowed_origin = "http://localhost:8080, https://game.example".into();
         gateway.websocket_url = "ws://localhost:9002".into();
         assert!(gateway.validate().is_err());
     }

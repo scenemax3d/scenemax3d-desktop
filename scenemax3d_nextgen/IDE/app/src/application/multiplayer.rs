@@ -153,11 +153,11 @@ impl State {
             .fields
             .get("gateway_url")
             .is_some_and(|url| url.starts_with("wss://"))
-            || self
-                .fields
-                .get("gateway_origin")
-                .is_some_and(|origin| origin.starts_with("https://"))
-        {
+            || self.fields.get("gateway_origin").is_some_and(|origins| {
+                origins
+                    .split(',')
+                    .any(|origin| origin.trim().starts_with("https://"))
+            }) {
             "wss"
         } else {
             "ws"

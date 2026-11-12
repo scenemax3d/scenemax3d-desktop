@@ -49,7 +49,7 @@ pub(super) fn settings(saved: &Settings, target: TestTarget) -> Result<Settings,
         return Err("Enable and configure the deployed browser gateway before testing with the remote server".into());
     }
     s.validate()?;
-    crate::deployment::preview::local_origin_address(&s.browser_gateway.allowed_origin)
+    crate::deployment::preview::local_allowed_origin(&s.browser_gateway.allowed_origin)
         .map_err(|e| e.to_string())?;
     Ok(s)
 }

@@ -20,12 +20,16 @@ MULTIPLAYER
 Browsers connect through the SceneMax WebSocket gateway to the Zig UDP server.
 The exported network.json contains the saved Browser WebSocket URL from Project
 Settings - Multiplayer. Enable Browser gateway there and configure its listener
-and exact allowed website/iframe origin before exporting.
-The sidecar also records allowed_origin. SceneMax local previews use this exact
-address instead of a random port; multiplayer exports with a public origin must
-be tested on that host or rebuilt with a local origin accepted by the gateway.
+and allowed website/iframe origins before exporting. Enter multiple exact origins
+separated by commas, for example https://html-classic.itch.zone, http://localhost:8080.
+Do not include paths, trailing slashes, or wildcards.
+The sidecar records this list in allowed_origin (older single values still work).
+SceneMax local previews use the first allowed local HTTP origin instead of a random
+port. Include a localhost origin to test locally against the same remote gateway.
 The browser loader reports an origin mismatch before starting the game. If you
 edit network.json after export, keep allowed_origin aligned with gateway.json.
+After changing the list in Project Settings, save, rebuild/deploy the gateway,
+and rebuild/upload the web game. Older gateway binaries only support one origin.
 
 Build Server packages both executables plus gateway.json. Run Server Locally
 starts both for local testing; Stop Local Server stops both. Local defaults are
