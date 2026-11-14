@@ -1,5 +1,5 @@
 //! SSH transport and immutable, checksummed Linux/systemd releases.
-use super::{build, read};
+use super::{build, read, tls};
 use scenemax_ide_core::multiplayer::{RemoteDeployment, Settings};
 use sha2::{Digest, Sha256};
 use std::{
@@ -75,6 +75,17 @@ fn validate_bundle(dir: &Path, s: &Settings) -> Result<(), String> {
         }
         if name != "gateway.json" && !bytes.starts_with(b"\x7fELF") {
             return Err(format!("{name} is not a Linux executable"));
+        }
+        if name == "gateway.json" && tls::enabled(s) {
+            let config: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            if config["listen"].as_str()
+                != Some(&s.browser_gateway.deployment_listener()?.to_string())
+            {
+                return Err(
+                    "Rebuild the WSS bundle: the private gateway must listen on loopback".into(),
+                );
+            }
         }
     }
     Ok(())
@@ -173,6 +184,15 @@ fn preflight(d: &RemoteDeployment) -> String {
         privileged(d)
     )
 }
+fn deployment_preflight(s: &Settings) -> Result<String, String> {
+    let mut script = preflight(&s.deployment);
+    if tls::enabled(s) {
+        s.browser_gateway.validate()?;
+        s.browser_gateway.tls_endpoint()?;
+        script.push_str("; test -x /usr/bin/caddy || { echo 'Install Caddy 2 at /usr/bin/caddy for WSS'; exit 1; }; command -v curl; /usr/bin/caddy version");
+    }
+    Ok(script)
+}
 fn status_script(d: &RemoteDeployment) -> String {
     include_str!("remote_status.sh")
         .replace("@SERVER@", &quote(&format!("{}.service", d.service)))
@@ -180,16 +200,19 @@ fn status_script(d: &RemoteDeployment) -> String {
             "@GATEWAY@",
             &quote(&format!("{}-gateway.service", d.service)),
         )
+        .replace("@TLS@", &quote(&format!("{}-tls.service", d.service)))
 }
 fn status_summary(output: &str) -> String {
     let current = output.split("----- HISTORICAL LOGS").next().unwrap_or("");
     let states: Vec<_> = current
         .lines()
         .filter(|line| {
-            line.starts_with("Zig UDP server:") || line.starts_with("Browser WebSocket gateway:")
+            line.starts_with("Zig UDP server:")
+                || line.starts_with("Browser WebSocket gateway:")
+                || line.starts_with("Browser WSS TLS proxy:")
         })
         .collect();
-    if states.len() == 2 {
+    if states.len() >= 2 {
         states.join(" | ")
     } else {
         "Current service status unavailable. See the console for details.".into()
@@ -208,17 +231,20 @@ pub(super) fn execute(
         return Err("SSH identity file was not found on this computer".into());
     }
     match action {
-        RemoteAction::Test => ssh(d, &preflight(d), cancel),
+        RemoteAction::Test => ssh(d, &deployment_preflight(s)?, cancel),
         RemoteAction::Status => {
             ssh(d, &status_script(d), cancel).map(|output| status_summary(&output))
         }
         RemoteAction::Deploy => {
             super::progress::stage(15, "Validating Linux bundle");
             s.validate()?;
+            if tls::enabled(s) {
+                s.browser_gateway.tls_endpoint()?;
+            }
             let bundle = bundle.ok_or("Build a Linux server bundle on the Server tab first")?;
             validate_bundle(bundle, s)?;
             super::progress::stage(25, "Checking remote server requirements");
-            ssh(d, &preflight(d), cancel)?;
+            ssh(d, &deployment_preflight(s)?, cancel)?;
             let id = format!(
                 "{:x}-{:x}",
                 SystemTime::now()
@@ -244,6 +270,16 @@ pub(super) fn execute(
             )
             .map_err(|e| e.to_string())?;
             validate_bundle(scratch.path(), s)?;
+            if tls::enabled(s) {
+                fs::write(scratch.path().join("caddy.json"), tls::config(s)?)
+                    .map_err(|e| e.to_string())?;
+                fs::write(
+                    scratch.path().join("tls.service"),
+                    tls::unit(s, &digest(s.project_guid.as_bytes())),
+                )
+                .map_err(|e| e.to_string())?;
+                names.extend(["caddy.json".into(), "tls.service".into()]);
+            }
             for gateway in [false, true] {
                 if gateway && !s.browser_gateway.enabled {
                     continue;
@@ -337,6 +373,7 @@ fn unit(s: &Settings, gateway: bool) -> String {
 }
 fn install_script(s: &Settings, stage: &str, id: &str) -> String {
     let d = &s.deployment;
+    let endpoint = s.browser_gateway.tls_endpoint().ok().flatten();
     include_str!("remote_install.sh")
         .replace("\r\n", "\n")
         .replace("@ROOT@", &quote(&d.directory))
@@ -345,6 +382,34 @@ fn install_script(s: &Settings, stage: &str, id: &str) -> String {
         .replace("@PROJECT@", &quote(&digest(s.project_guid.as_bytes())))
         .replace("@RELEASE@", &quote(id))
         .replace("@UDP_PORT@", &s.port.to_string())
+        .replace("@TLS@", if tls::enabled(s) { "1" } else { "0" })
+        .replace(
+            "@TLS_HOST@",
+            &quote(endpoint.as_ref().map(|e| e.0.as_str()).unwrap_or("")),
+        )
+        .replace(
+            "@TLS_PORT@",
+            &endpoint.map(|e| e.1).unwrap_or(443).to_string(),
+        )
+        .replace(
+            "@TLS_URL@",
+            &quote(&if tls::enabled(s) {
+                format!("https://{}", &s.browser_gateway.websocket_url[6..])
+            } else {
+                String::new()
+            }),
+        )
+        .replace(
+            "@ORIGIN@",
+            &quote(
+                s.browser_gateway
+                    .allowed_origin
+                    .split(',')
+                    .next()
+                    .unwrap_or("")
+                    .trim(),
+            ),
+        )
         .replace(
             "@TCP_PORT@",
             &s.browser_gateway
@@ -461,6 +526,40 @@ mod tests {
         assert!(udp.contains("DynamicUser=yes"));
         assert!(gateway.contains("/current/scenemax_web_gateway"));
         assert!(!udp.contains("test-host"));
+    }
+    #[test]
+    fn wss_deployment_requires_private_bundle_and_installs_tls() {
+        let mut s = settings();
+        s.browser_gateway.websocket_url = "WSS://network.example.com/play?room=1".into();
+        s.browser_gateway.allowed_origin = "https://game.example.com".into();
+        let script = install_script(&s, "/tmp/scenemax-deploy-fixture", "fixture");
+        assert!(!script.contains('@'));
+        assert!(script.contains("tls=1"));
+        assert!(script.contains("tls_url='https://network.example.com/play?room=1'"));
+        assert!(script.contains("tls_host='network.example.com'"));
+        assert!(deployment_preflight(&s).unwrap().contains("/usr/bin/caddy"));
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["scenemax-mp-server", "scenemax_web_gateway"] {
+            fs::write(dir.path().join(name), b"\x7fELFfixture").unwrap();
+        }
+        fs::write(
+            dir.path().join("gateway.json"),
+            br#"{"listen":"0.0.0.0:9002"}"#,
+        )
+        .unwrap();
+        record_bundle(dir.path(), &s).unwrap();
+        assert!(
+            validate_bundle(dir.path(), &s)
+                .unwrap_err()
+                .contains("loopback")
+        );
+        fs::write(
+            dir.path().join("gateway.json"),
+            br#"{"listen":"127.0.0.1:9002"}"#,
+        )
+        .unwrap();
+        record_bundle(dir.path(), &s).unwrap();
+        validate_bundle(dir.path(), &s).unwrap();
     }
     #[test]
     #[ignore = "explicit opt-in: deploys the supplied project's bundle to its configured server"]

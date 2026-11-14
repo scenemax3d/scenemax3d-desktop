@@ -1,5 +1,6 @@
 server=@SERVER@
 gateway=@GATEWAY@
+tls=@TLS@
 printf 'CURRENT SERVICE STATUS (checked %s)\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 printf 'These are current process states, not a game connection test.\n\n'
 status_code=0
@@ -32,9 +33,10 @@ show_state() {
 }
 show_state 'Zig UDP server' "$server"
 show_state 'Browser WebSocket gateway' "$gateway"
+show_state 'Browser WSS TLS proxy' "$tls"
 printf '%s\n' '----- HISTORICAL LOGS (most recent 8 entries per service) -----'
 printf 'Entries below may be old. Errors here do not change the current states above.\nTimestamps below are UTC.\n'
-for unit in "$server" "$gateway"; do
+for unit in "$server" "$gateway" "$tls"; do
     printf '\n--- History: %s ---\n' "$unit"
     journalctl --utc --no-pager -o short-iso -n 8 -u "$unit" 2>&1 || printf 'Historical logs unavailable; see current service state above.\n'
 done

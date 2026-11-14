@@ -33,8 +33,10 @@ not the outer game page. In browser developer tools, inspect the WebSocket
 request's `Origin` header, or select the game's iframe in the Console and evaluate
 `location.origin`. Copy that exact value without a path or trailing slash.
 HTTPS hosting requires a working `wss://` endpoint with a trusted TLS certificate;
-auto-filling the URL does not install TLS. The gateway accepts one configured
-origin, so local testing and hosted builds need the corresponding origin setting.
+auto-filling the URL does not install TLS. **Deploy & start** provisions TLS for
+`wss://` endpoints as described below. The gateway accepts comma-separated exact
+origins, so local and hosted origins can be configured together. It rejects
+unlisted origins, missing origins and `null`; there is no wildcard allow-all mode.
 
 **Save** stores these settings in the project. Browser exports automatically write
 the saved WebSocket URL to `network.json`; multiplayer exports report an error if
@@ -59,9 +61,10 @@ browser export. Local run does not host the exported game website.
 For deployment, run both bundled executables on the same host. Opening the gateway
 without arguments reads `gateway.json` beside its executable, independent of the
 working directory. It forwards to the bundled Zig server at `127.0.0.1:<UDP port>`.
-Public HTTPS games require a WSS endpoint with TLS and WebSocket upgrade forwarding;
-the gateway itself speaks plain WebSocket. TLS termination is external to this
-bundle. Static hosting alone does not run the gateway. The game's project GUID
+Public HTTPS games use a WSS endpoint with TLS and WebSocket upgrade forwarding.
+For a `wss://` URL, the IDE deployment installs a dedicated Caddy TLS proxy and
+binds the plain WebSocket adapter to `127.0.0.1`, even if the configured listener
+uses all interfaces. Static hosting alone does not run the gateway. The game's project GUID
 and credentials must match the Zig server. Native clients continue to use UDP.
 
 For local browser testing, serve the extracted export with:
@@ -93,9 +96,51 @@ gateway does not update old runtime binaries or add missing effect assets.
    root login, then **Test connection**. The host must be Linux x64 with systemd,
    systemd-run, sha256sum, flock and ss. SSH tools must be installed locally.
 6. **Deploy & start** uploads the current bundle, verifies SHA-256 checksums,
-   installs the UDP and optional gateway systemd services, enables startup at boot,
+   installs the UDP, optional gateway and WSS TLS systemd services, enables startup at boot,
    and verifies stable process IDs and listening sockets. **Check status** reads
    the configured services. Use distinct names, directories and ports for each game.
+
+### WSS and itch.io deployment
+
+1. Choose a public DNS name such as `multiplayer.example.com` and point its A/AAAA
+   records at the gateway host. Managed TLS requires a DNS name, not a bare IP.
+2. Install [Caddy 2](https://caddyserver.com/docs/install) at `/usr/bin/caddy` and
+   `curl` on that host. Reserve TCP 80 for certificate validation and TCP 443
+   (or the explicit WSS URL port) for secure connections. Open those ports in the
+   host/cloud firewall and keep the private adapter port closed to the Internet.
+   No other service may occupy the selected public ports. If another web server
+   already owns them, configure that server to proxy the gateway manually instead
+   of using the managed TLS deployment.
+3. Set **Browser WebSocket URL** to `wss://multiplayer.example.com/play` and the
+   adapter listener to `127.0.0.1:9002`. Public TLS and private adapter ports must
+   differ. Native clients still use the configured UDP port.
+4. Set **Allowed game origin** to the exact Origin of the uploaded game's iframe.
+   In itch.io's developer-tools Console, select the game iframe and evaluate
+   `location.origin`; do not copy the outer `creator.itch.io/game` page URL.
+   Add local testing origins with commas if needed. No game-specific origin is
+   built into the engine.
+5. Build the Linux server bundle and use **Deploy & start**. Caddy obtains and
+   renews a trusted certificate automatically. Certificates/private keys remain
+   in the TLS service's persistent state directory on the server, outside releases
+   and browser exports. Deployment verifies a trusted TLS handshake and a real
+   WebSocket HTTP 101 upgrade with the configured Origin. Failure restores the
+   previous release and all three service definitions and active/enabled states.
+6. Re-export the browser game so `network.json` contains the WSS URL, upload it to
+   itch.io, and check the embedded game's WebSocket connection. The deployment
+   probe connects locally using the public hostname for certificate verification;
+   testing the published game additionally verifies public routing/firewall access.
+
+**Check status** includes `<service>-tls.service`. Certificate issuance needs
+working public DNS and reachable challenge ports; first issuance may take time.
+If the bounded deployment check times out, inspect the TLS service journal and
+fix DNS/firewall access before retrying. Plain `ws://` deployments and local runs
+do not require Caddy. The older `automations/deploy-gmtk-multiplayer-server.ps1`
+updates only the UDP binary; use the IDE deployment for gateway/TLS provisioning.
+
+Caddy's [automatic HTTPS](https://caddyserver.com/docs/automatic-https) manages
+certificate renewal, and its [reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
+forwards WebSocket upgrades. itch.io hosts uploaded HTML games in an
+[iframe](https://itch.io/docs/creators/html5), which is why the embedded origin matters.
 
 Only an unchanged bundle matching the current build settings can be deployed.
 Changing remote connection settings does not require rebuilding. Changing the

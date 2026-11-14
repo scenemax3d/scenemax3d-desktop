@@ -24,6 +24,7 @@ pub(crate) mod launch;
 pub mod local_server;
 mod progress;
 mod remote;
+mod tls;
 pub use progress::Progress;
 pub use remote::RemoteAction;
 

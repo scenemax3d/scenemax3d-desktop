@@ -120,7 +120,7 @@ pub(super) fn install(
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
     }
     let config = serde_json::json!({
-        "listen": settings.browser_gateway.listen,
+        "listen": settings.browser_gateway.deployment_listener()?.to_string(),
         "upstream": format!("127.0.0.1:{}", settings.port),
         "allowed_origin": settings.browser_gateway.allowed_origin,
     });
@@ -130,8 +130,8 @@ pub(super) fn install(
     )
     .map_err(|e| e.to_string())?;
     fs::write(directory.join("README.md"), format!(
-        "# SceneMax multiplayer server\n\nStart the UDP server and scenemax_web_gateway on the same host. The gateway reads gateway.json beside its executable when opened without arguments.\n\nBrowser URL: {}\nAllowed game origin: {}\n\nNative games connect directly to UDP port {}. For public HTTPS games, terminate TLS at a reverse proxy that forwards WebSocket upgrades to {} and expose the configured wss:// URL. The gateway itself speaks plain WebSocket. Open only the necessary firewall ports.\n\nFor local play, use Run Server Locally in Project Settings; the IDE manages both processes.\n",
-        settings.browser_gateway.websocket_url, settings.browser_gateway.allowed_origin, settings.port, settings.browser_gateway.listen
+        "# SceneMax multiplayer server\n\nStart the UDP server and scenemax_web_gateway on the same host. The gateway reads gateway.json beside its executable when opened without arguments.\n\nBrowser URL: {}\nAllowed game origins: {}\n\nNative games connect directly to UDP port {}. For WSS, Deploy & start installs a dedicated Caddy TLS service with automatic certificates and renewal. Install Caddy 2 at /usr/bin/caddy and curl on the Linux host first. Point the URL's public DNS name at that host and allow inbound TCP 80 plus the URL's TLS port (normally 443). The private adapter binds to loopback at {}. For manual deployment, configure a TLS reverse proxy with WebSocket upgrade forwarding. On itch.io, allow the embedded game's exact Origin, not the outer page URL.\n\nFor local play, use Run Server Locally in Project Settings; the IDE manages both processes.\n",
+        settings.browser_gateway.websocket_url, settings.browser_gateway.allowed_origin, settings.port, settings.browser_gateway.deployment_listener()?
     )).map_err(|e| e.to_string())?;
     Ok(path)
 }

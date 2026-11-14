@@ -98,6 +98,51 @@ impl Default for BrowserGateway {
     }
 }
 impl BrowserGateway {
+    /// Whether the configured endpoint requests TLS (URL schemes ignore case).
+    pub fn uses_tls(&self) -> bool {
+        self.websocket_url
+            .get(..6)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("wss://"))
+    }
+    /// Public DNS name and TLS port for managed Linux WSS deployment.
+    pub fn tls_endpoint(&self) -> Result<Option<(String, u16)>, String> {
+        let url = checked_url(&self.websocket_url, &["ws", "wss"])
+            .map_err(|_| "Invalid browser gateway URL")?;
+        if url.scheme() != "wss" {
+            return Ok(None);
+        }
+        let host = url.host_str().unwrap_or_default();
+        if host.parse::<std::net::IpAddr>().is_ok()
+            || !host.contains('.')
+            || host.ends_with('.')
+            || host.split('.').any(|label| {
+                label.is_empty()
+                    || label.starts_with('-')
+                    || label.ends_with('-')
+                    || !label
+                        .bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+            })
+        {
+            return Err("Managed WSS requires a public DNS hostname pointing to your server (for example wss://multiplayer.example.com), not an IP address".into());
+        }
+        let port = url.port_or_known_default().unwrap_or(443);
+        let backend = self.listen_address()?.port();
+        if port == 80 || backend == 80 || backend == port {
+            return Err("WSS needs separate public TLS and private gateway ports; TCP port 80 is reserved for certificate validation".into());
+        }
+        Ok(Some((host.to_owned(), port)))
+    }
+
+    /// Secure deployments expose only the TLS proxy, never the plain adapter.
+    pub fn deployment_listener(&self) -> Result<std::net::SocketAddr, String> {
+        let address = self.listen_address()?;
+        if self.uses_tls() {
+            Ok(std::net::SocketAddr::from(([127, 0, 0, 1], address.port())))
+        } else {
+            Ok(address)
+        }
+    }
     /// Validate listener, public endpoint and exact Origin independently.
     pub fn validate(&self) -> Result<(), String> {
         self.listen_address()?;
@@ -158,6 +203,33 @@ fn checked_url(value: &str, schemes: &[&str]) -> Result<url::Url, ()> {
 
 #[cfg(test)]
 mod gateway_tests {
+    #[test]
+    fn managed_tls_requires_dns_and_separate_ports() {
+        let mut g = super::BrowserGateway::default();
+        g.websocket_url = "wss://network.example.com/play".into();
+        g.listen = "0.0.0.0:9002".into();
+        assert_eq!(
+            g.tls_endpoint().unwrap(),
+            Some(("network.example.com".into(), 443))
+        );
+        assert_eq!(
+            g.deployment_listener().unwrap().to_string(),
+            "127.0.0.1:9002"
+        );
+        for url in [
+            "wss://127.0.0.1",
+            "wss://[::1]",
+            "wss://localhost",
+            "wss://network.example.com:9002",
+            "wss://network.example.com:80",
+        ] {
+            g.websocket_url = url.into();
+            assert!(g.tls_endpoint().is_err(), "{url}");
+        }
+        g.websocket_url = "ws://127.0.0.1:9002".into();
+        assert_eq!(g.tls_endpoint().unwrap(), None);
+        assert_eq!(g.deployment_listener().unwrap().to_string(), "0.0.0.0:9002");
+    }
     use super::*;
     #[test]
     fn older_settings_default_to_udp_only_and_preserve_unknown_fields() {
