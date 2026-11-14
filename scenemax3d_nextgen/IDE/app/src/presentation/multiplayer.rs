@@ -532,12 +532,11 @@ pub(crate) fn refresh(
                     panel,
                     &[
                         ("Test connection", Action::TestRemote),
-                        ("Deploy & start", Action::DeployRemote),
+                        ("Deploy To Remote Server", Action::DeployRemote),
                         ("Check status", Action::RemoteStatus),
-                        ("Cancel", Action::Cancel),
                     ],
                 );
-                copy_parent = actions(
+                actions(
                     &mut c,
                     panel,
                     &[
@@ -551,12 +550,11 @@ pub(crate) fn refresh(
                                 scenemax_ide_services::multiplayer::TestTarget::Remote,
                             ),
                         ),
-                        ("Stop Test", Action::StopTestGame),
                     ],
                 );
             }
         }
-        if matches!(state.tab, Tab::Server | Tab::Deployment) {
+        if matches!(state.tab, Tab::Server) {
             let copy = scenemax_ide_ui::button(
                 &mut c,
                 copy_parent,
@@ -577,6 +575,8 @@ pub(crate) fn refresh(
                     };
                 },
             );
+        }
+        if matches!(state.tab, Tab::Server | Tab::Deployment) {
             let caption = text(&mut c, panel, &state.progress_label());
             c.entity(caption).insert(ProgressLabel);
             let track = node(
