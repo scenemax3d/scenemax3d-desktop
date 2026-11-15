@@ -62,7 +62,7 @@ For deployment, run both bundled executables on the same host. Opening the gatew
 without arguments reads `gateway.json` beside its executable, independent of the
 working directory. It forwards to the bundled Zig server at `127.0.0.1:<UDP port>`.
 Public HTTPS games use a WSS endpoint with TLS and WebSocket upgrade forwarding.
-For a `wss://` URL, the IDE deployment installs a dedicated Caddy TLS proxy and
+For a `wss://` URL, the IDE deployment reuses an existing Nginx TLS host or installs a dedicated Caddy TLS proxy and
 binds the plain WebSocket adapter to `127.0.0.1`, even if the configured listener
 uses all interfaces. Static hosting alone does not run the gateway. The game's project GUID
 and credentials must match the Zig server. Native clients continue to use UDP.
@@ -104,13 +104,27 @@ gateway does not update old runtime binaries or add missing effect assets.
 
 1. Choose a public DNS name such as `multiplayer.example.com` and point its A/AAAA
    records at the gateway host. Managed TLS requires a DNS name, not a bare IP.
-2. Install [Caddy 2](https://caddyserver.com/docs/install) at `/usr/bin/caddy` and
-   `curl` on that host. Reserve TCP 80 for certificate validation and TCP 443
+2. Install `curl` and `tar` on that host. For WSS without an existing Nginx TLS listener, **Deploy To Remote Server**
+   automatically installs the pinned official Caddy 2.11.9 Linux x64 binary at
+   `/usr/bin/caddy` when missing, verifying its SHA-256 checksum before installation.
+   The host needs HTTPS access to GitHub release downloads. Existing Caddy 2
+   installations are reused without upgrades; incompatible installations are
+   reported instead of overwritten. **Test connection** remains read-only and
+   reports missing Caddy without installing it. The shared Caddy binary remains
+   installed if a later deployment step rolls back. Reserve TCP 80 for certificate validation and TCP 443
    (or the explicit WSS URL port) for secure connections. Open those ports in the
    host/cloud firewall and keep the private adapter port closed to the Internet.
-   No other service may occupy the selected public ports. If another web server
-   already owns them, configure that server to proxy the gateway manually instead
-   of using the managed TLS deployment.
+   If Nginx already owns the selected TLS port, deployment uses it instead of
+   installing or starting Caddy. This requires `python3`, an existing exact
+   `server_name` for the URL hostname, and a working TLS certificate on that port.
+   Existing HTTP sites and certificate renewal remain under their current configuration.
+   A compatible exact WebSocket location is reused without a reload. Otherwise,
+   deployment adds only an exact location for the dedicated URL path, checks
+   `nginx -t`, and gracefully reloads Nginx. It never stops Nginx, replaces a
+   conflicting location, or changes certificates, listeners or other sites.
+   Unsupported or ambiguous configurations fail with an explanation. Another
+   service occupying the TLS port is rejected rather than stopped.
+   Test connection checks prerequisites without installing software or editing routes.
 3. Set **Browser WebSocket URL** to `wss://multiplayer.example.com/play` and the
    adapter listener to `127.0.0.1:9002`. Public TLS and private adapter ports must
    differ. Native clients still use the configured UDP port.
@@ -119,7 +133,7 @@ gateway does not update old runtime binaries or add missing effect assets.
    `location.origin`; do not copy the outer `creator.itch.io/game` page URL.
    Add local testing origins with commas if needed. No game-specific origin is
    built into the engine.
-5. Build the Linux server bundle and use **Deploy & start**. Caddy obtains and
+5. Build the Linux server bundle and use **Deploy & start**. When selected, Caddy obtains and
    renews a trusted certificate automatically. Certificates/private keys remain
    in the TLS service's persistent state directory on the server, outside releases
    and browser exports. Deployment verifies a trusted TLS handshake and a real
@@ -130,7 +144,12 @@ gateway does not update old runtime binaries or add missing effect assets.
    probe connects locally using the public hostname for certificate verification;
    testing the published game additionally verifies public routing/firewall access.
 
-**Check status** includes `<service>-tls.service`. Certificate issuance needs
+**Remote Server Status** includes `<service>-tls.service`, or `nginx.service`
+when the deployed release uses Nginx. Failed deployment restores any route it
+added, validates the restored configuration and gracefully reloads it; concurrent
+external edits are never overwritten. Reused routes are never modified or removed.
+Changing a previously added route's path or upstream requires explicit host
+configuration maintenance. Certificate issuance with Caddy needs
 working public DNS and reachable challenge ports; first issuance may take time.
 If the bounded deployment check times out, inspect the TLS service journal and
 fix DNS/firewall access before retrying. Plain `ws://` deployments and local runs
