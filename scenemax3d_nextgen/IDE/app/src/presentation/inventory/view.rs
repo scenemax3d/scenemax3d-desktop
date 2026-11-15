@@ -98,9 +98,7 @@ pub(super) fn shell(c: &mut Commands, s: &mut State, session: &Session) -> Entit
     );
     let _ = spacer;
     control(c, top, "Refresh", Action::Refresh);
-    if s.model_names.is_none() {
-        control(c, top, "Close", Action::Close);
-    }
+    control(c, top, "Close", Action::Close);
     text(
         c,
         panel,
@@ -577,7 +575,8 @@ pub(super) fn review(c: &mut Commands, s: &mut State) {
         },
     );
     c.entity(panel).insert(BackgroundColor(PANEL));
-    text(c, panel, "REVIEW ASSET OPERATION", 19.);
+    let header = crate::presentation::modal::header(c, panel, "Review asset operation");
+    control(c, header, "Close", Action::Cancel);
     text(
         c,
         panel,
@@ -639,6 +638,9 @@ pub(super) fn message(c: &mut Commands, s: &mut State, title: &str, message: &st
         overlay,
         Node {
             width: px(620.),
+            max_width: percent(95.),
+            height: percent(80.),
+            max_height: px(420.),
             padding: px(20.).all(),
             flex_direction: FlexDirection::Column,
             row_gap: px(12.),
@@ -646,7 +648,9 @@ pub(super) fn message(c: &mut Commands, s: &mut State, title: &str, message: &st
         },
     );
     c.entity(panel).insert(BackgroundColor(PANEL));
-    text(c, panel, title, 21.);
+    let header = crate::presentation::modal::header(c, panel, title);
+    control(c, header, "Close", Action::Cancel);
+    let panel = property::scroll_column(c, panel);
     text(c, panel, message, 14.);
     control(c, panel, "Done", Action::Cancel);
     s.review_host = Some(overlay);

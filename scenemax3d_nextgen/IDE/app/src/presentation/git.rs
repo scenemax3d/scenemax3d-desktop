@@ -223,7 +223,7 @@ pub(crate) fn collect(
             state.fields.insert(field.0.into(), value);
         }
     }
-    if keys.just_pressed(KeyCode::Escape) && !state.busy {
+    if keys.just_pressed(KeyCode::Escape) {
         let action = if state.confirm.is_some() {
             Action::Dismiss
         } else {
@@ -235,7 +235,7 @@ pub(crate) fn collect(
         if *interaction != Interaction::Pressed {
             continue;
         }
-        if state.busy && !matches!(click, Click::Action(Action::Cancel)) {
+        if state.busy && !matches!(click, Click::Action(Action::Cancel | Action::Close | Action::Dismiss)) {
             continue;
         }
         if state.confirm.is_some()
@@ -290,7 +290,8 @@ fn form(c: &mut Commands, s: &State, focus: &mut Option<ResMut<InputFocus>>) -> 
             ChildOf(overlay),
         ))
         .id();
-    text(c, card, format!("Git  ·  {}", s.page.title()), 22.);
+    let header = super::modal::header(c, card, format!("Git  ·  {}", s.page.title()));
+    action(c, header, "Close", Click::Action(Action::Close));
     let summary = text(c, card, "", 12.);
     c.entity(summary).insert(Summary);
     let navigation = row(c, card);
@@ -729,6 +730,8 @@ pub(crate) fn refresh(
         let card = c
             .spawn((
                 Node {
+                    height: percent(80.),
+                    max_height: px(500.),
                     width: px(660.),
                     max_width: percent(90.),
                     padding: px(24.).all(),
@@ -740,7 +743,9 @@ pub(crate) fn refresh(
                 ChildOf(host),
             ))
             .id();
-        text(&mut c, card, "Confirm Git operation", 20.);
+        let header = super::modal::header(&mut c, card, "Confirm Git operation");
+        action(&mut c, header, "Close", Click::Action(Action::Dismiss));
+        let card = property::scroll_column(&mut c, card);
         let description=match op {Operation::Discard(paths)=>format!("Discard changes in these files? Staged contents are kept. Untracked files are moved to a recovery folder inside .git.\n{}",paths.join("\n")),Operation::Delete(name,force)=>format!("{} local branch '{name}'?",if *force{"Force delete (including unmerged commits)"}else{"Delete"}),Operation::Configure(_)=>"Apply global Git identity/default branch/credential helper and this project's origin?".into(),Operation::Merge(name)=>format!("Merge '{name}' into the current branch?"),Operation::Push|Operation::Commit(_,true)=>"Push the current branch to its configured upstream (or origin for a new branch)?".into(),Operation::Abort(_)=>"Abort the current merge/rebase? This can remove conflict-resolution edits.".into(),Operation::Stash=>"Stash tracked changes? Untracked files will remain.".into(),Operation::Pop=>"Apply the latest stash to the working tree? Conflicts will be shown in Stage & Commit.".into(),_=>"Continue?".into()};
         text(&mut c, card, description, 14.);
         let buttons = row(&mut c, card);

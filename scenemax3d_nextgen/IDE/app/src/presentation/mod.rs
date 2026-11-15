@@ -1,4 +1,5 @@
 //! Feature views and input adapters; application commands own behavior.
+pub(crate) mod modal;
 pub(crate) mod browser;
 pub(crate) mod components;
 pub(crate) mod input;

@@ -754,6 +754,8 @@ pub(crate) fn refresh(
                 overlay,
                 Node {
                     width: px(570.),
+                    height: percent(80.),
+                    max_height: px(520.),
                     max_width: percent(90.),
                     padding: px(24.).all(),
                     row_gap: px(16.),
@@ -761,6 +763,9 @@ pub(crate) fn refresh(
                 },
                 PANEL,
             );
+            let header = super::modal::header(&mut c, panel, "Release result");
+            action(&mut c, header, "Close", Action::DismissResult);
+            let panel = property::scroll_column(&mut c, panel);
             let color = if *success {
                 Color::srgb(0.42, 0.88, 0.62)
             } else {
@@ -967,7 +972,7 @@ pub(crate) fn keyboard(
     }
     if closes.read().next().is_some() {
         state.actions.push_back(Action::Exit);
-    } else if keys.just_pressed(KeyCode::Escape) && !state.busy {
+    } else if keys.just_pressed(KeyCode::Escape) {
         state.actions.push_back(Action::Close);
     }
 }

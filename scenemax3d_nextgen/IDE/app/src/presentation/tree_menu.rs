@@ -521,7 +521,16 @@ fn dialog_view(
         Dialog::Delete => "Delete",
         Dialog::Reload => "Reload from disk",
     };
-    commands.spawn((label(title, 15.), ChildOf(host)));
+    commands.entity(host).entry::<Node>().and_modify(|mut n| {
+        n.overflow = Overflow::clip();
+        n.height = px(520.);
+        n.max_height = Val::Vh(90.);
+        n.top = Val::Vh(5.);
+        n.max_width = Val::Vw(95.);
+    });
+    let header = super::modal::header(commands, host, title);
+    action_button(commands, header, "Close", Action::Cancel);
+    let host = scenemax_ide_ui::property::scroll_column(commands, host);
     commands.spawn((
         label(
             if dialog == Dialog::Project {

@@ -158,6 +158,16 @@ pub(crate) fn collect_actions(
     {
         return;
     }
+    if keys.just_pressed(KeyCode::Escape) {
+        if session.closing {
+            queue.0.push_back(Command::CancelClose);
+            return;
+        }
+        if session.closing_tab.is_some() {
+            queue.0.push_back(Command::CancelTab);
+            return;
+        }
+    }
     let InputFields {
         imports: _,
         mut fields,

@@ -93,6 +93,8 @@ pub(crate) fn build(c: &mut Commands, root: Entity) {
             ChildOf(overlay),
         ))
         .id();
+    let header = super::modal::header(c, card, "About SceneMax Studio");
+    button(c, header, "Close", ChromeAction::Dismiss);
     let hero = c
         .spawn((
             Node {
