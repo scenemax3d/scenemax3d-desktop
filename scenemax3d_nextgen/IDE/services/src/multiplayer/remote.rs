@@ -195,6 +195,7 @@ fn deployment_preflight(s: &Settings) -> Result<String, String> {
 }
 fn status_script(d: &RemoteDeployment) -> String {
     include_str!("remote_status.sh")
+        .replace("\r\n", "\n")
         .replace("@SERVER@", &quote(&format!("{}.service", d.service)))
         .replace(
             "@GATEWAY@",
@@ -338,7 +339,7 @@ pub(super) fn execute(
             match transfer {
                 Ok(output) => Ok(format!("Deployment completed.\n{output}")),
                 Err(error) => Err(format!(
-                    "{error}\nIf installation started, it continues safely as scenemax-deploy-{id}. Use Check status before retrying. Staging: {stage}"
+                    "{error}\nIf installation started, it continues safely as scenemax-deploy-{id}. Use Remote Server Status before retrying. Staging: {stage}"
                 )),
             }
         }
@@ -427,6 +428,21 @@ fn install_script(s: &Settings, stage: &str, id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn status_script_uses_unix_line_endings_and_configured_units() {
+        let mut d = RemoteDeployment::default();
+        d.service = "fixture-status".into();
+        let script = status_script(&d);
+        assert!(!script.contains('\r'));
+        assert!(!script.contains('@'));
+        for unit in [
+            "fixture-status.service",
+            "fixture-status-gateway.service",
+            "fixture-status-tls.service",
+        ] {
+            assert!(script.contains(&quote(unit)));
+        }
+    }
     #[test]
     fn status_banner_contains_both_current_states_and_never_historical_errors() {
         let output = "CURRENT SERVICE STATUS\nZig UDP server: RUNNING\nBrowser WebSocket gateway: STOPPED\n----- HISTORICAL LOGS\nZig UDP server: FAILED\nold protocol error\n";

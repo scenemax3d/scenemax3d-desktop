@@ -313,7 +313,9 @@ pub(crate) fn refresh(
             Node {
                 width: px(720.),
                 max_width: percent(95.),
-                max_height: percent(95.),
+                height: percent(95.),
+                max_height: px(800.),
+                min_height: px(0.),
                 overflow: Overflow::clip(),
                 padding: px(16.).all(),
                 row_gap: px(6.),
@@ -322,7 +324,17 @@ pub(crate) fn refresh(
             },
         );
         c.entity(panel).insert(BackgroundColor(PANEL));
-        text(&mut c, panel, "Project Settings");
+        let header = node(
+            &mut c,
+            panel,
+            Node {
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+        );
+        text(&mut c, header, "Project Settings");
+        actions(&mut c, header, &[("Close", Action::Close)]);
         property::checkbox(
             &mut c,
             panel,
@@ -339,36 +351,7 @@ pub(crate) fn refresh(
         }
         let outer_panel = panel;
         // Only the tab body scrolls; Save/Back/Next/Close stay visible.
-        let panel = c
-            .spawn((
-                Node {
-                    min_height: px(0.),
-                    flex_shrink: 1.,
-                    overflow: Overflow::scroll_y(),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: px(6.),
-                    ..default()
-                },
-                ChildOf(outer_panel),
-            ))
-            .id();
-        c.entity(panel).insert(ScrollPosition::default()).observe(
-            |mut event: On<PointerScroll>,
-             mut nodes: Query<(&mut ScrollPosition, &ComputedNode)>| {
-                if let Ok((mut scroll, n)) = nodes.get_mut(event.entity) {
-                    let scale = if event.unit == bevy::input::mouse::MouseScrollUnit::Line {
-                        40.
-                    } else {
-                        1.
-                    };
-                    scroll.y = (scroll.y - event.y * scale).clamp(
-                        0.,
-                        (n.content_size().y - n.size().y).max(0.) * n.inverse_scale_factor(),
-                    );
-                    event.propagate(false);
-                }
-            },
-        );
+        let panel = property::scroll_column(&mut c, outer_panel);
         let tabs = node(
             &mut c,
             panel,
@@ -533,7 +516,7 @@ pub(crate) fn refresh(
                     &[
                         ("Test connection", Action::TestRemote),
                         ("Deploy To Remote Server", Action::DeployRemote),
-                        ("Check status", Action::RemoteStatus),
+                        ("Remote Server Status", Action::RemoteStatus),
                     ],
                 );
                 actions(
@@ -652,6 +635,10 @@ pub(crate) fn refresh(
                 }
             });
         }
+        // Status can wrap or contain long remote output, so it belongs in the
+        // scrollable body rather than competing with the footer for height.
+        let status = text(&mut c, panel, state.status.lines().next().unwrap_or(""));
+        c.entity(status).insert(Status);
         let panel = outer_panel;
         let mut footer = vec![("Save", Action::Save)];
         if state.enabled() && state.tab != Tab::Server {
@@ -674,8 +661,6 @@ pub(crate) fn refresh(
         }
         footer.push(("Close", Action::Close));
         actions(&mut c, panel, &footer);
-        let status = text(&mut c, panel, &state.status);
-        c.entity(status).insert(Status);
         view.root = Some(root);
         view.revision = state.revision;
     }
