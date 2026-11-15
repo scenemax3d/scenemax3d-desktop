@@ -84,7 +84,7 @@ gateway does not update old runtime binaries or add missing effect assets.
 
 1. On **Server**, set the public native endpoint, UDP port and project/session.
 2. On **Browser**, set the public WebSocket URL, TCP listener and exact game origin.
-3. On **Build**, select **linux-x64**, review the summary, and **Build Server**.
+3. Review the server and browser settings. Remote deployment builds Linux x64 automatically; a separate **Build Server** step is optional.
 4. On **Deployment**, choose OpenSSH or PuTTY saved session, enter the host/session,
    optional login, SSH port (0 uses client configuration), and optional local key path.
    OpenSSH supports keys, ssh-agent and SSH config aliases. PuTTY supports PPK keys,
@@ -95,7 +95,9 @@ gateway does not update old runtime binaries or add missing effect assets.
 5. Set a dedicated install directory and service name. Choose passwordless sudo or
    root login, then **Test connection**. The host must be Linux x64 with systemd,
    systemd-run, sha256sum, flock and ss. SSH tools must be installed locally.
-6. **Deploy & start** uploads the current bundle, verifies SHA-256 checksums,
+6. **Deploy To Remote Server** reuses a verified saved Linux bundle when settings,
+   credentials and build inputs match, or builds one automatically before uploading.
+   Saved builds survive closing settings and failed uploads. Deployment verifies SHA-256 checksums,
    installs the UDP, optional gateway and WSS TLS systemd services, enables startup at boot,
    and verifies stable process IDs and listening sockets. **Check status** reads
    the configured services. Use distinct names, directories and ports for each game.
@@ -133,7 +135,7 @@ gateway does not update old runtime binaries or add missing effect assets.
    `location.origin`; do not copy the outer `creator.itch.io/game` page URL.
    Add local testing origins with commas if needed. No game-specific origin is
    built into the engine.
-5. Build the Linux server bundle and use **Deploy & start**. When selected, Caddy obtains and
+5. Use **Deploy To Remote Server**; it builds or reuses the Linux bundle automatically. When selected, Caddy obtains and
    renews a trusted certificate automatically. Certificates/private keys remain
    in the TLS service's persistent state directory on the server, outside releases
    and browser exports. Deployment verifies a trusted TLS handshake and a real

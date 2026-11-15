@@ -14,13 +14,10 @@ origin=@ORIGIN@
 server_unit="${service}.service"
 gateway_unit="${service}-gateway.service"
 tls_unit="${service}-tls.service"
+tls_provider=caddy
+nginx_applied=0
 cd "$stage"
 sha256sum -c SHA256SUMS
-if [ "$tls" = 1 ]; then
-    test -x /usr/bin/caddy || { echo 'Install Caddy 2 at /usr/bin/caddy before WSS deployment'; exit 1; }
-    command -v curl >/dev/null || { echo 'Install curl before WSS deployment'; exit 1; }
-    /usr/bin/caddy validate --config "$stage/caddy.json"
-fi
 # Never adopt unrelated directories or system services.
 exec 9>"/run/lock/${service}-deploy.lock"
 flock -n 9 || { echo 'Another deployment is running'; exit 1; }
@@ -34,6 +31,33 @@ for unit in "$server_unit" "$gateway_unit" "$tls_unit"; do
         printf '%s\n' "$existing" | grep -Fx "# SceneMax managed $project" >/dev/null || { echo "Refusing to replace unmanaged service $unit"; exit 1; }
     fi
 done
+if [ "$tls" = 1 ]; then
+    command -v curl >/dev/null || { echo 'Install curl before WSS deployment'; exit 1; }
+    listeners=$(ss -H -ltnp "sport = :$tls_port")
+    if printf '%s\n' "$listeners" | grep -q '"nginx"'; then
+        # A shared web server is never stopped or replaced. Serialize SceneMax's
+        # config edits across projects; external edits are also checked by hash/content.
+        printf '%s\n' "$listeners" | grep -v '"nginx"' | grep -q . && { echo 'TLS port has mixed owners; refusing deployment'; exit 1; }
+        command -v python3 >/dev/null || { echo 'Install python3 to integrate with existing Nginx'; exit 1; }
+        exec 7>/run/lock/scenemax-nginx-deploy.lock
+        flock -w 120 7 || { echo 'Another Nginx deployment is running'; exit 1; }
+        nginx -t
+        python3 "$stage/nginx-route.py" prepare "$stage/nginx-plan.json" "$tls_url" '127.0.0.1:@TCP_PORT@' "$project"
+        tls_provider=nginx
+        echo 'Using existing Nginx for secure WebSocket connections'
+    else
+        if [ -n "$listeners" ]; then
+            previous_tls_pid=$(systemctl show -p MainPID --value "$tls_unit" 2>/dev/null || true)
+            test -n "$previous_tls_pid" && test "$previous_tls_pid" != 0 &&
+                ! printf '%s\n' "$listeners" | grep -v "pid=$previous_tls_pid," | grep -q . ||
+                { echo 'TLS port is occupied by an unrelated service; refusing deployment'; exit 1; }
+        fi
+        (
+@CADDY_SETUP@
+        )
+        /usr/bin/caddy validate --config "$stage/caddy.json"
+    fi
+fi
 mkdir -p "$root/releases"
 printf '%s\n' "$project" > "$root/.scenemax-project"
 old=$(readlink "$root/current" || true)
@@ -51,6 +75,7 @@ if [ "$gateway" = 1 ]; then
 fi
 if [ "$tls" = 1 ]; then
     install -m 644 caddy.json "$root/releases/$release/caddy.json"
+    printf '%s\n' "$tls_provider" > "$root/releases/$release/tls-provider"
 fi
 tls_active=0; tls_enabled=0
 systemctl is-active --quiet "$tls_unit" && tls_active=1
@@ -73,6 +98,13 @@ rollback() {
         for unit in "$server_unit" "$gateway_unit" "$tls_unit"; do
             if [ -f "$stage/$unit.previous" ]; then cp -p "$stage/$unit.previous" "/etc/systemd/system/$unit"; else rm -f "/etc/systemd/system/$unit"; fi
         done
+        if [ "$nginx_applied" = 1 ]; then
+            if python3 "$stage/nginx-route.py" rollback "$stage/nginx-plan.json"; then
+                nginx -t && nginx -s reload || echo 'Nginx rollback reload failed; inspect the retained staging logs'
+            else
+                echo 'Nginx changed concurrently; manual review needed. Existing sites were not overwritten.'
+            fi
+        fi
         systemctl daemon-reload || true
         if [ "$server_enabled" = 1 ]; then systemctl enable "$server_unit" || true; else systemctl disable "$server_unit" || true; fi
         if [ "$gateway_enabled" = 1 ]; then systemctl enable "$gateway_unit" || true; else systemctl disable "$gateway_unit" || true; fi
@@ -92,7 +124,7 @@ else
     systemctl disable --now "$gateway_unit" 2>/dev/null || true
     rm -f "/etc/systemd/system/$gateway_unit"
 fi
-if [ "$tls" = 1 ]; then
+if [ "$tls" = 1 ] && [ "$tls_provider" = caddy ]; then
     install -m 644 tls.service "/etc/systemd/system/$tls_unit"
 else
     systemctl disable --now "$tls_unit" 2>/dev/null || true
@@ -106,7 +138,16 @@ systemctl enable "$server_unit"
 echo 'Starting Zig UDP server and browser gateway'
 systemctl restart "$server_unit"
 if [ "$gateway" = 1 ]; then systemctl enable "$gateway_unit"; systemctl restart "$gateway_unit"; fi
-if [ "$tls" = 1 ]; then systemctl enable "$tls_unit"; systemctl restart "$tls_unit"; fi
+if [ "$tls" = 1 ]; then
+    if [ "$tls_provider" = caddy ]; then
+        systemctl enable "$tls_unit"; systemctl restart "$tls_unit"
+    elif python3 "$stage/nginx-route.py" changed "$stage/nginx-plan.json"; then
+        nginx_applied=1
+        python3 "$stage/nginx-route.py" apply "$stage/nginx-plan.json"
+        nginx -t
+        nginx -s reload
+    fi
+fi
 echo 'Checking active services and listening ports'
 sleep 2
 systemctl is-active --quiet "$server_unit"
@@ -126,7 +167,7 @@ if [ "$tls" = 1 ]; then
     echo 'Waiting for trusted TLS certificate and WebSocket upgrade'
     ready=0
     for attempt in $(seq 1 20); do
-        systemctl is-active --quiet "$tls_unit"
+        if [ "$tls_provider" = caddy ]; then systemctl is-active --quiet "$tls_unit"; fi
         # Verify the certificate and hostname, and require an actual upgrade
         # through the TLS proxy with the configured browser Origin.
         code=$(curl --silent --noproxy '*' --globoff --output /dev/null --write-out '%{http_code}' \
@@ -139,7 +180,7 @@ if [ "$tls" = 1 ]; then
         sleep 2
     done
     test "$ready" = 1 || { echo 'WSS handshake failed: check DNS, firewall, certificate issuance and allowed Origin'; exit 1; }
-    systemctl --no-pager --full status "$tls_unit"
+    if [ "$tls_provider" = caddy ]; then systemctl --no-pager --full status "$tls_unit"; fi
     printf 'Verified secure gateway: %s\n' "$tls_url"
 fi
 printf 'Installed release %s; previous release retained: %s\n' "$release" "$old"

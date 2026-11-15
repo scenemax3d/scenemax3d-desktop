@@ -1,6 +1,8 @@
 server=@SERVER@
 gateway=@GATEWAY@
 tls=@TLS@
+root=@ROOT@
+if [ "$(cat "$root/current/tls-provider" 2>/dev/null)" = nginx ]; then tls=nginx.service; fi
 printf 'CURRENT SERVICE STATUS (checked %s)\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 printf 'These are current process states, not a game connection test.\n\n'
 status_code=0

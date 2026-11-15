@@ -205,12 +205,13 @@ impl State {
             .and_then(|p| p.parent())
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| {
-                "No bundle built in this settings session. Use Build Server on the Server tab first.".into()
+                "No server bundle selected. Build Server or Deploy To Remote Server to create one.".into()
             })
     }
     fn start(&mut self, operation: Operation) {
         let saving = matches!(&operation, Operation::Save(_));
         let remote = match &operation {
+            Operation::Deploy(..) => Some("Preparing Linux server bundle and deploying…"),
             Operation::Remote(_, _, RemoteAction::Test) => Some("Checking SSH connection…"),
             Operation::Remote(_, _, RemoteAction::Status) => Some("Reading remote service status…"),
             Operation::Remote(_, _, RemoteAction::Deploy) => {
@@ -527,12 +528,10 @@ pub(crate) fn update(
                             Action::RemoteStatus => RemoteAction::Status,
                             _ => RemoteAction::Deploy,
                         };
-                        if matches!(action, Action::DeployRemote)
-                            && (state.server.is_none()
-                                || state.built_password.as_ref() != Some(&state.password))
-                        {
-                            state.status =
-                                "Use Build Server on the Server tab before deploying.".into();
+                        if matches!(action, Action::DeployRemote) {
+                            state.pending_password = Some(state.password.clone());
+                            let password = state.password.clone();
+                            state.start(Operation::Deploy(snapshot, password));
                             continue;
                         }
                         let bundle = state
