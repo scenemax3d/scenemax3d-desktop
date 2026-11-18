@@ -237,7 +237,7 @@ pub(crate) fn update_gutters(
         }
         let (line, column) = doc.line_column();
         let value = format!(
-            "Ln {line}, Col {column}   |   {total} lines   |   UTF-8   |   Ctrl+F find  •  Ctrl+G line  •  Tab indent"
+            "Ln {line}, Col {column}   |   {total} lines   |   UTF-8   |   Ctrl+F find  •  F10 Run project  •  F8 Run file"
         );
         if caret.0 != value {
             caret.0 = value;
