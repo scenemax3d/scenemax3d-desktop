@@ -61,3 +61,5 @@ pub(crate) mod mcp;
 
 pub(crate) mod multiplayer;
 pub(crate) mod physics;
+
+pub(crate) mod updates;

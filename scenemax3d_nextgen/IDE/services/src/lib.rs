@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod updates;
 pub mod build_configuration;
 mod catalog;
 mod diagnostics;

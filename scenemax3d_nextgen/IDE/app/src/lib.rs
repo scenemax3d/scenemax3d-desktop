@@ -290,6 +290,9 @@ pub fn run(options: LaunchOptions) -> Result<()> {
     if options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_DEPLOY_BUILD").is_some() {
         app.add_systems(Update, presentation::deployment::smoke_build);
     }
+    if options.smoke_frames.is_none() {
+        app.insert_resource(presentation::updates::State::start());
+    }
     app.run();
     // Release the listening socket before launching a replacement IDE.
     app.world_mut().remove_resource::<application::mcp::State>();
@@ -298,6 +301,10 @@ pub fn run(options: LaunchOptions) -> Result<()> {
         .unwrap_or_else(|e| e.into_inner())
         .take();
     if let Some(root) = restart {
+        if app.world().resource::<Session>().updating {
+            scenemax_ide_services::updates::apply(&root)?;
+            return Ok(());
+        }
         scenemax_ide_services::workspace_state::restart(
             &restart_executable,
             &root,
@@ -318,7 +325,9 @@ impl Plugin for StudioPlugin {
                 presentation::java_icons::load,
             ),
         );
-        app.init_resource::<CommandQueue>()
+        app.init_resource::<presentation::updates::State>()
+            .add_systems(Update, presentation::updates::poll)
+            .init_resource::<CommandQueue>()
             .init_resource::<application::build_configuration::State>()
             .init_resource::<presentation::build_configuration::View>()
             .init_resource::<application::deployment::Deployment>()

@@ -288,6 +288,13 @@ fn populate_menu(
                 );
                 finish_item(commands, row, "");
             }
+            "check_updates" => {
+                let row = button(commands, host, entry.name, Name::new("Check for updates"));
+                commands.entity(row).observe(|_: On<PointerClick>, mut updates: ResMut<super::updates::State>| {
+                    updates.check_now();
+                });
+                finish_item(commands, row, "");
+            }
             "about" => panel_item(commands, host, entry.name, "", Panel::Help),
             _ => {
                 let row = commands

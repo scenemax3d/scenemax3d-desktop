@@ -52,6 +52,7 @@ pub(crate) enum Command {
     OpenProject(PathBuf),
     RequestClose,
     Restart,
+    RestartForUpdate,
     CancelClose,
     DiscardExit,
 }
@@ -103,6 +104,7 @@ pub(super) fn execute(
                 | Command::CloseDocument(_)
                 | Command::CloseTab
                 | Command::Restart
+                | Command::RestartForUpdate
                 | Command::RequestClose
                 | Command::DiscardExit
                 | Command::OpenProject(_)
@@ -405,8 +407,9 @@ pub(super) fn execute(
             session.status = "Opening project…".into();
         }
 
-        Command::RequestClose | Command::Restart => {
-            session.restarting = matches!(command, Command::Restart);
+        Command::RequestClose | Command::Restart | Command::RestartForUpdate => {
+            session.updating = matches!(command, Command::RestartForUpdate);
+            session.restarting = matches!(command, Command::Restart | Command::RestartForUpdate);
             session.closing_tab = None;
             if session.workspace.has_dirty_documents() || services.is_saving() {
                 session.closing = true;
@@ -415,6 +418,7 @@ pub(super) fn execute(
             }
         }
         Command::CancelClose => {
+            session.updating = false;
             session.restarting = false;
             session.closing = false;
             services.recovery.exit = None;

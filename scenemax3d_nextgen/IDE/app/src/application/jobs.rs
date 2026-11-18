@@ -777,6 +777,26 @@ mod tests {
         );
     }
     #[test]
+    fn update_restart_obeys_dirty_work_and_cancel() {
+        use crate::application::{Command, CommandQueue, execute_commands};
+        let (mut app, _dir, id) = setup();
+        app.init_resource::<CommandQueue>()
+            .add_systems(Update, execute_commands.before(poll_jobs));
+        text(&mut app, id, "unsaved edit");
+        app.world_mut().resource_mut::<CommandQueue>().0.push_back(Command::RestartForUpdate);
+        app.update();
+        assert!(app.world().resource::<Session>().closing);
+        assert!(app.world().resource::<Session>().updating);
+        assert!(app.world().resource::<Messages<AppExit>>().is_empty());
+        app.world_mut().resource_mut::<CommandQueue>().0.push_back(Command::CancelClose);
+        app.update();
+        let session = app.world().resource::<Session>();
+        assert!(!session.updating);
+        assert!(!session.restarting);
+        assert!(session.workspace.has_dirty_documents());
+        assert!(session.restart_project.lock().unwrap().is_none());
+    }
+    #[test]
     fn close_after_save_does_not_exit_when_new_edits_arrive() {
         let (mut app, _dir, id) = setup();
         text(&mut app, id, "snapshot");
