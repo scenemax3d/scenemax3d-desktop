@@ -1673,6 +1673,7 @@ pub(super) fn switch_scene_on_key(
             object_pools
                 .pools
                 .retain(|name, _| retained_pools.contains(name));
+            object_pools.live_bone_targets.clear();
             *delayed_actions = DelayedActionQueue::default();
             *recurring_timers = RecurringRunTimers::default();
             clear_environment_shader(&mut commands);
@@ -3793,6 +3794,20 @@ pub(super) fn apply_action_sequence(
         )>,
     )>,
 ) -> ActionSequenceResult {
+    let scoped_definitions = scope
+        .as_deref()
+        .and_then(|frame| frame.partial_definitions.as_deref())
+        .map(|program| {
+            let mut functions = functions_by_name.clone();
+            functions.extend(collect_functions_by_name(program));
+            let mut guards = guards_by_name.clone();
+            guards.extend(collect_guards_by_name(program));
+            (functions, guards)
+        });
+    let (functions_by_name, guards_by_name) = match &scoped_definitions {
+        Some((functions, guards)) => (functions, guards),
+        None => (functions_by_name, guards_by_name),
+    };
     apply_scoped_transform_aliases(transforms_by_name, scope.as_deref());
     let mut runtime_declared_entities = HashMap::<String, Entity>::new();
     let mut expression_acquired_pool_member;
@@ -10171,7 +10186,8 @@ pub(super) fn build_action_transform_map(
 ) -> HashMap<String, Transform> {
     let mut transforms_by_name = HashMap::new();
     let scene_roots = collect_scene_transform_roots(&mut transforms_by_name, scene_entities);
-    let targets = collect_bone_alias_targets(program);
+    let mut targets = collect_bone_alias_targets(program);
+    targets.extend(object_pools.live_bone_targets.iter().cloned());
     let bone_start = web_time::Instant::now();
     let alias_count = insert_bone_transform_aliases(
         &scene_roots,
@@ -10252,7 +10268,7 @@ mod transform_map_tests {
     }
 }
 
-fn collect_bone_alias_targets(program: &Program) -> Vec<SceneMaxBoneAliasTarget> {
+pub(super) fn collect_bone_alias_targets(program: &Program) -> Vec<SceneMaxBoneAliasTarget> {
     let mut seen = HashSet::new();
     let mut targets = Vec::new();
     collect_bone_alias_targets_from_statements(&program.statements, &mut seen, &mut targets);

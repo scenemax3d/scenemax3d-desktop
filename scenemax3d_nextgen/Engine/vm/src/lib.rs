@@ -29,6 +29,8 @@ impl From<HashMap<String, f32>> for SceneMaxVars {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneMaxScopeFrame {
     pub activation_id: u64,
+    /// Definitions introduced by live code for this activation and its children.
+    pub partial_definitions: Option<std::sync::Arc<Program>>,
     /// Declarations owned by this activation, distinct from inherited bindings.
     pub entity_declarations: HashMap<String, references::Reference>,
     pub entity_templates: HashMap<String, (String, scenemax_parser::EntityOptions)>,

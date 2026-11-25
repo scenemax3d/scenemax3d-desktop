@@ -6,6 +6,8 @@ mod entity_stop;
 #[cfg(test)]
 mod input_gameplay_tests;
 mod motion_ease;
+mod partial_code;
+pub use partial_code::{PartialCodeInput, PartialCodeSender, partial_code_channel};
 mod pool_lifecycle;
 #[cfg(test)]
 mod resource_lifecycle_tests;
@@ -85,7 +87,8 @@ use scenemax_runtime_ui_core::{
     SceneMaxSpriteAsset, SceneMaxUiDocument, SceneMaxUiWidgetDef, UiLayoutRect, document_scale,
     percent, scaled_font_size, solve_widget_layout, sorted_widgets, target_key,
 };
-use scenemax_runtime_vm_core::{SceneMaxScopeFrame, SceneMaxVars, SceneMaxVmSpatial};
+pub use scenemax_runtime_vm_core::SceneMaxScopeFrame;
+use scenemax_runtime_vm_core::{SceneMaxVars, SceneMaxVmSpatial};
 use serde::Deserialize;
 
 mod actions;
@@ -151,6 +154,14 @@ pub struct WindowSettings {
 mod web_assets;
 
 pub fn run_bevy_projector(launch: ProjectorLaunch) {
+    let _ = run_bevy_projector_with_input(launch, None);
+}
+
+/// Runs the projector with an optional live SceneMax command source.
+pub fn run_bevy_projector_with_input(
+    launch: ProjectorLaunch,
+    input: Option<PartialCodeInput>,
+) -> AppExit {
     tracing::info!(?launch, "starting SceneMax NextGen projector");
     let project_root = launch.project_root.clone();
     let script_root = launch
@@ -171,6 +182,16 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         asset_root.as_deref(),
     );
     let mut app = App::new();
+    if let Some(input) = input {
+        app.insert_non_send(input);
+        app.add_systems(
+            Update,
+            partial_code::receive
+                .after(switch_scene_on_key)
+                .after(apply_startup_runs_when_ready)
+                .before(update_delayed_actions),
+        );
+    }
     app.add_plugins(scenemax_ui_input::UiInputPlugin);
     #[cfg(target_arch = "wasm32")]
     {
@@ -464,7 +485,7 @@ pub fn run_bevy_projector(launch: ProjectorLaunch) {
         .after(bevy::ui::UiSystems::Stack)
         .after(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate));
 
-    app.run();
+    app.run()
 }
 
 fn handle_runtime_ecs_error(
@@ -849,6 +870,7 @@ fn format_count(count: usize) -> String {
 
 #[derive(Debug, Resource, Default)]
 struct SceneMaxObjectPools {
+    live_bone_targets: HashSet<SceneMaxBoneAliasTarget>,
     entity_templates: HashMap<String, (String, EntityOptions)>,
     shared_variables: HashSet<String>,
     shared_entities: HashSet<String>,

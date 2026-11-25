@@ -10,6 +10,8 @@ effekseer_native = ["scenemax_runtime/effekseer_native"]
 
 [dependencies]
 anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 clap.workspace = true
 scenemax_runtime = { path = "../../Engine/runtime" }
 tracing.workspace = true

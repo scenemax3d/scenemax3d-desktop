@@ -138,6 +138,9 @@ fn run() -> io::Result<i32> {
         .arg(temporary.path())
         .arg("--script")
         .arg(temporary.path().join(script));
+    if std::env::args_os().skip(1).any(|arg| arg == "--live-stdin") {
+        command.arg("--live-stdin");
+    }
     if runtime_log {
         command.arg("--runtime-log");
     }

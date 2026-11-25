@@ -5895,6 +5895,8 @@ dependencies = [
  "scenemax_assets",
  "scenemax_multiplayer",
  "scenemax_runtime",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
  "wasm-bindgen",
