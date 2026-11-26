@@ -7,7 +7,7 @@ mod entity_stop;
 mod input_gameplay_tests;
 mod motion_ease;
 mod partial_code;
-pub use partial_code::{PartialCodeInput, PartialCodeSender, partial_code_channel};
+pub use partial_code::{PairingStatus, PartialCodeInput, PartialCodeSender, partial_code_channel};
 mod pool_lifecycle;
 #[cfg(test)]
 mod resource_lifecycle_tests;
@@ -183,6 +183,9 @@ pub fn run_bevy_projector_with_input(
     );
     let mut app = App::new();
     if let Some(input) = input {
+        if input.has_pairing_ui() {
+            app.add_systems(Update, partial_code::update_pairing_ui);
+        }
         app.insert_non_send(input);
         app.add_systems(
             Update,

@@ -5762,6 +5762,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "scenemax_game_mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "getrandom 0.3.4",
+ "serde_json",
+ "tungstenite",
+]
+
+[[package]]
 name = "scenemax_ide"
 version = "0.1.0"
 dependencies = [
@@ -5772,6 +5782,7 @@ dependencies = [
  "scenemax_animation",
  "scenemax_assets",
  "scenemax_effects",
+ "scenemax_game_mcp",
  "scenemax_ide_core",
  "scenemax_ide_services",
  "scenemax_ide_ui",
@@ -5893,13 +5904,13 @@ dependencies = [
  "clap",
  "console_error_panic_hook",
  "scenemax_assets",
+ "scenemax_game_mcp",
  "scenemax_multiplayer",
  "scenemax_runtime",
- "serde",
- "serde_json",
  "tracing",
  "tracing-subscriber",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

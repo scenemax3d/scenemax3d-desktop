@@ -12,7 +12,10 @@ use tracing_subscriber::{EnvFilter, fmt};
 #[command(name = "scenemax-projector-nextgen")]
 #[command(about = "Bevy-based SceneMax3D NextGen runtime projector")]
 struct Cli {
-    /// Read live SceneMax snippets as JSON lines from standard input.
+    /// Pair this projector with the local SceneMax Game MCP service.
+    #[arg(long, global = true)]
+    game_mcp: bool,
+    /// Read live SceneMax snippets as raw text from standard input.
     #[arg(long, global = true)]
     live_stdin: bool,
     /// Enable runtime diagnostics and the runtime log file (off by default).
@@ -138,14 +141,13 @@ fn main() -> Result<()> {
                 project_root,
                 window: WindowSettings { width, height },
             };
+            let (sender, input) = scenemax_runtime::partial_code_channel();
+            let input = game_mcp::install(sender.clone(), input, cli.game_mcp);
             if cli.live_stdin {
-                let (sender, input) = scenemax_runtime::partial_code_channel();
                 std::thread::spawn(move || live_stdin::read_commands(sender));
-                let exit = scenemax_runtime::run_bevy_projector_with_input(launch, Some(input));
-                anyhow::ensure!(exit.is_success(), "projector exited with an error");
-            } else {
-                scenemax_runtime::run_bevy_projector(launch);
             }
+            let exit = scenemax_runtime::run_bevy_projector_with_input(launch, Some(input));
+            anyhow::ensure!(exit.is_success(), "projector exited with an error");
         }
         Command::RunIr { ir } => {
             tracing::info!(path = %ir.display(), "IR loading is the next milestone");
@@ -210,6 +212,9 @@ mod web;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod live_stdin;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod game_mcp;
 
 fn packaged_project_root() -> Option<PathBuf> {
     let current_dir = std::env::current_dir().ok()?;

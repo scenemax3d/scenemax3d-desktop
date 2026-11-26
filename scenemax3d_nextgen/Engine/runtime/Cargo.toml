@@ -9,6 +9,7 @@ default = []
 effekseer_native = ["scenemax_effects/effekseer_native"]
 
 [dependencies]
+async-channel = "2.5"
 scenemax_ui_input = { path = "../../Common/ui_input" }
 scenemax_physics = { path = "../physics" }
 scenemax_animation = { path = "../animation" }
@@ -38,5 +39,4 @@ bevy = { workspace = true, features = ["webgpu"] }
 wasm-bindgen = "=0.2.129"
 
 [dev-dependencies]
-async-channel = "2.5"
 tempfile.workspace = true

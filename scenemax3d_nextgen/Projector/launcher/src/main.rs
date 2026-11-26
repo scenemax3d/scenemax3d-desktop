@@ -141,6 +141,9 @@ fn run() -> io::Result<i32> {
     if std::env::args_os().skip(1).any(|arg| arg == "--live-stdin") {
         command.arg("--live-stdin");
     }
+    if std::env::args_os().skip(1).any(|arg| arg == "--game-mcp") {
+        command.arg("--game-mcp");
+    }
     if runtime_log {
         command.arg("--runtime-log");
     }

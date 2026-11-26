@@ -2,22 +2,29 @@
 
 Bevy/Rust runtime projector for SceneMax3D NextGen projects.
 
+To pair a local AI application with a running game, see [SceneMax Game MCP](../Tools/game_mcp/README.md).
+
 ## Send commands to a running game
 
-Start the desktop projector with `--live-stdin`. A controller can then write one UTF-8 JSON object per line to the projector's standard input and flush after each line. Each object contains a SceneMax source string. Use JSON newline escapes for multiline snippets.
+Start the desktop projector with `--live-stdin`. Write a SceneMax command as a UTF-8 line to standard input and flush it.
 
 ```powershell
 .\scenemax_projector_nextgen.exe run --project-root C:\Games\Demo --script C:\Games\Demo\scripts\main --live-stdin
 ```
 
-Enter these two lines in the same session, or send them through the process's input pipe.
+This input submits two requests. The first creates an entity. The second schedules a wait and a movement together.
 
-```json
-{"code":"marker => box: pos (0,0,0)"}
-{"code":"wait 1 second\nmarker.move(x+3) in 1 second"}
+```text
+marker => box: pos (0,0,0)
+:begin
+wait 1 second
+marker.move(x+3) in 1 second
+:end
 ```
 
-The projector replies on standard output with one JSON line per request. `{"accepted":true}` means the snippet was parsed and scheduled in the current scene. Waits, motion, and event handlers continue on subsequent updates. A rejected snippet returns `{"accepted":false,"error":"..."}`. Set `"close_on_error":true` to end the game on a SceneMax source error. Closing the input stream lets the game continue.
+Read one decimal HTTP status code per request from standard output. **202 Accepted** means the projector scheduled the commands. **400 Bad Request** means it rejected the input. Error details go to standard error. Each status is three digits followed by a newline.
+
+For a multiline request, put `:begin` and `:end` on their own lines, exactly as shown. Use `:begin!` to close the game on a SceneMax source error. A block receives its status after `:end`. Closing the input pipe discards an unfinished block with status 400 and lets the game continue.
 
 Snippets share the scene's variables, entities, functions, and asset roots. A main-scope function defined in one request can be called by later requests. Rust hosts can create a `partial_code_channel()`, pass its input to `run_bevy_projector_with_input`, and call `sender.run_partial_code(code, scope, close_on_error)` from a worker thread. Pass `None` for the main scope or pass an owned `SceneMaxScopeFrame` for scoped execution.
 

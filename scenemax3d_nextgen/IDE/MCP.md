@@ -4,7 +4,7 @@ The native IDE contains a lightweight local Model Context Protocol server. It ex
 
 ## Connect
 
-Keep the IDE running. The default endpoint is **http://127.0.0.1:8765/mcp**. Click **MCP** in the bottom-right corner for the actual endpoint and recent request metadata. Health: `GET /mcp/status`.
+Keep the IDE running. The default endpoint is **http://127.0.0.1:8765/mcp**. Click **IDE MCP** in the bottom-right corner for the actual endpoint and recent request metadata. Health: `GET /mcp/status`.
 
 A client with Streamable HTTP support can use:
 

@@ -226,6 +226,7 @@ pub(super) fn build(
         files::tree(&runtime, &site, context)?;
     }
     fs::write(site.join("index.html"), loading_html)?;
+    fs::write(site.join("game_mcp.mjs"), include_str!("web/game_mcp.mjs"))?;
     fs::write(site.join("game.js"), include_str!("web/game.js"))?;
     fs::write(site.join("audio.mjs"), include_str!("web/audio.mjs"))?;
     fs::write(

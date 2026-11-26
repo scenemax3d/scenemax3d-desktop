@@ -1,5 +1,8 @@
 # SceneMax Studio IDE
 
+Use **Game MCP** to pair AI clients with games launched from Studio. See the [Game MCP setup guide](../Tools/game_mcp/README.md). The **IDE MCP** monitor covers editor automation.
+
+
 SceneMax Studio is a native Rust/Bevy workspace for SceneMax scripts, visual scenes, UI, assets, and game publishing. The editor and standalone game runtime share focused rendering and resource components. Game authoring uses SceneMax; Rust programming is not required.
 
 ## Launch and projects

@@ -165,10 +165,14 @@ pub fn run(options: LaunchOptions) -> Result<()> {
             presentation::scene3d::grid::GridPlugin,
             presentation::scene3d::outline::OutlinePlugin,
         ));
+    app.insert_resource(presentation::mcp::GameMonitor::new(
+        options.smoke_frames.is_some() && std::env::var_os("SCENEMAX_SMOKE_GAME_MCP_MONITOR").is_some(),
+    ));
     app.add_systems(
         Update,
         (
             presentation::mcp::update,
+            presentation::mcp::update_game_service,
             presentation::scene3d::automation::update,
         ),
     );
@@ -407,6 +411,7 @@ impl Plugin for StudioPlugin {
                     presentation::folding::prepare,
                     presentation::completion::prepare,
                     presentation::assistance::indent_newlines,
+                    presentation::mcp::keep_game_monitor_read_only,
                     scenemax_ide_ui::commit_pending_input,
                 )
                     .chain()
