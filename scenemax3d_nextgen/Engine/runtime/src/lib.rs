@@ -102,6 +102,7 @@ mod ik;
 mod labels;
 mod lighting;
 mod multiplayer;
+mod path_replay;
 mod physics;
 mod retarget_designer;
 mod shader;
@@ -423,7 +424,7 @@ pub fn run_bevy_projector_with_input(
         )
         .add_systems(
             Update,
-            (update_timed_turns, update_timed_moves, update_timed_jumps)
+            (update_timed_turns, update_timed_moves, path_replay::advance, update_timed_jumps)
                 .chain()
                 .after(apply_key_events)
                 .before(update_virtual_colliders),

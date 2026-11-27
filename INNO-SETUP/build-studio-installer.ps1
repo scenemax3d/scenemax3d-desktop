@@ -21,7 +21,7 @@ Write-Host "Building SceneMax Studio release $ReleaseTag (installer version $App
 if (!$SkipBuild) {
     Push-Location $workspace
     try {
-        & cargo build --locked --release -p scenemax_ide -p scenemax_game_launcher -p scenemax_projector_nextgen --features scenemax_projector_nextgen/effekseer_native
+        & cargo build --locked --release -p scenemax_ide -p scenemax_game_mcp -p scenemax_game_launcher -p scenemax_projector_nextgen --features scenemax_projector_nextgen/effekseer_native
         if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
         & cargo build --locked --release --target wasm32-unknown-unknown -p scenemax_projector_nextgen --no-default-features
         if ($LASTEXITCODE -ne 0) { throw 'Browser projector release build failed.' }
@@ -134,7 +134,7 @@ $ReleaseTag | Set-Content -LiteralPath (Join-Path $payload 'studio-release-tag.t
 '1' | Set-Content -LiteralPath (Join-Path $payload '.scenemax-studio-installation') -Encoding ASCII
 $cleanupPath = Join-Path $job 'obsolete-files.iss'
 $cleanup | Set-Content -LiteralPath $cleanupPath -Encoding UTF8
-foreach ($name in @('scenemax_ide.exe','scenemax_projector_nextgen.exe','scenemax_effekseer_bevy.dll')) {
+foreach ($name in @('scenemax_ide.exe','scenemax_game_mcp.exe','scenemax_projector_nextgen.exe','scenemax_effekseer_bevy.dll')) {
     Copy-Item -LiteralPath (Join-Path $workspace "target\release\$name") -Destination $payload
 }
 $exportRoot = Join-Path $payload 'scenemax3d_nextgen\prebuilt'

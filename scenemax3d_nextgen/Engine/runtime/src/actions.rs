@@ -1482,6 +1482,13 @@ pub(super) fn apply_startup_leaf_action(
             }
             ActionSequenceResult::Completed
         }
+        Statement::PathReplay { target, action } => {
+            let name = resolve_object_alias(target, object_pools, None);
+            if let Some(&entity) = entities_by_name.get(&name) {
+                crate::path_replay::dispatch(commands, entity, action, vars, None, guards_by_name, transforms_by_name, collider_bounds);
+            }
+            ActionSequenceResult::Completed
+        }
         Statement::MoveTo(move_to) => {
             let target_name = resolve_object_alias(&move_to.target, object_pools, None);
             if let (Some(entity), Some(transform)) = (
@@ -8728,6 +8735,17 @@ pub(super) fn apply_key_action(
             weight,
             blend,
         );
+        return ActionSequenceResult::Completed;
+    }
+    if let Statement::PathReplay { target, action } = action {
+        let name = resolve_object_alias(target, object_pools, scope.as_deref());
+        let entity = runtime_declared_entities.get(&name).copied().or_else(|| {
+            scene_entities.p1().iter().find_map(|(id, model, ..)| (model.name == name).then_some(id))
+        });
+        if let Some(entity) = entity {
+            crate::path_replay::dispatch(commands, entity, action, vars, scope.as_deref(),
+                guards_by_name, transforms_by_name, collider_bounds);
+        }
         return ActionSequenceResult::Completed;
     }
     if let Statement::SetMaterial(material) = action {

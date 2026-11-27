@@ -5,6 +5,7 @@ pub mod ik;
 pub mod motion_ease;
 pub mod network;
 pub mod physics_motion;
+pub mod path_replay;
 use thiserror::Error;
 
 pub mod generated {
@@ -84,6 +85,7 @@ pub enum Statement {
     },
     Move(MoveStatement),
     MoveTo(MoveToStatement),
+    PathReplay { target: String, action: Box<path_replay::Action> },
     CharacterMode(CharacterModeStatement),
     ClearCharacterMode {
         target: String,
@@ -2504,6 +2506,9 @@ fn update_block_depth(current: usize, line: &str) -> usize {
 }
 
 fn parse_statement(line: &str) -> Result<Statement, ParseError> {
+    if let Some(replay) = path_replay::parse(line)? {
+        return Ok(replay);
+    }
     if let Some(assignment) = parse_array_command(line)? {
         return Ok(Statement::Assignment(assignment));
     }
