@@ -104,6 +104,10 @@ pub(super) fn apply_startup_action_sequence(
     }
 
     for (index, action) in actions.iter().enumerate() {
+        // Startup has already queued its static roots together.
+        if matches!(action, Statement::BeginDeclarations | Statement::FlushDeclarations) {
+            continue;
+        }
         if existing_shared_declaration(action, vars, None) {
             continue;
         }
@@ -4063,11 +4067,19 @@ pub(super) fn apply_action_sequence(
         }};
     }
 
+    let mut batching_declarations = false;
     let mut returning_to_caller = false;
     for (index, action) in actions.iter().enumerate() {
         expression_acquired_pool_member = false;
         if returning_to_caller && !matches!(action, Statement::EndFunction | Statement::EndScope) {
             continue;
+        }
+        if matches!(action, Statement::BeginDeclarations) {
+            batching_declarations = true;
+            continue;
+        }
+        if matches!(action, Statement::FlushDeclarations) {
+            batching_declarations = false;
         }
         if matches!(action, Statement::EndFunction | Statement::EndScope) {
             let caller = scope.as_deref_mut().and_then(|frame| frame.caller.take());
@@ -5332,7 +5344,7 @@ pub(super) fn apply_action_sequence(
                 // on the next update so queries cannot target a deleted/stale root.
                 if (pool_acquired
                     || expression_acquired_pool_member
-                    || pool_lifecycle::needs_flush(action))
+                    || (!batching_declarations && pool_lifecycle::needs_flush(action)))
                     && index + 1 < actions.len()
                     && !scope.as_deref().is_some_and(|s| s.value_call_depth > 0)
                     && enqueue_delayed_actions(
@@ -8210,7 +8222,7 @@ pub(super) fn apply_key_action(
     )>,
     runtime_declared_entities: &mut HashMap<String, Entity>,
 ) -> ActionSequenceResult {
-    if existing_shared_declaration(action, vars, scope.as_deref()) {
+    if matches!(action, Statement::FlushDeclarations) || existing_shared_declaration(action, vars, scope.as_deref()) {
         return ActionSequenceResult::Completed;
     }
     runtime_declared_entities.extend(
