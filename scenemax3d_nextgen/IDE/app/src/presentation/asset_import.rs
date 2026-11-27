@@ -176,11 +176,13 @@ fn dialog(commands: &mut Commands, kind: Kind, focus: &mut InputFocus) -> Entity
         .spawn((
             Node {
                 width: px(540.),
-                max_height: percent(90.),
+                max_width: percent(95.),
+                height: percent(90.),
+                max_height: px(640.),
                 padding: px(16.).all(),
                 row_gap: px(6.),
                 flex_direction: FlexDirection::Column,
-                overflow: Overflow::scroll_y(),
+                overflow: Overflow::clip(),
                 ..default()
             },
             BackgroundColor(PANEL),
@@ -188,7 +190,9 @@ fn dialog(commands: &mut Commands, kind: Kind, focus: &mut InputFocus) -> Entity
         ))
         .id();
 
-    commands.spawn((label(kind.title(), 17.), ChildOf(panel)));
+    let header = super::modal::header(commands, panel, kind.title());
+    control(commands, header, "Close", Action::Close);
+    let panel = scenemax_ide_ui::property::scroll_column(commands, panel);
 
     commands.spawn((
         label(format!("Formats: {}", kind.extensions().join(", ")), 12.),
@@ -337,7 +341,7 @@ pub(crate) fn update(
         }
     }
 
-    if views.keys.just_pressed(KeyCode::Escape) && state.host.is_some() && state.task.is_none() {
+    if views.keys.just_pressed(KeyCode::Escape) && state.host.is_some() {
         state.action = Some(Action::Close);
     }
 
@@ -352,7 +356,7 @@ pub(crate) fn update(
             Action::Open(Kind::Model) if state.host.is_none() => {
                 super::model_import::open(&mut session, &mut changes);
             }
-            Action::Open(kind) if state.host.is_none() => {
+            Action::Open(kind) if state.host.is_none() && state.task.is_none() => {
                 state.project = session.workspace.project().root().to_owned();
                 state.kind = Some(kind);
 
@@ -370,7 +374,7 @@ pub(crate) fn update(
                 ));
             }
 
-            Action::Close if state.task.is_none() => {
+            Action::Close => {
                 if let Some(host) = state.host.take() {
                     commands.entity(host).despawn();
                 }

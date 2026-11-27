@@ -283,6 +283,11 @@ pub(crate) const MENUS: &[MenuEntry] = &[
                 children: &[],
             },
             MenuEntry {
+                name: "Check for updates…",
+                command: "check_updates",
+                children: &[],
+            },
+            MenuEntry {
                 name: "About",
                 command: "about",
                 children: &[],

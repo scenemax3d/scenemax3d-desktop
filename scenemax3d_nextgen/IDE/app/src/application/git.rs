@@ -302,7 +302,10 @@ pub(crate) fn update(
                 let limit = state.limit();
                 state.start(Operation::Inspect(limit), &mut session, &services)
             }
-            Action::Close if !state.busy => {
+            Action::Close => {
+                if state.busy {
+                    state.worker.cancel();
+                }
                 state.open = false;
                 state.confirm = None;
                 Ok(())

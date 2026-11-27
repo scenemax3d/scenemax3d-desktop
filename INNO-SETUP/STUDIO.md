@@ -6,6 +6,18 @@ builds release IDE/projector binaries, compiles a small native launch helper,
 stages a separate distribution and runs Inno Setup. `-SkipBuild` reuses existing
 release binaries; only use it after a successful current release build.
 
+Publish a stable GitHub release and mark it Latest before building, then upload
+the resulting installer to that release. Packaging fetches the latest published
+tag once before compilation and derives the numeric installer version by removing
+the conventional `v` prefix. Drafts and prereleases are excluded. A failed lookup
+stops the build instead of choosing an old/default version.
+
+`-ReleaseTag v3.0.2` bypasses GitHub discovery; `-AppVersion 3.0` independently
+overrides the installer version and filename. Both overrides can be combined.
+Nonnumeric release tags require `-AppVersion`. Packaging embeds the selected tag
+in `studio-release-tag.txt`; the updater uses it on the first launch and after updates.
+Run `./INNO-SETUP/test-studio-release-version.ps1` for offline version-resolution tests.
+
 The installer uses its own application ID and the current user's writable
 Programs directory. The final installer is copied to
 `INNO-SETUP/Output/scenemax-studio-<version>.exe` after compilation succeeds.

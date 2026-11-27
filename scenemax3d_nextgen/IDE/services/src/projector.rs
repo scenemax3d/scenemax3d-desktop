@@ -10,6 +10,7 @@ use std::{
 /// Owns exactly one standalone projector process and its bounded output queue.
 pub struct ProjectorProcess {
     executable: PathBuf,
+    /// Enable local Game MCP pairing when launching projectors from Studio.
     child: Option<Child>,
     output: Mutex<mpsc::Receiver<String>>,
     sender: mpsc::SyncSender<String>,

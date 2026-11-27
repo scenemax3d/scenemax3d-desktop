@@ -127,12 +127,14 @@ pub(crate) fn refresh(
                 padding: UiRect::all(px(20.)),
                 row_gap: px(12.),
                 flex_direction: FlexDirection::Column,
-                overflow: Overflow::scroll_y(),
+                overflow: Overflow::clip(),
                 ..default()
             },
             PANEL,
         );
-        text(&mut c, panel, "Settings", 23.);
+        let header = super::modal::header(&mut c, panel, "Settings");
+        action(&mut c, header, "Close", Action::Close);
+        let panel = scenemax_ide_ui::property::scroll_column(&mut c, panel);
         let tabs = area(
             &mut c,
             panel,

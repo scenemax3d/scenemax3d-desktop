@@ -1,5 +1,22 @@
 # 3D Objects & Models
 
+## Batch creation in the Rust projector
+
+Put `:begin` and `:end` on their own lines around adjacent object declarations. For a function that builds a scene, put the markers inside the function around the declarations.
+
+```scenemax
+build_square = {
+  :begin
+  hall => box: pos (-8,3,0), size (4,3,4)
+  tower => box: pos (8,6,0), size (2,6,2)
+  lantern => Lights.point: pos (0,4,0), intensity 500 lumens
+  :end
+  logger.info tower.y
+}
+```
+
+The projector queues independent model, primitive, and light declarations in order and applies their entity commands together. Each object keeps its name and can be moved, queried, or deleted individually. A dependent expression, another script action, a repeated name, or a shared or multiplayer declaration ends the current group. Models and textures finish loading asynchronously, so the first visible frame can vary by asset.
+
 ## Primitive Objects
 
 ### Sphere

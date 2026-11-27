@@ -314,7 +314,7 @@ pub(crate) fn update(
         }
     }
     for action in std::mem::take(&mut s.actions) {
-        if s.exporting {
+        if s.exporting && !matches!(action, Action::Close | Action::Dismiss) {
             continue;
         }
         match action {
@@ -341,7 +341,9 @@ pub(crate) fn update(
                     c.entity(host).try_despawn();
                 }
                 s.open = false;
-                s.task = None;
+                if !s.exporting {
+                    s.task = None;
+                }
                 s.due = None;
                 s.export_requested = false;
                 s.notice = None;

@@ -12,6 +12,8 @@ if ($Script) { $runArgs += @('--script', $Script) }
 if ($Projector) { $runArgs += @('--projector', (Resolve-Path -LiteralPath $Projector).Path) }
 Push-Location (Join-Path $PSScriptRoot 'scenemax3d_nextgen')
 try {
+    & cargo build --locked -p scenemax_game_mcp
+    if ($LASTEXITCODE -ne 0) { throw "Game MCP build failed with code $LASTEXITCODE" }
     & cargo @runArgs
     if ($LASTEXITCODE -ne 0) { throw "Rust IDE exited with code $LASTEXITCODE" }
 } finally { Pop-Location }

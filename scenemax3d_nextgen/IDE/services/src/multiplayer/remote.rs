@@ -54,7 +54,7 @@ pub(super) fn record_bundle(dir: &Path, s: &Settings) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())
 }
-fn validate_bundle(dir: &Path, s: &Settings) -> Result<(), String> {
+pub(super) fn validate_bundle(dir: &Path, s: &Settings) -> Result<(), String> {
     if s.platform != "linux-x64" {
         return Err("Remote installation supports Linux x64 with systemd. Select linux-x64 on the Server tab and rebuild.".into());
     }
@@ -184,17 +184,35 @@ fn preflight(d: &RemoteDeployment) -> String {
         privileged(d)
     )
 }
-fn deployment_preflight(s: &Settings) -> Result<String, String> {
+fn deployment_preflight(s: &Settings, install_missing: bool) -> Result<String, String> {
     let mut script = preflight(&s.deployment);
     if tls::enabled(s) {
         s.browser_gateway.validate()?;
-        s.browser_gateway.tls_endpoint()?;
-        script.push_str("; test -x /usr/bin/caddy || { echo 'Install Caddy 2 at /usr/bin/caddy for WSS'; exit 1; }; command -v curl; /usr/bin/caddy version");
+        let (_, port) = s
+            .browser_gateway
+            .tls_endpoint()?
+            .ok_or("WSS endpoint required")?;
+        script.push_str("; command -v curl");
+        let caddy = if install_missing {
+            "if test -x /usr/bin/caddy; then /usr/bin/caddy version; else command -v tar; echo 'Deployment will install Caddy 2 for WSS'; fi"
+        } else {
+            "test -x /usr/bin/caddy || { echo 'Caddy 2 is missing. Deploy To Remote Server will install it for WSS. Test connection does not install software.'; exit 1; }; /usr/bin/caddy version"
+        };
+        let edge = format!(
+            "set -eu; listeners=$(ss -H -ltnp 'sport = :{port}'); if printf '%s' \"$listeners\" | grep -q '\"nginx\"'; then command -v python3; nginx -t; echo 'Existing Nginx will provide WSS; deployment will validate the hostname and route'; else {caddy}; fi"
+        );
+        script.push_str(&format!(
+            "; {}sh -c {}",
+            privileged(&s.deployment),
+            quote(&edge)
+        ));
     }
     Ok(script)
 }
 fn status_script(d: &RemoteDeployment) -> String {
     include_str!("remote_status.sh")
+        .replace("\r\n", "\n")
+        .replace("@ROOT@", &quote(&d.directory))
         .replace("@SERVER@", &quote(&format!("{}.service", d.service)))
         .replace(
             "@GATEWAY@",
@@ -231,7 +249,7 @@ pub(super) fn execute(
         return Err("SSH identity file was not found on this computer".into());
     }
     match action {
-        RemoteAction::Test => ssh(d, &deployment_preflight(s)?, cancel),
+        RemoteAction::Test => ssh(d, &deployment_preflight(s, false)?, cancel),
         RemoteAction::Status => {
             ssh(d, &status_script(d), cancel).map(|output| status_summary(&output))
         }
@@ -244,7 +262,7 @@ pub(super) fn execute(
             let bundle = bundle.ok_or("Build a Linux server bundle on the Server tab first")?;
             validate_bundle(bundle, s)?;
             super::progress::stage(25, "Checking remote server requirements");
-            ssh(d, &deployment_preflight(s)?, cancel)?;
+            ssh(d, &deployment_preflight(s, true)?, cancel)?;
             let id = format!(
                 "{:x}-{:x}",
                 SystemTime::now()
@@ -271,6 +289,11 @@ pub(super) fn execute(
             .map_err(|e| e.to_string())?;
             validate_bundle(scratch.path(), s)?;
             if tls::enabled(s) {
+                fs::write(
+                    scratch.path().join("nginx-route.py"),
+                    include_str!("remote_nginx.py").replace("\r\n", "\n"),
+                )
+                .map_err(|e| e.to_string())?;
                 fs::write(scratch.path().join("caddy.json"), tls::config(s)?)
                     .map_err(|e| e.to_string())?;
                 fs::write(
@@ -278,7 +301,11 @@ pub(super) fn execute(
                     tls::unit(s, &digest(s.project_guid.as_bytes())),
                 )
                 .map_err(|e| e.to_string())?;
-                names.extend(["caddy.json".into(), "tls.service".into()]);
+                names.extend([
+                    "caddy.json".into(),
+                    "tls.service".into(),
+                    "nginx-route.py".into(),
+                ]);
             }
             for gateway in [false, true] {
                 if gateway && !s.browser_gateway.enabled {
@@ -338,7 +365,7 @@ pub(super) fn execute(
             match transfer {
                 Ok(output) => Ok(format!("Deployment completed.\n{output}")),
                 Err(error) => Err(format!(
-                    "{error}\nIf installation started, it continues safely as scenemax-deploy-{id}. Use Check status before retrying. Staging: {stage}"
+                    "{error}\nIf installation started, it continues safely as scenemax-deploy-{id}. Use Remote Server Status before retrying. Staging: {stage}"
                 )),
             }
         }
@@ -376,6 +403,10 @@ fn install_script(s: &Settings, stage: &str, id: &str) -> String {
     let endpoint = s.browser_gateway.tls_endpoint().ok().flatten();
     include_str!("remote_install.sh")
         .replace("\r\n", "\n")
+        .replace(
+            "@CADDY_SETUP@",
+            &include_str!("remote_caddy.sh").replace("\r\n", "\n"),
+        )
         .replace("@ROOT@", &quote(&d.directory))
         .replace("@STAGE@", &quote(stage))
         .replace("@SERVICE@", &quote(&d.service))
@@ -427,6 +458,49 @@ fn install_script(s: &Settings, stage: &str, id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn caddy_installation_is_only_in_the_wss_deployment_installer() {
+        let mut s = settings();
+        s.browser_gateway.websocket_url = "wss://network.example.com/play".into();
+        s.browser_gateway.allowed_origin = "https://game.example.com".into();
+        let test = deployment_preflight(&s, false).unwrap();
+        let deploy = deployment_preflight(&s, true).unwrap();
+        assert!(test.contains("Test connection does not install software"));
+        assert!(deploy.contains("Deployment will install Caddy"));
+        for script in [&test, &deploy] {
+            assert!(!script.contains("curl --"));
+            assert!(!script.contains("install -m"));
+            assert!(!script.contains("mktemp"));
+        }
+        let installer = install_script(&s, "/tmp/fixture", "fixture");
+        assert!(installer.contains("Installing Caddy 2.11.9"));
+        assert!(
+            installer
+                .find("Refusing to replace unmanaged service")
+                .unwrap()
+                < installer.find("Installing Caddy 2.11.9").unwrap()
+        );
+        assert!(!installer.contains('\r'));
+        assert!(!installer.contains("@CADDY_SETUP@"));
+        s.browser_gateway.websocket_url = "ws://network.example.com/play".into();
+        assert!(!deployment_preflight(&s, false).unwrap().contains("caddy"));
+        assert!(!deployment_preflight(&s, true).unwrap().contains("caddy"));
+    }
+    #[test]
+    fn status_script_uses_unix_line_endings_and_configured_units() {
+        let mut d = RemoteDeployment::default();
+        d.service = "fixture-status".into();
+        let script = status_script(&d);
+        assert!(!script.contains('\r'));
+        assert!(!script.contains('@'));
+        for unit in [
+            "fixture-status.service",
+            "fixture-status-gateway.service",
+            "fixture-status-tls.service",
+        ] {
+            assert!(script.contains(&quote(unit)));
+        }
+    }
     #[test]
     fn status_banner_contains_both_current_states_and_never_historical_errors() {
         let output = "CURRENT SERVICE STATUS\nZig UDP server: RUNNING\nBrowser WebSocket gateway: STOPPED\n----- HISTORICAL LOGS\nZig UDP server: FAILED\nold protocol error\n";
@@ -537,7 +611,11 @@ mod tests {
         assert!(script.contains("tls=1"));
         assert!(script.contains("tls_url='https://network.example.com/play?room=1'"));
         assert!(script.contains("tls_host='network.example.com'"));
-        assert!(deployment_preflight(&s).unwrap().contains("/usr/bin/caddy"));
+        assert!(
+            deployment_preflight(&s, false)
+                .unwrap()
+                .contains("/usr/bin/caddy")
+        );
         let dir = tempfile::tempdir().unwrap();
         for name in ["scenemax-mp-server", "scenemax_web_gateway"] {
             fs::write(dir.path().join(name), b"\x7fELFfixture").unwrap();

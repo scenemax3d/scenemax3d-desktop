@@ -4,7 +4,7 @@ use super::*;
 pub(super) fn needs_flush(action: &Statement) -> bool {
     matches!(
         action,
-        Statement::ModelDecl { .. } | Statement::Delete { .. } | Statement::PoolRelease(_)
+        Statement::FlushDeclarations | Statement::ModelDecl { .. } | Statement::Delete { .. } | Statement::PoolRelease(_)
     ) || matches!(action, Statement::Assignment(a) | Statement::LocalAssignment(a) if matches!(a.value, AssignmentValue::PoolAcquire { .. }))
 }
 

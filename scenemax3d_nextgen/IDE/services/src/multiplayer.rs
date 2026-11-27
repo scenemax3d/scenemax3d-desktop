@@ -16,6 +16,7 @@ mod browser_test;
 mod saved_bundle;
 pub use saved_bundle::{SavedBundle, saved_bundles};
 mod build;
+mod deploy_build;
 pub use browser_test::{LocalTest, TestTarget};
 mod gateway;
 #[cfg(test)]
@@ -65,6 +66,8 @@ pub enum Operation {
     BuildAll(Snapshot, Option<String>),
     /// Build using an explicit session-only password, including an empty password.
     BuildWithPassword(Snapshot, String),
+    /// Build or reuse a current Linux bundle, then deploy it.
+    Deploy(Snapshot, Option<String>),
     /// Test SSH, inspect services, or deploy an already-built bundle.
     Remote(Snapshot, Option<PathBuf>, RemoteAction),
 }
@@ -219,6 +222,7 @@ fn build_bundle(
     build::check(cancel)?;
     progress::stage(90, "Writing bundle manifest and settings");
     remote::record_bundle(bundle.path(), settings)?;
+    deploy_build::record(bundle.path(), settings)?;
     Ok((bundle, path, gateway))
 }
 
@@ -245,6 +249,36 @@ fn run(root: &Path, operation: Operation, cancel: &AtomicBool) -> Result<Report,
             server: None,
             gateway: None,
         }),
+        Operation::Deploy(mut snapshot, explicit_password) => {
+            snapshot.settings.platform = "linux-x64".into();
+            snapshot.settings.validate()?;
+            snapshot.settings.deployment.validate()?;
+            save(&root, &mut snapshot)?;
+            let password = explicit_password.or(password);
+            let mut server = None;
+            let mut gateway = None;
+            let result = (|| {
+                let selected =
+                    deploy_build::prepare(&root, &snapshot.settings, password.as_deref(), cancel)?;
+                server = Some(selected.server.clone());
+                gateway = selected.gateway;
+                build::check(cancel)?;
+                remote::execute(
+                    &snapshot.settings,
+                    selected.server.parent(),
+                    RemoteAction::Deploy,
+                    cancel,
+                )
+            })();
+            Ok(Report {
+                local_test: None,
+                web_artifact: None,
+                snapshot,
+                server,
+                gateway,
+                message: result.unwrap_or_else(|error| format!("Remote operation failed: {error}")),
+            })
+        }
         Operation::Remote(mut snapshot, bundle, action) => {
             progress::stage(5, "Saving deployment settings");
             snapshot.settings.deployment.validate()?;

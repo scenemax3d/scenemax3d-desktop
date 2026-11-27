@@ -74,6 +74,7 @@ pub(crate) fn menu_bar(commands: &mut Commands, root: Entity) {
             for (name, shortcut, action) in [
                 ("Save", "Ctrl+S", Action::Save),
                 ("Save all", "Ctrl+Shift+S", Action::SaveAll),
+                ("Run Project", "F10", Action::RunProject),
                 ("Undo", "Ctrl+Z", Action::Undo),
                 ("Redo", "Ctrl+Y", Action::Redo),
             ] {
@@ -139,6 +140,7 @@ fn populate_menu(
             let nested = popup(commands, root, id, 476., 33.);
             populate_menu(commands, root, nested, entry.children, next_popup);
             if entry.name == "Projects" {
+                item(commands, nested, "Run Project", "F10", Action::RunProject);
                 separator(commands, nested);
                 super::projects::choices(commands, nested, true);
             }
@@ -284,6 +286,13 @@ fn populate_menu(
                         ));
                     },
                 );
+                finish_item(commands, row, "");
+            }
+            "check_updates" => {
+                let row = button(commands, host, entry.name, Name::new("Check for updates"));
+                commands.entity(row).observe(|_: On<PointerClick>, mut updates: ResMut<super::updates::State>| {
+                    updates.check_now();
+                });
                 finish_item(commands, row, "");
             }
             "about" => panel_item(commands, host, entry.name, "", Panel::Help),

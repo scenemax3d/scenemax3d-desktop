@@ -119,6 +119,7 @@ type PropertyInputs<'w, 's> = Query<
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InputFields<'w, 's> {
     chrome: Option<Res<'w, super::chrome::ChromeState>>,
+    updates: Option<Res<'w, super::updates::State>>,
     zoom: ResMut<'w, super::editing::EditorZoom>,
     editors: Query<'w, 's, (), super::editing::CodeEditorFilter>,
     deployment: Option<Res<'w, crate::application::deployment::Deployment>>,
@@ -142,7 +143,8 @@ pub(crate) fn collect_actions(
     mut queue: ResMut<CommandQueue>,
     session: Res<Session>,
 ) {
-    if input_fields.multiplayer.as_ref().is_some_and(|g| g.open)
+    if input_fields.updates.as_ref().is_some_and(|u| u.open)
+        || input_fields.multiplayer.as_ref().is_some_and(|g| g.open)
         || input_fields
             .build_configuration
             .as_ref()
@@ -157,6 +159,16 @@ pub(crate) fn collect_actions(
         || input_fields.menu.as_ref().is_some_and(|m| m.is_open())
     {
         return;
+    }
+    if keys.just_pressed(KeyCode::Escape) {
+        if session.closing {
+            queue.0.push_back(Command::CancelClose);
+            return;
+        }
+        if session.closing_tab.is_some() {
+            queue.0.push_back(Command::CancelTab);
+            return;
+        }
     }
     let InputFields {
         imports: _,

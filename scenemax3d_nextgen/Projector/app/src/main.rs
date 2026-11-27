@@ -12,6 +12,12 @@ use tracing_subscriber::{EnvFilter, fmt};
 #[command(name = "scenemax-projector-nextgen")]
 #[command(about = "Bevy-based SceneMax3D NextGen runtime projector")]
 struct Cli {
+    /// Pair this projector with the local SceneMax Game MCP service.
+    #[arg(long, global = true)]
+    game_mcp: bool,
+    /// Read live SceneMax snippets as raw text from standard input.
+    #[arg(long, global = true)]
+    live_stdin: bool,
     /// Enable runtime diagnostics and the runtime log file (off by default).
     #[arg(long, global = true)]
     runtime_log: bool,
@@ -104,14 +110,18 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     scenemax_runtime::set_runtime_logging(cli.runtime_log);
-    fmt()
+    let subscriber = fmt()
         .with_env_filter(if cli.runtime_log {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
         } else {
             EnvFilter::new("off")
         })
-        .without_time()
-        .init();
+        .without_time();
+    if cli.live_stdin {
+        subscriber.with_writer(std::io::stderr).init();
+    } else {
+        subscriber.init();
+    }
 
     let packaged_project_root = packaged_project_root();
     match cli.command.unwrap_or(Command::Run {
@@ -131,7 +141,13 @@ fn main() -> Result<()> {
                 project_root,
                 window: WindowSettings { width, height },
             };
-            scenemax_runtime::run_bevy_projector(launch);
+            let (sender, input) = scenemax_runtime::partial_code_channel();
+            let input = game_mcp::install(sender.clone(), input, cli.game_mcp);
+            if cli.live_stdin {
+                std::thread::spawn(move || live_stdin::read_commands(sender));
+            }
+            let exit = scenemax_runtime::run_bevy_projector_with_input(launch, Some(input));
+            anyhow::ensure!(exit.is_success(), "projector exited with an error");
         }
         Command::RunIr { ir } => {
             tracing::info!(path = %ir.display(), "IR loading is the next milestone");
@@ -193,6 +209,12 @@ fn main() {}
 
 #[cfg(target_arch = "wasm32")]
 mod web;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod live_stdin;
+
+#[cfg(not(target_arch = "wasm32"))]
+mod game_mcp;
 
 fn packaged_project_root() -> Option<PathBuf> {
     let current_dir = std::env::current_dir().ok()?;

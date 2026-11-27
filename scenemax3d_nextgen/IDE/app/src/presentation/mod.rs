@@ -1,4 +1,5 @@
 //! Feature views and input adapters; application commands own behavior.
+pub(crate) mod modal;
 pub(crate) mod browser;
 pub(crate) mod components;
 pub(crate) mod input;
@@ -60,3 +61,5 @@ pub(crate) mod mcp;
 
 pub(crate) mod multiplayer;
 pub(crate) mod physics;
+
+pub(crate) mod updates;

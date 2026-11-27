@@ -11,8 +11,11 @@ progress{width:min(460px,85vw)}
 #error{white-space:pre-wrap;max-width:75vw;overflow-wrap:anywhere;color:#ffb2a6} [hidden]{display:none!important}
 #effect-status{position:fixed;bottom:12px;left:12px;padding:6px 10px;background:#171b22cc;border-radius:6px;font-size:13px;pointer-events:none;z-index:1}
 #audio-status{position:fixed;bottom:12px;right:12px;padding:6px 10px;background:#171b22cc;border-radius:6px;font-size:13px;pointer-events:none;z-index:1}
+#game-pair{position:fixed;top:8px;right:8px;z-index:1} #pair-status:not(:empty){background:#171b22;padding:4px;user-select:all}
 </style></head><body><canvas id="game" tabindex="0"></canvas>
 <section id="loading"><h1>{{header}}</h1><div id="status" data-label="{{message}}">{{message}}</div><progress id="progress" max="1" value="0"></progress><div id="credit">{{footer}}</div><div id="error" role="alert"></div></section>
 <div id="effect-status" role="status" hidden></div>
 <div id="audio-status" role="status" hidden>Click or press a key to enable sound</div>
+<div id="game-pair"><button id="pair-game" hidden>Pair AI</button> <span id="pair-status" role="status"></span></div>
+<script type="module" src="./game_mcp.mjs"></script>
 <script type="module" src="./bootstrap.mjs"></script></body></html>

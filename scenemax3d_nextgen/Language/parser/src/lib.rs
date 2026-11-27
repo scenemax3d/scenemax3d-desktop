@@ -5,6 +5,8 @@ pub mod ik;
 pub mod motion_ease;
 pub mod network;
 pub mod physics_motion;
+mod declaration_batch;
+pub mod path_replay;
 use thiserror::Error;
 
 pub mod generated {
@@ -84,6 +86,7 @@ pub enum Statement {
     },
     Move(MoveStatement),
     MoveTo(MoveToStatement),
+    PathReplay { target: String, action: Box<path_replay::Action> },
     CharacterMode(CharacterModeStatement),
     ClearCharacterMode {
         target: String,
@@ -152,6 +155,8 @@ pub enum Statement {
     },
     /// Runtime-only boundary restoring the lexical parent.
     EndScope,
+    BeginDeclarations,
+    FlushDeclarations,
     ReturnValue {
         value: AssignmentValue,
     },
@@ -1027,6 +1032,8 @@ pub enum UiPropertyValuePart {
 
 #[derive(Debug, Error, PartialEq)]
 pub enum ParseError {
+    #[error("invalid declaration batch: {0}")]
+    InvalidBatch(&'static str),
     #[error("invalid network statement: {0}")]
     InvalidNetwork(String),
     #[error("invalid for loop: {0}")]
@@ -1038,6 +1045,7 @@ pub enum ParseError {
 pub fn parse_program(source: &str) -> Result<Program, ParseError> {
     let logical_lines = logical_lines(source);
     let mut statements = Vec::new();
+    let mut batch = declaration_batch::Marks::default();
     let mut screen_mode = ScreenMode::Unspecified;
     let mut index = 0;
     let mut block_depth = 0usize;
@@ -1047,6 +1055,10 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
 
     while index < logical_lines.len() {
         let line = logical_lines[index].trim();
+        if block_depth == 0 && batch.marker(line, &mut statements)? {
+            index += 1;
+            continue;
+        }
         if line.is_empty() {
             index += 1;
             continue;
@@ -1258,6 +1270,7 @@ pub fn parse_program(source: &str) -> Result<Program, ParseError> {
         index += 1;
     }
 
+    batch.finish()?;
     Ok(Program {
         statements,
         screen_mode,
@@ -1921,10 +1934,15 @@ fn parse_action_block_with_stop(
 ) -> Result<(Vec<Statement>, usize, ActionBlockStop), ParseError> {
     let mut depth = 1usize;
     let mut actions = Vec::new();
+    let mut batch = declaration_batch::Marks::default();
     let mut animation_controller_names = Vec::new();
     let mut throw_motion_names = Vec::new();
     while cursor < logical_lines.len() {
         let line = logical_lines[cursor].trim();
+        if batch.marker(line, &mut actions)? {
+            cursor += 1;
+            continue;
+        }
         let lower = line.to_ascii_lowercase();
 
         if let Some((nested, next)) = parse_for_block(logical_lines, cursor)? {
@@ -1937,12 +1955,14 @@ fn parse_action_block_with_stop(
             depth = depth.saturating_sub(1);
             cursor += 1;
             if depth == 0 {
+                batch.finish()?;
                 return Ok((actions, cursor, ActionBlockStop::Closed));
             }
             continue;
         }
 
         if allow_while_terminator && depth == 1 && is_while_terminator(line) {
+            batch.finish()?;
             cursor += 1;
             if let Some(condition) = parse_while_terminator(line)? {
                 return Ok((
@@ -1955,6 +1975,7 @@ fn parse_action_block_with_stop(
         }
 
         if depth == 1 && is_close_else_open(line) {
+            batch.finish()?;
             return Ok((actions, cursor, ActionBlockStop::Else));
         }
 
@@ -1994,6 +2015,7 @@ fn parse_action_block_with_stop(
             depth = depth.saturating_sub(1);
             cursor += 1;
             if depth == 0 {
+                batch.finish()?;
                 return Ok((actions, cursor, ActionBlockStop::Closed));
             }
             if lower.ends_with('{') {
@@ -2095,6 +2117,7 @@ fn parse_action_block_with_stop(
         cursor += 1;
     }
 
+    batch.finish()?;
     Ok((actions, cursor, ActionBlockStop::Eof))
 }
 
@@ -2504,6 +2527,9 @@ fn update_block_depth(current: usize, line: &str) -> usize {
 }
 
 fn parse_statement(line: &str) -> Result<Statement, ParseError> {
+    if let Some(replay) = path_replay::parse(line)? {
+        return Ok(replay);
+    }
     if let Some(assignment) = parse_array_command(line)? {
         return Ok(Statement::Assignment(assignment));
     }

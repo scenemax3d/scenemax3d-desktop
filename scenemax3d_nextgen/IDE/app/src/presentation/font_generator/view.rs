@@ -106,7 +106,8 @@ pub(super) fn shell(c: &mut Commands, s: &mut State) {
         flex_direction: FlexDirection::Column,
         ..default()
     });
-    label(c, panel, "Font Generator", 20.);
+    let header = crate::presentation::modal::header(c, panel, "Font Generator");
+    button(c, header, "Close", Action::Close);
     if s.catalog.is_none() {
         label(c, panel, "Loading installed system fonts…", 14.);
         button(c, panel, "Close", Action::Close);
@@ -272,12 +273,21 @@ pub(super) fn shell(c: &mut Commands, s: &mut State) {
     button(c, footer, "Close", Action::Close);
 }
 pub(super) fn notice(c: &mut Commands, s: &mut State, title: &str, message: &str) {
+    if !s.open {
+        return;
+    }
     if let Some(e) = s.notice.take() {
         c.entity(e).try_despawn();
     }
     let (host, panel) = modal(c, s.host, 480);
     s.notice = Some(host);
-    label(c, panel, title, 20.);
+    c.entity(panel).entry::<Node>().and_modify(|mut n| {
+        n.height = percent(80.);
+        n.max_height = px(420.);
+    });
+    let header = crate::presentation::modal::header(c, panel, title);
+    button(c, header, "Close", Action::Dismiss);
+    let panel = property::scroll_column(c, panel);
     label(c, panel, message, 13.);
     button(c, panel, "OK", Action::Dismiss);
 }

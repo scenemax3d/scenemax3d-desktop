@@ -1,20 +1,27 @@
 [CmdletBinding()]
 param(
-    [string]$AppVersion = '3.0',
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^\S+$')]
+    [string]$ReleaseTag,
+    [string]$AppVersion,
     [string]$Compiler = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
     [string]$WasmBindgen = '',
     [switch]$SkipBuild
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'studio-payload-policy.ps1')
+. (Join-Path $PSScriptRoot 'studio-release-version.ps1')
 $repo = Split-Path -Parent $PSScriptRoot
 $workspace = Join-Path $repo 'scenemax3d_nextgen'
 if (!(Test-Path -LiteralPath $Compiler)) { throw "Install Inno Setup or supply -Compiler: $Compiler" }
-if ($AppVersion -notmatch '^\d+\.\d+(\.\d+){0,2}$') { throw 'Use a numeric installer version such as 3.0.' }
+$releaseVersionInfo = Resolve-StudioRelease -ReleaseTag $ReleaseTag -AppVersion $AppVersion
+$ReleaseTag = $releaseVersionInfo.ReleaseTag
+$AppVersion = $releaseVersionInfo.AppVersion
+Write-Host "Building SceneMax Studio release $ReleaseTag (installer version $AppVersion)"
 if (!$SkipBuild) {
     Push-Location $workspace
     try {
-        & cargo build --locked --release -p scenemax_ide -p scenemax_game_launcher -p scenemax_projector_nextgen --features scenemax_projector_nextgen/effekseer_native
+        & cargo build --locked --release -p scenemax_ide -p scenemax_game_mcp -p scenemax_game_launcher -p scenemax_projector_nextgen --features scenemax_projector_nextgen/effekseer_native
         if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
         & cargo build --locked --release --target wasm32-unknown-unknown -p scenemax_projector_nextgen --no-default-features
         if ($LASTEXITCODE -ne 0) { throw 'Browser projector release build failed.' }
@@ -120,10 +127,14 @@ foreach ($file in Get-ChildItem -LiteralPath $modelRoot -Recurse -File) {
 }
 Copy-SourceTree (Join-Path $payload 'resources\Models\dragon1') (Join-Path $payload 'projects\Hello World\resources\Models\dragon1')
 
+$parts = $AppVersion.Split('.')
+$releaseVersion = if ($parts.Count -eq 2) { $AppVersion + '.0' } else { $AppVersion }
+$releaseVersion | Set-Content -LiteralPath (Join-Path $payload 'studio-version.txt') -Encoding ASCII
+$ReleaseTag | Set-Content -LiteralPath (Join-Path $payload 'studio-release-tag.txt') -Encoding UTF8
 '1' | Set-Content -LiteralPath (Join-Path $payload '.scenemax-studio-installation') -Encoding ASCII
 $cleanupPath = Join-Path $job 'obsolete-files.iss'
 $cleanup | Set-Content -LiteralPath $cleanupPath -Encoding UTF8
-foreach ($name in @('scenemax_ide.exe','scenemax_projector_nextgen.exe','scenemax_effekseer_bevy.dll')) {
+foreach ($name in @('scenemax_ide.exe','scenemax_game_mcp.exe','scenemax_projector_nextgen.exe','scenemax_effekseer_bevy.dll')) {
     Copy-Item -LiteralPath (Join-Path $workspace "target\release\$name") -Destination $payload
 }
 $exportRoot = Join-Path $payload 'scenemax3d_nextgen\prebuilt'

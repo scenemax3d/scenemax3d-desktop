@@ -451,14 +451,15 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             TabClosePrompt,
             Node {
                 display: Display::None,
-                align_items: AlignItems::Center,
-                flex_wrap: FlexWrap::Wrap,
+                flex_direction: FlexDirection::Column,
                 padding: px(8.).all(),
                 ..default()
             },
             ChildOf(root),
         ))
         .id();
+    let header = super::modal::header(&mut commands, tab_close, "Unsaved tab");
+    button(&mut commands, header, "Close", Action::CancelTab);
     commands.spawn((
         TabCloseCaption,
         label("Unsaved tab", 14.),
@@ -482,12 +483,14 @@ pub(crate) fn setup(mut commands: Commands, session: Res<Session>) {
             ClosePrompt,
             Node {
                 display: Display::None,
-                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
                 ..default()
             },
             ChildOf(root),
         ))
         .id();
+    let header = super::modal::header(&mut commands, close, "Unsaved documents");
+    button(&mut commands, header, "Close", Action::CancelClose);
     commands.spawn((
         label(
             "Unsaved documents. Save all before closing, or discard edits:",

@@ -251,6 +251,7 @@ pub(crate) fn update(
                 state.categories_dirty = true;
                 state.detail_dirty = true;
             }
+            Ok(Outcome::Review(_)) if !state.open => {}
             Ok(Outcome::Review(plan)) => {
                 state.status = format!(
                     "Review: {} assets • {:.1} MiB • {} conflicts",
@@ -345,7 +346,7 @@ pub(crate) fn update(
             }
         }
         if inputs.keys.just_pressed(KeyCode::Escape) {
-            let action = if state.plan.is_some() {
+            let action = if state.review_host.is_some() {
                 Action::Cancel
             } else {
                 Action::Close
@@ -356,8 +357,7 @@ pub(crate) fn update(
     let actions = std::mem::take(&mut state.actions);
     for action in actions {
         if state.task.is_some()
-            && !matches!(action, Action::Stop)
-            && !(state.model_names.is_some() && matches!(action, Action::Close))
+            && !matches!(action, Action::Stop | Action::Close | Action::Cancel)
         {
             state.status = "Please wait for the current asset operation to finish".into();
             continue;
@@ -416,7 +416,6 @@ pub(crate) fn update(
             }
             Action::Close => {
                 state.stop_media();
-                state.task = None;
                 if let Some(h) = state.host.take() {
                     commands.entity(h).try_despawn();
                 }

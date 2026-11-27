@@ -350,8 +350,16 @@ pub(super) fn load_script_with_adds(
     script_path: &Path,
     visited: &mut HashSet<PathBuf>,
 ) -> Result<(Program, PathBuf)> {
+    load_included_script(script_path, visited, false)
+}
+
+fn load_included_script(
+    script_path: &Path,
+    visited: &mut HashSet<PathBuf>,
+    strict: bool,
+) -> Result<(Program, PathBuf)> {
     let script_path = normalize_script_path(script_path);
-    if !visited.insert(script_path.clone()) {
+    if !visited.insert(canonicalize_existing(&script_path).unwrap_or_else(|| script_path.clone())) {
         tracing::warn!(path = %script_path.display(), "skipping recursive Add Code include");
         return Ok((
             Program::new(Vec::new()),
@@ -377,13 +385,23 @@ pub(super) fn load_script_with_adds(
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "<none>".to_owned())
     ));
+    let program = expand_code_includes(parsed, &script_dir, visited, strict)?;
+    Ok((program, script_dir))
+}
+
+pub(super) fn expand_code_includes(
+    parsed: Program,
+    script_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+    strict: bool,
+) -> Result<Program> {
     let mut statements = Vec::new();
     let mut screen_mode = parsed.screen_mode;
 
     for statement in parsed.statements {
         match statement {
             Statement::AddCode { path } => {
-                let include_path = resolve_code_path(&script_dir, &path);
+                let include_path = resolve_code_path(script_dir, &path);
                 tracing::info!(
                     path,
                     resolved = %include_path.display(),
@@ -394,12 +412,15 @@ pub(super) fn load_script_with_adds(
                     path,
                     include_path.display()
                 ));
-                match load_script_with_adds(&include_path, visited) {
+                match load_included_script(&include_path, visited, strict) {
                     Ok((program, _)) => {
                         if screen_mode == ScreenMode::Unspecified {
                             screen_mode = program.screen_mode;
                         }
                         statements.extend(program.statements);
+                    }
+                    Err(error) if strict => {
+                        return Err(error.context(format!("Add Code {}", include_path.display())));
                     }
                     Err(error) => {
                         write_runtime_diagnostic_line(format!(
@@ -418,13 +439,7 @@ pub(super) fn load_script_with_adds(
         }
     }
 
-    Ok((
-        Program {
-            statements,
-            screen_mode,
-        },
-        script_dir,
-    ))
+    Ok(Program { statements, screen_mode })
 }
 
 fn strip_staged_source_metadata(source: &str) -> (String, Option<PathBuf>) {
@@ -627,6 +642,15 @@ pub(super) fn collect_unsupported_statements(
             }
             Statement::WhenEvent(event) => {
                 collect_unsupported_statements(&event.actions, unsupported)
+            }
+            Statement::AnimationControllerEvent(event) => {
+                collect_unsupported_statements(&event.actions, unsupported)
+            }
+            Statement::ThrowMotionEvent(event) => {
+                collect_unsupported_statements(&event.actions, unsupported)
+            }
+            Statement::Network(scenemax_parser::network::NetworkStatement::On { actions, .. }) => {
+                collect_unsupported_statements(actions, unsupported)
             }
             Statement::FunctionDef(function) => {
                 collect_unsupported_statements(&function.actions, unsupported);

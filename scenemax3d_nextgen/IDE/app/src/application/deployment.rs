@@ -204,7 +204,11 @@ pub(crate) fn update(
                 Action::Close => {
                     if state.notification.is_some() {
                         state.notification = None;
-                    } else if !state.busy {
+                    } else {
+                        if state.busy {
+                            state.pending = None;
+                            state.builder.cancel();
+                        }
                         state.open = false;
                     }
                 }
